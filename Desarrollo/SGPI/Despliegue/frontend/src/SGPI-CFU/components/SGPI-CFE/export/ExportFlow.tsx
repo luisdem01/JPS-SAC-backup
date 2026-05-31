@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { getAccessToken } from '@/SGPI-CFU/lib/auth/storage';
+import React, { useState, useRef } from 'react';
 
 /**
  * ============================================================================
@@ -35,7 +34,7 @@ import { getAccessToken } from '@/SGPI-CFU/lib/auth/storage';
  * ============================================================================
  */
 
-export function ExportButton({ context, label = "Exportar...", result }: { context: string, label?: string, result?: any }) {
+export function ExportButton({ context, label = "Exportar..." }: { context: string, label?: string }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -51,7 +50,7 @@ export function ExportButton({ context, label = "Exportar...", result }: { conte
       </button>
 
       {isOpen && (
-        <ExportFlow context={context} result={result} onClose={() => setIsOpen(false)} />
+        <ExportFlow context={context} onClose={() => setIsOpen(false)} />
       )}
     </>
   );
@@ -65,161 +64,12 @@ type ExportFormat = 'pdf' | 'excel';
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente Modal del Flujo de Exportación
 // ─────────────────────────────────────────────────────────────────────────────
-export function ExportFlow({ context, result, onClose }: { context: string, result?: any, onClose: () => void }) {
+export function ExportFlow({ context, onClose }: { context: string, onClose: () => void }) {
   const [format, setFormat] = useState<ExportFormat>('pdf');
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-
-  // Preparar payload para la generación de PDF
-  let pdfTitle = `Reporte ${context}`;
-  let pdfSubtitle = 'Generado desde el sistema';
-  let pdfColumns = ['Columna', 'Valor'];
-  let pdfData = [['Contexto', context], ['Estado', 'Generado']];
-  let pdfFilters: Record<string, any> = {};
-
-  if (context.startsWith('ficha_grupo_') && result) {
-    pdfTitle = `Ficha Consolidada de Grupo`;
-    pdfSubtitle = result.name;
-    pdfFilters["Código Oficial"] = result.code;
-    pdfFilters["Fecha Registro"] = result.recognitionDate || result.createdAt;
-    
-    let estadoStr = "Pendiente Validar";
-    if (result.status === 'validado_active' || result.status === 'validado_activo') estadoStr = "Validado / Activo";
-    else if (result.status === 'validado_inactive' || result.status === 'validado_inactivo') estadoStr = "Validado / Inactivo";
-    pdfFilters["Estado"] = estadoStr;
-
-    pdfColumns = ["Concepto / Elemento", "Detalle / Información"];
-    
-    const activeProjectsCount = result.proyectosVinculados ? result.proyectosVinculados.filter((p: any) => p.estado === 'active').length : 0;
-    
-    pdfData = [
-      ["Código Oficial", result.code || "-"],
-      ["Nombre del Grupo", result.name || "-"],
-      ["Línea de Investigación Principal", result.researchLines ? result.researchLines.join(", ") : "-"],
-      ["Proyectos Activos", String(activeProjectsCount)],
-      ["Artículos (Scopus)", String(result.articulosScopus || 0)],
-      ["Tesis en Curso", String(result.tesisEnCurso || 0)],
-      ["<b>INTEGRANTES</b>", ""],
-      ...(result.miembros || []).map((m: any) => [
-        m.nombre || m.dni,
-        `${m.rol} - DNI: ${m.dni} - Incorporación: ${m.fechaIncorporacion || "-"}`
-      ]),
-      ["<b>PROYECTOS VINCULADOS</b>", ""],
-      ...(result.proyectosVinculados || []).map((p: any) => [
-        p.codigo || p.codigo_proyecto,
-        `${p.titulo || p.titulo_proyecto} (${p.convocatoria}) - Estado: ${p.estado === 'active' ? 'En ejecución' : p.estado === 'pending' ? 'Formulación' : p.estado === 'completed' ? 'Concluido' : 'Cancelado'}`
-      ])
-    ];
-  } else if (result) {
-    pdfTitle = result.titulo || pdfTitle;
-    pdfSubtitle = result.subtitulo || pdfSubtitle;
-    
-    pdfFilters["Año Fiscal"] = String(result.params.anioFiscal);
-    pdfFilters["Corte"] = result.params.corte.charAt(0).toUpperCase() + result.params.corte.slice(1);
-    if (result.params.departamentos.length > 0) {
-      pdfFilters["Departamentos"] = result.params.departamentos.join(", ");
-    }
-    if (result.params.grupoInvestigacion) {
-      pdfFilters["Grupo Investigador"] = result.params.grupoInvestigacion;
-    }
-
-    switch (result.params.tipo) {
-      case 'actividades':
-        pdfColumns = ["Nombre del Docente", "DNI", "Departamento", "Hrs Proyectos", "Hrs Asesorías", "Total Carga"];
-        pdfData = result.registros.map((r: any) => [
-          r.nombre,
-          r.dni,
-          r.departamento,
-          String(r.hrsProyectos),
-          String(r.hrsAsesorias),
-          String(r.totalCarga)
-        ]);
-        break;
-      case 'proyectosActivos':
-        pdfColumns = ["Código", "Título", "Estado"];
-        pdfData = result.registros.map((r: any) => [
-          r.id,
-          r.nombre,
-          r.departamento
-        ]);
-        break;
-      case 'produccionCientifica':
-        pdfColumns = ["Título", "Identificador/Tipo", "Revista/Grado"];
-        pdfData = result.registros.map((r: any) => [
-          r.nombre,
-          r.dni,
-          r.departamento
-        ]);
-        break;
-      case 'baseDatosPOI':
-        pdfColumns = ["Indicador / Métrica", "Valor"];
-        pdfData = result.registros.map((r: any) => [
-          r.nombre,
-          String(r.totalCarga)
-        ]);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const loadPdfPreview = async () => {
-    setIsPreviewLoading(true);
-    try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const url = `${API_URL}/api/pdf/generate`;
-      const payload = {
-        title: pdfTitle,
-        subtitle: pdfSubtitle,
-        filters_applied: pdfFilters,
-        user_requesting: 'Usuario Autorizado',
-        doc_type: 'report',
-        columns: pdfColumns,
-        data: pdfData,
-      };
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${getAccessToken() || ''}`
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const blob = await response.blob();
-      const previewUrl = window.URL.createObjectURL(blob);
-      setPdfPreviewUrl(previewUrl);
-    } catch (err: any) {
-      console.error("Error cargando vista previa PDF:", err);
-    } finally {
-      setIsPreviewLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (format === 'pdf') {
-      loadPdfPreview();
-    } else {
-      if (pdfPreviewUrl) {
-        window.URL.revokeObjectURL(pdfPreviewUrl);
-        setPdfPreviewUrl(null);
-      }
-    }
-    return () => {
-      if (pdfPreviewUrl) {
-        window.URL.revokeObjectURL(pdfPreviewUrl);
-      }
-    };
-  }, [format]);
 
   const handleStartExport = async (selectedFormat: ExportFormat) => {
     setFormat(selectedFormat);
@@ -240,44 +90,26 @@ export function ExportFlow({ context, result, onClose }: { context: string, resu
 
       if (selectedFormat === 'pdf') {
         url = `${API_URL}/api/pdf/generate`;
+        // Payload mínimo genérico esperado por CMEPDF
         payload = {
-          title: pdfTitle,
-          subtitle: pdfSubtitle,
-          filters_applied: pdfFilters,
+          title: `Reporte ${context}`,
+          subtitle: 'Generado desde el sistema',
           user_requesting: 'Usuario Autorizado',
           doc_type: 'report',
-          columns: pdfColumns,
-          data: pdfData,
+          columns: ['Columna', 'Valor'],
+          data: [['Contexto', context], ['Estado', 'Generado']],
         };
       } else {
         url = `${API_URL}/api/v1/reports/export/excel`;
         
-        if (context.startsWith('ficha_grupo_')) {
-          const groupId = context.replace('ficha_grupo_', '');
-          payload = {
-            tipo_reporte: "Ficha Grupo",
-            grupo_investigacion: groupId
-          };
-        } else {
-          const validTypes = ["Carga No Lectiva", "Proyectos Activos", "Produccion Cientifica", "Resumen General"];
-          const finalTipo = validTypes.includes(context) ? context : "Resumen General";
+        // El backend CRAPI exige tipos de reporte exactos, mapeamos o usamos default
+        const validTypes = ["Carga No Lectiva", "Proyectos Activos", "Produccion Cientifica", "Resumen General"];
+        const finalTipo = validTypes.includes(context) ? context : "Resumen General";
 
-          if (result) {
-            payload = {
-              tipo_reporte: finalTipo,
-              anio_corte: (finalTipo === 'Produccion Cientifica' || finalTipo === 'Resumen General') ? undefined : result.params.anioFiscal,
-              periodo_corte: result.params.corte,
-              fecha_inicio_desde: result.params.fechaInicio || undefined,
-              fecha_fin_hasta: result.params.fechaFin || undefined,
-              departamento_academico: result.params.departamentos.length > 0 ? result.params.departamentos[0] : undefined,
-              grupo_investigacion: result.params.grupoInvestigacion || undefined
-            };
-          } else {
-            payload = {
-              tipo_reporte: finalTipo
-            };
-          }
-        }
+        // Payload esperado por CMEE (ReportParams)
+        payload = {
+          tipo_reporte: finalTipo
+        };
       }
 
       // IMPORTANTE: En producción usar auth tokens
@@ -285,20 +117,13 @@ export function ExportFlow({ context, result, onClose }: { context: string, resu
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${getAccessToken() || ''}`
+          'Authorization': `Bearer ${localStorage.getItem('sgpi_access_token') || ''}`
         },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        let errorDetail = "";
-        try {
-            const errorData = await response.json();
-            errorDetail = errorData.detail || await response.text();
-        } catch(e) {
-            errorDetail = await response.text();
-        }
-        throw new Error(`Error ${response.status}: Ha ocurrido un error al generar el archivo. Detalle: ${errorDetail}`);
+         throw new Error(`Error ${response.status}: Ha ocurrido un error al generar el archivo.`);
       }
 
       const blob = await response.blob();
@@ -337,186 +162,69 @@ export function ExportFlow({ context, result, onClose }: { context: string, resu
   // Renders de los Paneles
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // 1. Panel Izquierdo: Vista Previa Dinámica o Visor de PDF Real
-  const renderPreviewPane = () => {
-    const filename = `Reporte_${context.replace(/\s+/g, '_')}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
-
-    return (
-      <div className="w-[45%] bg-[#f8fafc] p-8 flex flex-col items-center justify-between rounded-l-lg border-r border-slate-200">
-        <h3 className="text-[#475569] font-bold text-lg mb-4 self-start">Vista Previa</h3>
-        
-        <div className={`w-full flex-1 max-h-[340px] aspect-[1/1.41] bg-white shadow-xl rounded-lg border border-slate-200 flex flex-col relative overflow-hidden transition-all duration-300 hover:shadow-2xl ${pdfPreviewUrl && format === 'pdf' ? 'p-0' : 'p-4'}`}>
-          {error ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-2 p-4">
-              <svg className="w-12 h-12 text-red-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <span className="text-xs font-semibold text-red-500">Error al cargar vista previa</span>
-            </div>
-          ) : isPreviewLoading && format === 'pdf' ? (
-            // --- CARGANDO PDF REAL ---
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3 p-4">
-              <svg className="w-8 h-8 animate-spin text-[#1e3a8a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-              </svg>
-              <span className="text-[11px] font-semibold text-[#1e3a8a]">Generando PDF oficial...</span>
-            </div>
-          ) : format === 'pdf' && pdfPreviewUrl ? (
-            // --- VISOR DE PDF REAL (IFRAME) ---
-            <iframe 
-              src={`${pdfPreviewUrl}#toolbar=0&navpanes=0`} 
-              className="w-full h-full border-0" 
-              title="Vista previa PDF"
-            />
-          ) : format === 'pdf' ? (
-            // --- FALLBACK: VISTA PREVIA PDF SIMULACIÓN (SI FALLA EL VISOR) ---
-            <div className="flex-1 flex flex-col text-[10px]">
-              {/* Membrete PDF */}
-              <div className="flex justify-between items-start border-b border-slate-300 pb-2 mb-3">
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 bg-[#1e3a8a] rounded-full flex items-center justify-center text-[8px] text-white font-bold">U</div>
-                  <span className="font-bold text-[8px] text-[#1e3a8a] tracking-wider">SGPI - UNMSM</span>
-                </div>
-                <span className="text-[7px] text-slate-400">17/06/2026</span>
-              </div>
-              
-              {/* Título Oficial */}
-              <div className="mb-4">
-                <h4 className="text-slate-800 font-extrabold text-[12px] leading-tight uppercase tracking-tight">
-                  {context}
-                </h4>
-                <p className="text-[#1e3a8a] font-semibold text-[8px] tracking-wide mt-0.5">
-                  Reporte Consolidado del Sistema (Simulado)
-                </p>
-              </div>
-
-              {/* Contenido / Skeleton de Texto */}
-              <div className="space-y-1.5 mb-4">
-                <div className="w-full h-1 bg-slate-200 rounded"></div>
-                <div className="w-5/6 h-1 bg-slate-200 rounded"></div>
-                <div className="w-4/5 h-1 bg-slate-100 rounded"></div>
-              </div>
-
-              {/* Tabla Simulación PDF */}
-              <div className="border border-slate-200 rounded overflow-hidden mb-3">
-                <div className="bg-slate-50 px-2 py-1 border-b border-slate-200 flex justify-between font-bold text-slate-500 text-[7px]">
-                  <span>Concepto</span>
-                  <span>Indicador</span>
-                </div>
-                <div className="px-2 py-1 border-b border-slate-100 flex justify-between text-slate-600 text-[6px]">
-                  <span>Total Registros</span>
-                  <span className="font-semibold text-[#1e3a8a]">Consolidado</span>
-                </div>
-                <div className="px-2 py-1 flex justify-between text-slate-600 text-[6px]">
-                  <span>Estado</span>
-                  <span className="text-green-600 font-semibold">Generado</span>
-                </div>
-              </div>
-
-              {/* Sello/Firma Mock */}
-              <div className="mt-auto pt-2 border-t border-dashed border-slate-200 flex justify-between items-end">
-                <div className="space-y-0.5">
-                  <div className="w-12 h-1 bg-slate-300 rounded"></div>
-                  <span className="text-[5px] text-slate-400 block">Firma Autorizada</span>
-                </div>
-                <div className="w-8 h-8 rounded-full border border-dashed border-red-300 flex items-center justify-center text-[5px] text-red-400 font-bold rotate-12 bg-red-50/50">
-                  SGPI
-                </div>
-              </div>
-            </div>
-          ) : (
-            // --- VISTA PREVIA EXCEL SPREADSHEET ---
-            <div className="flex-1 flex flex-col text-[9px] font-sans">
-              {/* Barra superior de Excel */}
-              <div className="bg-[#107c41] text-white p-1 rounded-t flex justify-between items-center text-[7px] mb-2 -mx-4 -mt-4">
-                <div className="flex items-center gap-1.5 pl-2">
-                  <span className="font-bold">X</span>
-                  <span className="opacity-90 font-medium truncate max-w-[120px]">{filename}</span>
-                </div>
-                <div className="flex gap-1 pr-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-white/20"></div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-white/40"></div>
-                </div>
-              </div>
-
-              {/* Grid Header A, B, C, D */}
-              <div className="grid grid-cols-5 bg-slate-100 border border-slate-200 text-center font-semibold text-slate-500 text-[7px] leading-4">
-                <div className="border-r border-slate-200"></div>
-                <div className="border-r border-slate-200">A</div>
-                <div className="border-r border-slate-200">B</div>
-                <div className="border-r border-slate-200">C</div>
-                <div>D</div>
-              </div>
-
-              {/* Celdas / Filas de Excel */}
-              <div className="border-x border-b border-slate-200 flex-1 flex flex-col">
-                {/* Fila 1: Título */}
-                <div className="grid grid-cols-5 border-b border-slate-100 leading-3">
-                  <div className="bg-slate-50 text-slate-400 text-center border-r border-slate-200 text-[6px]">1</div>
-                  <div className="col-span-4 pl-1 font-bold text-slate-800 text-[8px] truncate">{context}</div>
-                </div>
-                {/* Fila 2: Subtítulo */}
-                <div className="grid grid-cols-5 border-b border-slate-100 leading-3">
-                  <div className="bg-slate-50 text-slate-400 text-center border-r border-slate-200 text-[6px]">2</div>
-                  <div className="col-span-4 pl-1 text-slate-500 text-[7px] italic">Generado desde SGPI</div>
-                </div>
-                {/* Fila 3: Separador */}
-                <div className="grid grid-cols-5 border-b border-slate-100 leading-3 bg-slate-50/20">
-                  <div className="bg-slate-50 text-slate-400 text-center border-r border-slate-200 text-[6px]">3</div>
-                  <div className="col-span-4"></div>
-                </div>
-                {/* Fila 4: Headers de la tabla */}
-                <div className="grid grid-cols-5 border-b border-slate-200 leading-3 bg-[#e1f0e5] font-semibold text-[#107c41]">
-                  <div className="bg-slate-50 text-slate-400 text-center border-r border-slate-200 text-[6px]">4</div>
-                  <div className="pl-1 border-r border-slate-200">ID</div>
-                  <div className="pl-1 border-r border-slate-200">Nombre</div>
-                  <div className="pl-1 border-r border-slate-200">Estado</div>
-                  <div className="pl-1">Valor</div>
-                </div>
-                {/* Fila 5: Datos 1 */}
-                <div className="grid grid-cols-5 border-b border-slate-100 leading-3 text-slate-600">
-                  <div className="bg-slate-50 text-slate-400 text-center border-r border-slate-200 text-[6px]">5</div>
-                  <div className="pl-1 border-r border-slate-100">001</div>
-                  <div className="pl-1 border-r border-slate-100 truncate">Registro A</div>
-                  <div className="pl-1 border-r border-slate-100 text-green-600 font-medium">Activo</div>
-                  <div className="pl-1">100%</div>
-                </div>
-                {/* Fila 6: Datos 2 */}
-                <div className="grid grid-cols-5 border-b border-slate-100 leading-3 text-slate-600">
-                  <div className="bg-slate-50 text-slate-400 text-center border-r border-slate-200 text-[6px]">6</div>
-                  <div className="pl-1 border-r border-slate-100">002</div>
-                  <div className="pl-1 border-r border-slate-100 truncate">Registro B</div>
-                  <div className="pl-1 border-r border-slate-100 text-green-600 font-medium">Activo</div>
-                  <div className="pl-1">95%</div>
-                </div>
-                {/* Fila 7: Datos 3 */}
-                <div className="grid grid-cols-5 border-b border-slate-100 leading-3 text-slate-600">
-                  <div className="bg-slate-50 text-slate-400 text-center border-r border-slate-200 text-[6px]">7</div>
-                  <div className="pl-1 border-r border-slate-100">003</div>
-                  <div className="pl-1 border-r border-slate-100 truncate">Registro C</div>
-                  <div className="pl-1 border-r border-slate-100 text-slate-400 font-medium">Inactivo</div>
-                  <div className="pl-1">0%</div>
-                </div>
-              </div>
-              
-              {/* Pestañas de Excel al fondo */}
-              <div className="mt-auto bg-slate-50 border-t border-slate-200 flex items-center text-[7px] -mx-4 -mb-4 px-2 py-1 gap-2 text-slate-500">
-                <span className="bg-white px-2 py-0.5 border-t-2 border-[#107c41] font-bold text-slate-800 shadow-sm rounded-t">Reporte</span>
-                <span className="opacity-60">Datos</span>
-                <span className="opacity-60">Config</span>
-              </div>
-            </div>
-          )}
+  // 1. Panel Izquierdo: Vista Previa
+  const renderPreviewPane = () => (
+    <div className="w-[45%] bg-[#f4f7fc] p-8 flex flex-col items-center justify-center rounded-l-lg border-r border-slate-200">
+      <h3 className="text-[#64748b] font-bold text-xl mb-8">Vista Previa</h3>
+      <div className="w-full aspect-[1/1.4] bg-white shadow-md rounded border border-slate-200 p-6 flex flex-col relative overflow-hidden">
+        {/* Cabecera común a ambos estados */}
+        <div className="flex justify-between items-center mb-4">
+          <div className="w-1/4 h-3 bg-slate-100 rounded"></div>
+          <div className="w-1/4 h-3 bg-slate-100 rounded"></div>
         </div>
-        
-        {!error && (
-          <p className="mt-4 text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 select-all tracking-wide shadow-sm truncate max-w-full">
-            {filename}
-          </p>
+        <div className="w-full h-4 bg-slate-100 rounded mb-2"></div>
+        <div className="w-3/4 h-4 bg-slate-100 rounded mb-4"></div>
+        <div className="w-5/6 h-3 bg-slate-50 rounded mb-6"></div>
+
+        {error ? (
+          <div className="flex-1 flex items-center justify-center">
+            {/* Ícono de imagen rota */}
+            <svg className="w-16 h-16 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 3l18 18M4 16l4-4 4 4 4-4 4 4M4 8h16" />
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" strokeWidth="1.5" />
+            </svg>
+          </div>
+        ) : (
+          <>
+            {/* Mockup de Tabla */}
+            <div className="mt-2 border border-slate-100 rounded flex flex-col">
+              <div className="h-6 border-b border-slate-100 flex">
+                <div className="w-1/2 border-r border-slate-100"></div>
+                <div className="w-1/2"></div>
+              </div>
+              <div className="h-6 border-b border-slate-100 flex">
+                <div className="w-1/2 border-r border-slate-100"></div>
+                <div className="w-1/2"></div>
+              </div>
+              <div className="h-6 flex">
+                <div className="w-1/2 border-r border-slate-100"></div>
+                <div className="w-1/2"></div>
+              </div>
+            </div>
+
+            {/* Mockup de Gráfico */}
+            <div className="mt-8 flex items-end justify-around h-16 border-b border-slate-100 pb-1">
+              <div className="w-5 h-8 bg-slate-300 rounded-t"></div>
+              <div className="w-5 h-12 bg-slate-400 rounded-t"></div>
+              <div className="w-5 h-6 bg-slate-200 rounded-t"></div>
+              <div className="w-5 h-14 bg-[#1e3a8a] rounded-t"></div>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-auto flex justify-between items-center pt-4 border-t border-slate-50">
+              <div className="w-1/4 h-2 bg-slate-100 rounded"></div>
+              <div className="w-1/12 h-2 bg-slate-100 rounded"></div>
+            </div>
+          </>
         )}
       </div>
-    );
-  };
+      {!error && (
+        <p className="mt-6 text-sm font-medium text-slate-500">
+          Reporte Anual SGPI 2023.{format === 'pdf' ? 'pdf' : 'xlsx'}
+        </p>
+      )}
+    </div>
+  );
 
   // 2. Panel Derecho: Selección y Estado de Carga
   const renderRightPanel = () => {
