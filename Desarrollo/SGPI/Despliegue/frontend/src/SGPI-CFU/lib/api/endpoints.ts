@@ -19,6 +19,9 @@
 
 import { apiClient, HEAVY_TIMEOUT_MS, ApiClientError } from './client';
 import { getAccessToken }              from '../auth/storage';
+import { supabase }                    from '../supabase';
+import { decodeJwt }                   from '../auth/jwt';
+import { ROLE_MAP }                    from '../types';
 import type {
   LoginCredentials, LoginResponse, RefreshResponse, AuthUser,
   PaginatedData, PaginationParams, SearchParams, SearchResult,
@@ -37,49 +40,108 @@ export const authEndpoints = {
    * Inicia sesión y devuelve tokens JWT + información del usuario.
    * POST /api/v1/auth/login
    */
-  login(credentials: LoginCredentials): Promise<LoginResponse> {
-    // MOCK LOGIN LIBRE PARA PRUEBAS SIN BACKEND
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          accessToken: 'mock.jwt.token',
-          refreshToken: 'mock.refresh.token',
-          user: {
-            id: '1',
-            email: credentials.email || 'usuario@unmsm.edu.pe',
-            name: 'Usuario de Pruebas',
-            role: 'ADMINISTRATOR',
-            status: 'active',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        });
-      }, 500); // 500ms de retraso para simular carga
+  async login(credentials: LoginCredentials): Promise<LoginResponse> {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password,
     });
+
+    if (error) {
+      throw new Error(
+        error.message?.toLowerCase().includes('invalid login')
+          ? 'Credenciales incorrectas. Verifica tu email y contraseña.'
+          : error.message
+      );
+    }
+
+    if (!data.session || !data.user) {
+      throw new Error('No se pudo establecer la sesión.');
+    }
+
+    // Obtener rol y estado de la tabla pública usuario
+    const { data: perfil, error: perfilError } = await supabase
+      .from('usuario')
+      .select('rol_sistema, estado_cuenta')
+      .eq('id_usuario', data.user.id)
+      .maybeSingle();
+
+    if (perfilError) {
+      throw new Error('Error al cargar el perfil del usuario.');
+    }
+
+    const rolSistema = perfil?.rol_sistema ?? 'Consulta';
+    const isActive = perfil?.estado_cuenta ?? true;
+
+    // Normalizar el rol para el frontend
+    const normalizedRole = ROLE_MAP[rolSistema] ?? 'readonly';
+
+    return {
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresIn: data.session.expires_in,
+      user: {
+        id: data.user.id,
+        email: data.user.email ?? credentials.email,
+        name: data.user.email?.split('@')[0] ?? 'Usuario',
+        role: normalizedRole,
+        isActive: isActive,
+        lastLogin: new Date().toISOString()
+      }
+    };
   },
 
   /**
-   * Cierra la sesión en el servidor (invalida el refreshToken).
+   * Cierra la sesión en el servidor.
    * POST /api/v1/auth/logout
    */
-  logout(): Promise<void> {
-    return apiClient.post<void>('/auth/logout');
+  async logout(): Promise<void> {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw new Error(error.message);
   },
 
   /**
    * Renueva el token de acceso usando el refreshToken.
    * POST /api/v1/auth/refresh
    */
-  refresh(refreshToken: string): Promise<RefreshResponse> {
-    return apiClient.post<RefreshResponse>('/auth/refresh', { refreshToken });
+  async refresh(refreshToken: string): Promise<RefreshResponse> {
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token: refreshToken
+    });
+
+    if (error || !data.session) {
+      throw new Error(error?.message || 'No se pudo renovar la sesión.');
+    }
+
+    return {
+      accessToken: data.session.access_token,
+      expiresIn: data.session.expires_in
+    };
   },
 
   /**
    * Obtiene el perfil completo del usuario autenticado.
    * GET /api/v1/auth/me
    */
-  me(): Promise<AuthUser> {
-    return apiClient.get<AuthUser>('/auth/me');
+  async me(): Promise<AuthUser> {
+    const token = getAccessToken();
+    if (!token) throw new Error('No se encontró el token de acceso.');
+
+    const payload = decodeJwt(token);
+    const userId = payload?.sub;
+    if (!userId) throw new Error('Token de acceso inválido.');
+
+    // Obtener los detalles del usuario desde el backend /users/{userId}
+    const user = await apiClient.get<any>(`/users/${userId}`);
+    const normalizedRole = ROLE_MAP[user.rol_sistema] ?? 'readonly';
+
+    return {
+      id: user.id_usuario,
+      email: user.correo_institucional,
+      name: user.correo_institucional.split('@')[0],
+      role: normalizedRole,
+      isActive: user.estado_cuenta,
+      lastLogin: new Date().toISOString()
+    };
   },
 };
 
@@ -442,7 +504,7 @@ export const searchEndpoints = {
    * GET /api/v1/search?q=&type=&page=&limit=
    */
   search(params: SearchParams): Promise<PaginatedData<SearchResult>> {
-    const query = buildQuery(params as Record<string, unknown>);
+    const query = buildQuery(params as Record<string, any>);
     return apiClient.get<PaginatedData<SearchResult>>(`/search${query}`);
   },
 };
@@ -458,7 +520,7 @@ export const searchEndpoints = {
  * @param params - Objeto con los parámetros de la query
  * @returns Query string con el prefijo "?" o "" si está vacío
  */
-function buildQuery(params?: Record<string, unknown> | undefined): string {
+function buildQuery(params?: Record<string, any> | undefined): string {
   if (!params) return '';
 
   const entries = Object.entries(params)

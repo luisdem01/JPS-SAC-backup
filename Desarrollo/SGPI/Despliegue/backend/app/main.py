@@ -1,10 +1,13 @@
 import os
 import sys
+import uuid
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # ---------------------------------------------------------------------------
 # Paths internos de los módulos SGPI
@@ -16,13 +19,51 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "SGPI-CMEE"))
 sys.path.append(os.path.join(os.path.dirname(__file__), "SGPI-CAPIAC"))
 
 from app.core.config import settings
-from app.db.session import engine
+from app.core.logger import setup_logging, correlation_id, logger
 
+# Inicializar configuración de logging centralizada
+setup_logging()
+
+from app.db.session import engine
 from sgpi_capirestc.api.v1.api import api_router
 from sgpi_cmr.api.reconciliation import router as cmr_router
 from sgpi_crapi.api.v1.api import api_router as crapi_router
 from sgpi_cmee.api.v1.api import api_router as cmee_router
 from sgpi_capiac.api.v1.api import api_router as capiac_router
+
+
+# ---------------------------------------------------------------------------
+# Middleware de Correlation ID para rastreo de peticiones
+# ---------------------------------------------------------------------------
+class CorrelationIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        corr_id = request.headers.get("X-Correlation-ID")
+        if not corr_id:
+            corr_id = str(uuid.uuid4())
+            
+        token = correlation_id.set(corr_id)
+        start_time = time.time()
+        logger.info(f"Incoming Request: {request.method} {request.url.path}")
+        
+        try:
+            response = await call_next(request)
+            response.headers["X-Correlation-ID"] = corr_id
+            duration = time.time() - start_time
+            logger.info(
+                f"Request Completed: {request.method} {request.url.path} - "
+                f"Status: {response.status_code} - Duration: {duration:.3f}s"
+            )
+            return response
+        except Exception as exc:
+            duration = time.time() - start_time
+            logger.error(
+                f"Request Failed: {request.method} {request.url.path} - "
+                f"Exception: {type(exc).__name__}: {str(exc)} - Duration: {duration:.3f}s",
+                exc_info=True
+            )
+            raise exc
+        finally:
+            correlation_id.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +87,9 @@ app = FastAPI(
     openapi_url="/api/v1/openapi.json",
     lifespan=lifespan,
 )
+
+# Registrar middleware de logs y correlación al principio de la pila
+app.add_middleware(CorrelationIdMiddleware)
 
 # ---------------------------------------------------------------------------
 # Middleware CORS

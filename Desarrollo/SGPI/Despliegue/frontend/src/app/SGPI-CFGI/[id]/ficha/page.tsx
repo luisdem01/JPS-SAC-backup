@@ -131,8 +131,8 @@ export default function FichaGrupoPage() {
   }
 
   const proyectosActivos = grupo.proyectosVinculados.filter((p) => p.estado === 'active').length;
-  const articulosScopus  = grupo.code === 'GI-001' ? 12 : grupo.code === 'GI-004' ? 4 : 2;
-  const tesisEnCurso     = grupo.code === 'GI-001' ? 4  : grupo.code === 'GI-004' ? 1 : 0;
+  const articulosScopus  = grupo.articulosScopus ?? 0;
+  const tesisEnCurso     = grupo.tesisEnCurso ?? 0;
 
   return (
     <MainLayout title="" subtitle="">

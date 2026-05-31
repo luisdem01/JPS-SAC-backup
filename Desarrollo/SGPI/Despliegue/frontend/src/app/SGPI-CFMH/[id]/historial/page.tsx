@@ -24,8 +24,7 @@ import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type {
   DocenteInvestigador, ProyectoHistorial, EstadoProyecto,
 } from '../../_data/types';
-import { getDocenteById } from '../../_data/service';
-import { getMockHistorial } from '../../_data/mock';
+import { getDocenteById, getHistorialProyectos, generarCertificadoPDF } from '../../_data/service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración visual de estados de proyecto
@@ -386,45 +385,7 @@ function CertificadoModal({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Servicio mock: obtener historial de proyectos
-// ─────────────────────────────────────────────────────────────────────────────
 
-async function getHistorialProyectos(
-  docenteId: string,
-): Promise<ProyectoHistorial[]> {
-  /* ── SUPABASE ────────────────────────────────────────────────────────────────
-  const { data, error } = await supabase
-    .from('proyectos_investigador')
-    .select('*')
-    .eq('docente_id', docenteId)
-    .order('anio_inicio', { ascending: false });
-  if (error) throw new Error(error.message);
-  return data as ProyectoHistorial[];
-  ─────────────────────────────────────────────────────────────────────────── */
-  await new Promise((r) => setTimeout(r, 300));
-  return getMockHistorial(docenteId);
-}
-
-/** Simula la generación y descarga del PDF */
-async function generarCertificadoPDF(
-  _docenteId: string,
-  _incluirMontos: boolean,
-): Promise<void> {
-  /* ── REAL API ────────────────────────────────────────────────────────────────
-  const res = await fetch(`/api/v1/docentes/${_docenteId}/certificado`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ incluirMontos: _incluirMontos }),
-  });
-  const blob = await res.blob();
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = `certificado_${_docenteId}.pdf`; a.click();
-  URL.revokeObjectURL(url);
-  ─────────────────────────────────────────────────────────────────────────── */
-  await new Promise((r) => setTimeout(r, 1400));
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Página principal

@@ -10,6 +10,7 @@ from renacyt_connector.api import (
     RenacytConnectionError,
     RenacytAPIError
 )
+from renacyt_connector.utils import extract_lastnames
 
 # Convenient, high-level package functions for quick lookups
 def search_by_dni(dni, verify_ssl=False):
@@ -52,6 +53,14 @@ def search_by_institution(institution, page=1, page_size=10, verify_ssl=False):
     client = RenacytConnector(verify_ssl=verify_ssl)
     return client.search_by_institution(institution, page=page, page_size=page_size)
 
+def search_by_lastname(lastname, page=1, page_size=10, verify_ssl=False):
+    """
+    Searches for researchers by partial last name matching.
+    Returns a dictionary containing 'total' and 'data' (list of records).
+    """
+    client = RenacytConnector(verify_ssl=verify_ssl)
+    return client.search_by_lastname(lastname, page=page, page_size=page_size)
+
 __all__ = [
     'RenacytConnector',
     'RenacytError',
@@ -61,5 +70,7 @@ __all__ = [
     'search_by_orcid',
     'search_by_codigo',
     'search_by_name',
-    'search_by_institution'
+    'search_by_institution',
+    'search_by_lastname',
+    'extract_lastnames'
 ]

@@ -16,7 +16,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { SearchResult, SearchType, PaginatedData } from '../types/api';
+import type { SearchResult, SearchType, PaginatedData } from '../types';
 import { apiClient }                                    from '../api/client';
 import { ApiClientError }                               from '../api/client';
 
