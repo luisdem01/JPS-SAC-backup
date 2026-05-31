@@ -14,8 +14,6 @@
 
 import type { Convocatoria, AlertaFiltros, NivelAlerta, EvidenciaPayload, Evidencia } from './types';
 import { apiClient } from '@/SGPI-CFU/lib/api/client';
-import { supabase } from '@/SGPI-CFU/lib/supabase';
-import { removeAccents } from '@/SGPI-CFU/lib/utils/formatters';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers de semaforización
@@ -62,14 +60,7 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
     fechaCierre: c.fecha_cierre || new Date().toISOString().split('T')[0],
     fuente: 'VRIP',
     ultimaSync: c.created_at,
-    evidencias: (c.evidencias || []).map((e: any) => ({
-      id: String(e.id_evidencia),
-      fileName: e.nombre_archivo,
-      descripcion: e.tipo_evidencia || '',
-      fechaCarga: e.fecha_carga,
-      cargadoPor: 'Usuario',
-      urlArchivo: e.url_archivo,
-    })),
+    evidencias: [],
   }));
 
   // Filtro: estado
@@ -79,12 +70,12 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
 
   // Filtro: búsqueda de texto
   if (filtros.buscar.trim()) {
-    const q = removeAccents(filtros.buscar);
+    const q = filtros.buscar.toLowerCase();
     list = list.filter(
       (c) =>
-        removeAccents(c.nombre).includes(q) ||
-        removeAccents(c.entidad).includes(q) ||
-        (c.programa ? removeAccents(c.programa).includes(q) : false)
+        c.nombre.toLowerCase().includes(q) ||
+        c.entidad.toLowerCase().includes(q) ||
+        (c.programa?.toLowerCase().includes(q) ?? false)
     );
   }
 
@@ -112,14 +103,7 @@ export async function getConvocatoriaById(id: string): Promise<Convocatoria | nu
       fechaCierre: res.fecha_cierre || new Date().toISOString().split('T')[0],
       fuente: 'VRIP',
       ultimaSync: res.created_at,
-      evidencias: (res.evidencias || []).map((e: any) => ({
-        id: String(e.id_evidencia),
-        fileName: e.nombre_archivo,
-        descripcion: e.tipo_evidencia || '',
-        fechaCarga: e.fecha_carga,
-        cargadoPor: 'Usuario',
-        urlArchivo: e.url_archivo,
-      })),
+      evidencias: [],
     };
   } catch (error) {
     return null;
@@ -152,25 +136,12 @@ export function validarEvidencia(file: File): { valid: boolean; error?: string }
 }
 
 export async function subirEvidencia(payload: EvidenciaPayload): Promise<Evidencia> {
-  // 1. Subir archivo al bucket de Supabase
-  const fileExt = payload.file.name.split('.').pop();
-  const uniqueName = `${payload.convocatoriaId}_${Date.now()}.${fileExt}`;
-  const filePath = `${payload.convocatoriaId}/${uniqueName}`;
-
-  const { data: uploadData, error: uploadError } = await supabase.storage
-    .from('evidencias')
-    .upload(filePath, payload.file);
-
-  if (uploadError) {
-    throw new Error(`Error al subir archivo a Supabase Storage: ${uploadError.message}`);
-  }
-
-  // 2. Registrar el metadato en la API
+  // Dado que el backend actual espera un JSON con los metadatos y no implementa subida multipart real de momento:
   const res = await apiClient.post<any>(`/calls/${payload.convocatoriaId}/evidence`, {
     id_convocatoria: parseInt(payload.convocatoriaId),
-    tipo_evidencia: payload.descripcion || 'Sin descripción',
+    tipo_evidencia: payload.file.type || 'application/pdf',
     nombre_archivo: payload.file.name,
-    url_archivo: filePath
+    url_archivo: `local://${payload.file.name}`
   });
 
   return {
@@ -179,7 +150,6 @@ export async function subirEvidencia(payload: EvidenciaPayload): Promise<Evidenc
     descripcion: payload.descripcion,
     fechaCarga: res.fecha_carga,
     cargadoPor: 'Usuario Actual',
-    urlArchivo: filePath,
   };
 }
 

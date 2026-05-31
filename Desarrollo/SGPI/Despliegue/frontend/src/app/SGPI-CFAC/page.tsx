@@ -2,7 +2,7 @@
 
 /**
  * @file page.tsx
- * @route /convocatorias  (alias: /calls)
+ * @route /SGPI-CFAC  (alias: /calls)
  * @description Pantalla principal de Alertas de Convocatorias.
  *
  * Paso 1–6 del Flujo Básico:
@@ -547,7 +547,7 @@ export default function AlertasConvocatoriasPage() {
     }
   }, []);
 
-  useEffect(() => { cargar(filtros); }, [cargar, filtros]);
+  useEffect(() => { cargar(filtros); }, []);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -739,7 +739,7 @@ export default function AlertasConvocatoriasPage() {
             <AlertaCard
               key={conv.id}
               convocatoria={conv}
-              onVerDetalles={() => router.push(`/convocatorias/${conv.id}`)}
+              onVerDetalles={() => router.push(`/SGPI-CFAC/${conv.id}`)}
               onGestionarEvidencia={() => setModalConv(conv)}
             />
           ))}

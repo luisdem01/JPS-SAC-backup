@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Any
+from typing import List, Any, Dict
+from sqlalchemy import select
+from app.models.domain import Investigador, GrupoInvestigacion
 
 from app.db.session import get_db
 from app.core.security import get_current_user, require_staff
@@ -20,8 +22,7 @@ router = APIRouter()
 @router.post("/generate", response_model=Any)
 async def generate_report(
     params: ReportParams,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_staff)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Genera un reporte en tiempo real sin guardarlo como Snapshot.
@@ -37,10 +38,9 @@ async def generate_report(
 
 
 @router.post("/snapshot", response_model=SnapshotPOIResponse)
-async def create_snapshot(
+async def snapshot_report(
     params: ReportParams,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_staff)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Genera un reporte y guarda un Snapshot inmutable para el POI.
@@ -59,7 +59,7 @@ async def create_snapshot(
     snapshot_in = SnapshotPOICreate(
         periodo_corte=params.periodo_corte,
         tipo_reporte=params.tipo_reporte,
-        id_usuario_emisor=current_user.get("sub"),
+        id_usuario_emisor=None,
         parametros_aplicados=params.model_dump(mode='json'),
         datos_serializados=report_data.model_dump(mode='json') if hasattr(report_data, 'model_dump') else report_data
     )
@@ -73,7 +73,7 @@ async def create_snapshot(
         entidad_afectada="snapshot_poi",
         pk_entidad=str(db_snapshot.id_snapshot),
         valor_nuevo=snapshot_in.model_dump(mode='json'),
-        id_usuario=current_user.get("sub"),
+        id_usuario=None,
     )
     
     return db_snapshot
@@ -92,11 +92,10 @@ async def list_snapshots(
     # Al definir response_model=List[SnapshotPOISummary], FastAPI excluirá el campo datos_serializados.
     return await snapshot_poi.get_multi(db, skip=skip, limit=limit)
 
-@router.get("/snapshots/{id_snapshot}", response_model=SnapshotPOIResponse)
-async def get_snapshot(
+@router.get("/snapshot/{id_snapshot}", response_model=SnapshotPOIResponse)
+async def get_snapshot_detail(
     id_snapshot: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_staff)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Obtiene el detalle completo de un Snapshot incluyendo el payload serializado.
@@ -116,3 +115,27 @@ async def get_snapshot(
     )
     
     return snap
+
+@router.get("/catalogs", response_model=Dict[str, List[str]])
+async def get_catalogs(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Obtiene los catálogos dinámicos para los filtros del reporte (Departamentos y Grupos).
+    """
+    # Fetch distinct departments
+    dept_stmt = select(Investigador.departamento_academico).filter(Investigador.departamento_academico.isnot(None)).distinct()
+    dept_result = await db.execute(dept_stmt)
+    departamentos = [row[0] for row in dept_result.all() if row[0]]
+    
+    # Fetch all group names
+    group_stmt = select(GrupoInvestigacion.nombre_grupo).filter(GrupoInvestigacion.nombre_grupo.isnot(None))
+    group_result = await db.execute(group_stmt)
+    grupos = [row[0] for row in group_result.all() if row[0]]
+    
+    # Añadir siempre "Todos los grupos" como opción por defecto si no está
+    return {
+        "departamentos": sorted(departamentos),
+        "grupos": sorted(grupos)
+    }
+
