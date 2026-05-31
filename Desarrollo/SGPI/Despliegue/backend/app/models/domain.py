@@ -151,6 +151,8 @@ class Publicacion(Base):
     fecha_publicacion = Column(Date)
     url_documento = Column(String(255))
     id_grupo = Column(Integer, ForeignKey('grupo_investigacion.id_grupo', ondelete='SET NULL'))
+    estado_validacion = Column(String(50), default='Pendiente')
+    fuente_origen = Column(String(50), default='MANUAL')
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class InvestigadorPublicacion(Base):
@@ -188,6 +190,8 @@ class Tesis(Base):
     pais_publicacion = Column(String(10))
     palabras_clave = Column(JSON)
     jurados_evaluadores = Column(JSON)
+    estado_validacion = Column(String(50), default='Pendiente')
+    fuente_origen = Column(String(50), default='CYBERTESIS')
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class ProyectoEstadoHistorial(Base):
