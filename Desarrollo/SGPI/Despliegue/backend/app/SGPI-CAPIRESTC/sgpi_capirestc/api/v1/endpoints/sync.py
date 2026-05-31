@@ -31,7 +31,6 @@ from sqlalchemy.future import select
 from app.db.session import get_db
 from app.core.security import require_staff
 from app.models.domain import Investigador
-from app.core.faculty_config import FISI_KEYWORDS, CYBERTESIS_QUERIES
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -88,9 +87,19 @@ except ImportError as e:
     _cmr_ok = False
 
 # ---------------------------------------------------------------------------
-# Palabras clave y queries de Cybertesis centralizados para FISI
+# Palabras clave para filtrar FISI en RENACYT
 # ---------------------------------------------------------------------------
-# Importados desde app.core.faculty_config
+FISI_KEYWORDS = [
+    "sistemas", "software", "informática", "informatica",
+    "computación", "computacion", "ingeniería de sistemas",
+    "ingenieria de sistemas", "fisi"
+]
+
+CYBERTESIS_QUERIES = [
+    "Ingeniería de Sistemas e Informática",
+    "Ingeniería de Software",
+    "Facultad de Ingeniería de Sistemas e Informática",
+]
 
 # ---------------------------------------------------------------------------
 # Schemas de entrada
@@ -128,17 +137,6 @@ class SyncJobState:
         self.finished_at: Optional[str] = None
         self.error: Optional[str] = None
         self.report: Dict[str, Any] = {}
-        self.progress_logs: List[Dict[str, str]] = []
-        
-        self.add_log("INFO", f"Job creado y en cola. Fuentes seleccionadas: {', '.join(sources)}")
-
-    def add_log(self, level: str, text: str):
-        now = datetime.now().strftime("%H:%M:%S")
-        self.progress_logs.append({
-            "time": now,
-            "level": level,
-            "text": text
-        })
 
 _sync_jobs: Dict[str, SyncJobState] = {}
 
@@ -207,10 +205,9 @@ def _map_renacyt_to_cmr(record: Dict[str, Any]) -> Optional[InvestigadorInput]:
 # Runners por fuente (síncronos, corren en thread para no bloquear event loop)
 # ---------------------------------------------------------------------------
 
-def _run_vrip(filters: SyncFilters, job: SyncJobState) -> Dict[str, Any]:
+def _run_vrip(filters: SyncFilters) -> Dict[str, Any]:
     """Extrae convocatorias y proyectos del VRIP."""
     if not _vrip_ok:
-        job.add_log("ERROR", "VRIP: Conector VRIP no instalado en el servidor.")
         return {"error": "Conector VRIP no instalado", "convocatorias": 0, "proyectos": []}
 
     stats = {"convocatorias": 0, "convocatorias_lista": [], "proyectos": [], "errores": 0}
@@ -219,37 +216,30 @@ def _run_vrip(filters: SyncFilters, job: SyncJobState) -> Dict[str, Any]:
     query = filters.vrip_query
 
     try:
-        job.add_log("INFO", f"VRIP: Iniciando extracción de convocatorias (Año: {year or 'todos'})...")
         convocatorias_ext = VripConvocatoriasExtractor()
         convocatorias = convocatorias_ext.extract(year=year, program=program, query=query)
         stats["convocatorias"] = len(convocatorias)
         stats["convocatorias_lista"] = convocatorias
-        job.add_log("SUCCESS", f"VRIP: Extraídas {len(convocatorias)} convocatorias con éxito.")
         logger.info(f"[Sync/VRIP] {len(convocatorias)} convocatorias extraídas.")
     except Exception as e:
         logger.error(f"[Sync/VRIP] Error en convocatorias: {e}")
-        job.add_log("ERROR", f"VRIP: Error extrayendo convocatorias: {str(e)}")
         stats["errores"] += 1
 
     try:
-        job.add_log("INFO", f"VRIP: Iniciando extracción de proyectos (Año: {year or 'todos'})...")
         proyectos_ext = VripProyectosExtractor()
         proyectos = proyectos_ext.extract(year=year, program=program, query=query)
         stats["proyectos"] = proyectos
-        job.add_log("SUCCESS", f"VRIP: Extraídos {len(proyectos)} proyectos con éxito.")
         logger.info(f"[Sync/VRIP] {len(proyectos)} proyectos extraídos.")
     except Exception as e:
         logger.error(f"[Sync/VRIP] Error en proyectos: {e}")
-        job.add_log("ERROR", f"VRIP: Error extrayendo proyectos: {str(e)}")
         stats["errores"] += 1
 
     return stats
 
 
-def _run_cybertesis(filters: SyncFilters, investigadores_padron: List[Dict], job: SyncJobState) -> Dict[str, Any]:
+def _run_cybertesis(filters: SyncFilters, investigadores_padron: List[Dict]) -> Dict[str, Any]:
     """Extrae tesis y asesores de Cybertesis."""
     if not _cyb_ok:
-        job.add_log("ERROR", "Cybertesis: Conector no instalado en el servidor.")
         return {"error": "Conector Cybertesis no instalado", "tesis": []}
 
     engine = CybertesisAPIEngine()
@@ -259,10 +249,8 @@ def _run_cybertesis(filters: SyncFilters, investigadores_padron: List[Dict], job
     # Búsqueda expandida por facultad
     for query in CYBERTESIS_QUERIES:
         try:
-            job.add_log("INFO", f"Cybertesis: Buscando tesis de '{query}'...")
             logger.info(f"[Sync/Cybertesis] Buscando: '{query}'")
             result = engine.search(query, quiet=True)
-            added_count = 0
             for t in result.resultados:
                 url = str(t.url_repositorio)
                 if url not in seen_urls:
@@ -277,23 +265,16 @@ def _run_cybertesis(filters: SyncFilters, investigadores_padron: List[Dict], job
                             continue
                     seen_urls.add(url)
                     all_tesis.append(t)
-                    added_count += 1
-            job.add_log("SUCCESS", f"Cybertesis: Encontradas {len(result.resultados)} tesis de '{query}' ({added_count} nuevas).")
         except Exception as e:
             logger.warning(f"[Sync/Cybertesis] Error buscando '{query}': {e}")
-            job.add_log("WARN", f"Cybertesis: Error buscando '{query}': {str(e)}")
 
     # Búsqueda adicional por nombres de docentes existentes en BD
     if filters.by_docentes:
-        docentes_a_buscar = investigadores_padron[:30]
-        job.add_log("INFO", f"Cybertesis: Buscando asesorías/autorías para {len(docentes_a_buscar)} docentes de la base de datos...")
-        for idx, inv in enumerate(docentes_a_buscar):
+        for inv in investigadores_padron[:30]:  # Limitar a 30 para no sobrecargar
             nombre_completo = f"{inv.get('nombres', '')} {inv.get('apellidos', '')}".strip()
             if not nombre_completo:
                 continue
             try:
-                if idx % 5 == 0 or idx == len(docentes_a_buscar) - 1:
-                    job.add_log("INFO", f"Cybertesis: Consultando docente ({idx+1}/{len(docentes_a_buscar)}): {nombre_completo}...")
                 result = engine.search(nombre_completo, limit=20, quiet=True)
                 for t in result.resultados:
                     url = str(t.url_repositorio)
@@ -302,17 +283,14 @@ def _run_cybertesis(filters: SyncFilters, investigadores_padron: List[Dict], job
                         all_tesis.append(t)
             except Exception as e:
                 logger.warning(f"[Sync/Cybertesis] Error buscando docente '{nombre_completo}': {e}")
-                job.add_log("WARN", f"Cybertesis: Error buscando docente '{nombre_completo}': {str(e)}")
 
-    job.add_log("SUCCESS", f"Cybertesis: Extracción finalizada. Total tesis únicas: {len(all_tesis)}")
     logger.info(f"[Sync/Cybertesis] Total tesis únicas encontradas: {len(all_tesis)}")
     return {"tesis": all_tesis, "total": len(all_tesis)}
 
 
-async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], job: SyncJobState) -> Dict[str, Any]:
+def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict]) -> Dict[str, Any]:
     """Actualiza y descubre investigadores RENACYT de la FISI-UNMSM."""
     if not _ren_ok:
-        job.add_log("ERROR", "RENACYT: Conector no instalado en el servidor.")
         return {"error": "Conector RENACYT no instalado", "registros": []}
 
     connector = RenacytConnector(rate_limit_delay=1.5)
@@ -323,40 +301,31 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
 
     # 1. Actualización de investigadores ya registrados
     if mode in ["update", "both"]:
-        total_inv = len(investigadores_padron)
-        job.add_log("INFO", f"RENACYT: Consultando {total_inv} investigadores registrados por DNI...")
-        for idx, inv in enumerate(investigadores_padron):
+        for inv in investigadores_padron:
             dni = inv.get("dni")
             if not dni or dni in seen_dnis:
                 continue
             try:
-                nombre = f"{inv.get('nombres', '')} {inv.get('apellidos', '')}".strip()
-                if idx % 10 == 0 or idx == total_inv - 1:
-                    job.add_log("INFO", f"RENACYT: Consultando DNI ({idx+1}/{total_inv}): {nombre}...")
-                record = await connector.search_by_dni(dni)
+                record = connector.search_by_dni(dni)
                 if record:
                     seen_dnis.add(dni)
                     all_records.append(record)
             except Exception as e:
                 logger.warning(f"[Sync/RENACYT] Error buscando DNI {dni}: {e}")
-                job.add_log("WARN", f"RENACYT: Error buscando DNI {dni}: {str(e)}")
 
     # 2. Búsqueda expandida por institución UNMSM + filtro FISI
     if mode in ["expanded", "both"]:
         try:
-            job.add_log("INFO", "RENACYT: Iniciando búsqueda expandida por UNMSM con filtro FISI...")
             logger.info("[Sync/RENACYT] Iniciando búsqueda expandida en UNMSM...")
             page = 1
             while True:
-                job.add_log("INFO", f"RENACYT: Descargando investigadores UNMSM - página {page}...")
-                result = await connector.search_by_institution("Universidad Nacional Mayor de San Marcos", page=page, page_size=50)
+                result = connector.search_by_institution("Universidad Nacional Mayor de San Marcos", page=page, page_size=50)
                 registros = result.get("data", [])
                 total = result.get("total", 0)
 
                 if not registros:
                     break
 
-                matched_this_page = 0
                 for rec in registros:
                     dni = rec.get("numero_documento") or rec.get("dni")
                     if dni and dni in seen_dnis:
@@ -373,9 +342,6 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
                         if dni:
                             seen_dnis.add(dni)
                         all_records.append(rec)
-                        matched_this_page += 1
-
-                job.add_log("INFO", f"RENACYT: Página {page} procesada. {matched_this_page} investigadores coinciden con FISI.")
 
                 # Paginación
                 if page * 50 >= total:
@@ -384,9 +350,7 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
 
         except Exception as e:
             logger.error(f"[Sync/RENACYT] Error en búsqueda expandida: {e}")
-            job.add_log("ERROR", f"RENACYT: Error en búsqueda expandida: {str(e)}")
 
-    job.add_log("SUCCESS", f"RENACYT: Extracción finalizada. {len(all_records)} investigadores encontrados.")
     logger.info(f"[Sync/RENACYT] Total investigadores encontrados: {len(all_records)}")
     return {"registros": all_records, "total": len(all_records)}
 
@@ -402,45 +366,37 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
         return
 
     job.status = "running"
-    job.add_log("INFO", "Iniciando ejecución en segundo plano...")
     report = {s: {"procesados": 0, "resueltos": 0, "cuarentena": 0, "errores": 0, "registros": []} for s in request.sources}
 
     if not _cmr_ok:
         job.status = "failed"
         job.error = "El módulo CMR no está disponible. Imposible reconciliar."
-        job.add_log("ERROR", "Fallo: El módulo CMR no está disponible en el servidor.")
         job.finished_at = datetime.now(timezone.utc).isoformat()
         return
 
     async with AsyncSessionLocal() as db:
         # Pre-cargar padrón de investigadores para fuzzy matching y búsquedas
         try:
-            job.add_log("INFO", "Cargando padrón de investigadores desde la base de datos local...")
             res = await db.execute(select(Investigador.dni, Investigador.nombres, Investigador.apellidos))
             padron_rows = res.all()
             padron_dict = {row.dni: f"{row.nombres} {row.apellidos}" for row in padron_rows}
             padron_list = [{"dni": row.dni, "nombres": row.nombres, "apellidos": row.apellidos} for row in padron_rows]
-            job.add_log("INFO", f"Padrón cargado. {len(padron_rows)} investigadores encontrados en la base de datos.")
         except Exception as e:
             logger.error(f"[Sync] Error cargando padrón: {e}")
-            job.add_log("WARN", f"Error cargando padrón: {str(e)}")
             padron_dict = {}
             padron_list = []
 
         # ---- VRIP ----
         if "VRIP" in request.sources:
             try:
-                job.add_log("INFO", "VRIP: Iniciando extracción de datos desde VRIP...")
-                vrip_data = await asyncio.to_thread(_run_vrip, request.filters, job)
+                vrip_data = await asyncio.to_thread(_run_vrip, request.filters)
 
                 from app.models.domain import Proyecto, Convocatoria
                 from sqlalchemy.future import select as sa_select
                 from datetime import date, timedelta
 
-                convocatorias_lista = vrip_data.get("convocatorias_lista", [])
                 # Reconciliar convocatorias (Upsert sin CMR)
-                job.add_log("INFO", f"VRIP: Reconciliando {len(convocatorias_lista)} convocatorias con la base de datos...")
-                for conv in convocatorias_lista:
+                for conv in vrip_data.get("convocatorias_lista", []):
                     report["VRIP"]["procesados"] += 1
                     try:
                         parsed_close_date = None
@@ -504,9 +460,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                         report["VRIP"]["errores"] += 1
 
                 # Reconciliar proyectos
-                proyectos_lista = vrip_data.get("proyectos", [])
-                job.add_log("INFO", f"VRIP: Reconciliando {len(proyectos_lista)} proyectos a través del motor CMR...")
-                for proy in proyectos_lista:
+                for proy in vrip_data.get("proyectos", []):
                     cmr_input = _map_vrip_proyecto_to_cmr(proy)
                     if not cmr_input:
                         report["VRIP"]["errores"] += 1
@@ -543,31 +497,17 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                         report["VRIP"]["errores"] += 1
 
                 report["VRIP"]["convocatorias_extraidas"] = vrip_data.get("convocatorias", 0)
-                job.add_log("SUCCESS", "VRIP: Sincronización y reconciliación de VRIP completada.")
 
             except Exception as e:
                 logger.error(f"[Sync/VRIP] Fallo general: {e}")
-                job.add_log("ERROR", f"VRIP: Fallo general en el proceso: {str(e)}")
                 report["VRIP"]["errores"] += 1
 
         # ---- CYBERTESIS ----
         if "CYBERTESIS" in request.sources:
             try:
-                job.add_log("INFO", "Cybertesis: Iniciando extracción de tesis...")
-                cyb_data = await asyncio.to_thread(_run_cybertesis, request.filters, padron_list, job)
+                cyb_data = await asyncio.to_thread(_run_cybertesis, request.filters, padron_list)
 
-                # Instanciar cliente RENACYT único para este bucle de sincronización
-                renacyt_client = None
-                if _ren_ok and RenacytConnector:
-                    try:
-                        renacyt_client = RenacytConnector(verify_ssl=False)
-                        renacyt_client.rate_limit_delay = 0.1
-                    except Exception:
-                        pass
-
-                tesis_lista = cyb_data.get("tesis", [])
-                job.add_log("INFO", f"Cybertesis: Reconciliando asesores de {len(tesis_lista)} tesis en motor CMR...")
-                for tesis in tesis_lista:
+                for tesis in cyb_data.get("tesis", []):
                     # Cada asesor de la tesis es un registro para reconciliar
                     for asesor_nombre in (tesis.asesores or []):
                         try:
@@ -578,9 +518,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                 autor_estudiante_texto=", ".join(tesis.autores) if tesis.autores else None,
                             )
                             report["CYBERTESIS"]["procesados"] += 1
-                            merged, quarantine, reason = await rules_engine.reconcile_asesor_tesis(
-                                padron_dict, cmr_input, renacyt_client
-                            )
+                            merged, quarantine, reason = rules_engine.reconcile_asesor_tesis(padron_dict, cmr_input)
 
                             if quarantine:
                                 await persister.persist_quarantine(
@@ -608,25 +546,19 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                             logger.warning(f"[Sync/Cybertesis] Error procesando asesor: {e}")
                             report["CYBERTESIS"]["errores"] += 1
 
-                job.add_log("SUCCESS", "Cybertesis: Reconciliación de tesis completada.")
-
             except Exception as e:
                 logger.error(f"[Sync/Cybertesis] Fallo general: {e}")
-                job.add_log("ERROR", f"Cybertesis: Fallo general en el proceso: {str(e)}")
                 report["CYBERTESIS"]["errores"] += 1
 
         # ---- RENACYT ----
         if "RENACYT" in request.sources:
             try:
-                job.add_log("INFO", "RENACYT: Iniciando extracción de investigadores...")
-                ren_data = await _run_renacyt(request.filters, padron_list, job)
+                ren_data = await asyncio.to_thread(_run_renacyt, request.filters, padron_list)
 
                 from app.models.domain import Investigador as InvModel
                 from sqlalchemy.future import select as sa_select
 
-                registros_ren = ren_data.get("registros", [])
-                job.add_log("INFO", f"RENACYT: Reconciliando {len(registros_ren)} investigadores en motor CMR...")
-                for rec in registros_ren:
+                for rec in ren_data.get("registros", []):
                     cmr_input = _map_renacyt_to_cmr(rec)
                     if not cmr_input:
                         report["RENACYT"]["errores"] += 1
@@ -662,17 +594,13 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                         logger.warning(f"[Sync/RENACYT] Error reconciliando investigador {cmr_input.dni}: {e}")
                         report["RENACYT"]["errores"] += 1
 
-                job.add_log("SUCCESS", "RENACYT: Reconciliación de investigadores completada.")
-
             except Exception as e:
                 logger.error(f"[Sync/RENACYT] Fallo general: {e}")
-                job.add_log("ERROR", f"RENACYT: Fallo general en el proceso: {str(e)}")
                 report["RENACYT"]["errores"] += 1
 
     job.status = "completed"
     job.report = report
     job.finished_at = datetime.now(timezone.utc).isoformat()
-    job.add_log("SUCCESS", "Sincronización global finalizada con éxito.")
     logger.info(f"[Sync] Job {job_id} completado. Reporte: {report}")
 
 
@@ -783,7 +711,6 @@ async def get_sync_status(
         "sources": job.sources,
         "started_at": job.started_at,
         "finished_at": job.finished_at,
-        "progress_logs": job.progress_logs,
     }
 
     if job.status == "completed":

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import { PageHeader } from '@/SGPI-CFU/components/shared';
@@ -19,7 +19,7 @@ export default function CuarentenaPage() {
   const [entidad, setEntidad] = useState('');
   const [page, setPage] = useState(1);
 
-  const fetchList = useCallback(async () => {
+  const fetchList = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -30,11 +30,11 @@ export default function CuarentenaPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, estado, entidad]);
+  };
 
   useEffect(() => {
     fetchList();
-  }, [fetchList]);
+  }, [page, estado, entidad]);
 
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [dniMap, setDniMap] = useState<Record<number, string>>({});
@@ -70,7 +70,7 @@ export default function CuarentenaPage() {
           <Button
             variant="secondary"
             size="lg"
-            onClick={() => router.push('/sincronizacion')}
+            onClick={() => router.push('/SGPI-CFSF')}
           >
             ← Volver a Sincronización
           </Button>
@@ -196,7 +196,7 @@ export default function CuarentenaPage() {
                           </div>
                         ) : (
                           <div className="text-[12px] text-slate-500">
-                            Resuelto: {item.fecha_revision ? new Date(item.fecha_revision).toLocaleString('es-PE') : 'Fecha no registrada'}
+                            Resuelto: {new Date(item.fecha_revision || '').toLocaleString('es-PE')}
                           </div>
                         )}
                       </td>

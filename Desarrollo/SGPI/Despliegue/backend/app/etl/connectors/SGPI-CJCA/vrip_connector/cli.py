@@ -2,12 +2,11 @@ import sys
 import json
 import re
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional
 import typer
-from colorama import Fore, Back, Style, init
+from colorama import Fore, Style, init
 from tabulate import tabulate
-from datetime import datetime, date
-from pydantic import BaseModel
+from datetime import datetime
 
 # Initialize colorama
 init(autoreset=True)
@@ -645,7 +644,7 @@ def run_wizard():
     case_val = False
     regex_val = False
     
-    specific_text = input(f"\n ¿Desea aplicar filtros textuales avanzados por campos? (s/n, por defecto n): ").strip().lower()
+    specific_text = input("\n ¿Desea aplicar filtros textuales avanzados por campos? (s/n, por defecto n): ").strip().lower()
     if specific_text in ["s", "si", "yes"]:
         t = input(" - Filtrar por TÍTULO específico: ").strip()
         if t: title_val = t
@@ -682,7 +681,7 @@ def run_wizard():
     since_val = None
     until_val = None
     
-    time_filt = input(f"\n ¿Desea aplicar filtros de tiempo y rango de años? (s/n, por defecto n): ").strip().lower()
+    time_filt = input("\n ¿Desea aplicar filtros de tiempo y rango de años? (s/n, por defecto n): ").strip().lower()
     if time_filt in ["s", "si", "yes"]:
         y_opt = input(" - Ingrese un año específico (ej. 2025) o múltiples separados por comas (ej. 2024,2025): ").strip()
         if y_opt:
@@ -718,7 +717,7 @@ def run_wizard():
     status_val = "todas"
     mind_val = None
     
-    adv_filt = input(f"\n ¿Desea aplicar filtros de presupuesto, facultades o vigencia? (s/n, por defecto n): ").strip().lower()
+    adv_filt = input("\n ¿Desea aplicar filtros de presupuesto, facultades o vigencia? (s/n, por defecto n): ").strip().lower()
     if adv_filt in ["s", "si", "yes"]:
         if source_val in ["rais", "all"]:
             p = input(" - Código de programa (ej. PCONFIGI, PMULTI): ").strip()
@@ -749,7 +748,7 @@ def run_wizard():
 
     # 6. Fields selection
     fields_val = None
-    fld_sel = input(f"\n ¿Desea seleccionar campos/columnas específicas a retornar? (s/n, por defecto n): ").strip().lower()
+    fld_sel = input("\n ¿Desea seleccionar campos/columnas específicas a retornar? (s/n, por defecto n): ").strip().lower()
     if fld_sel in ["s", "si", "yes"]:
         fields_val = input(" Ingrese nombres de campos separados por comas (ej. titulo,responsable,monto_financiado): ").strip()
         if fields_val == "":

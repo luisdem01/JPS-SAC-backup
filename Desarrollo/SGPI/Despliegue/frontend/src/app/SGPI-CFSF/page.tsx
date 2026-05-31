@@ -112,10 +112,10 @@ const IconChevron = ({ open }: { open: boolean }) => (
 // ─── Sub-componente: Toggle del conector ──────────────────────────────────────
 
 const LOG_COLORS: Record<string, string> = {
-  INFO:    'text-sky-600',
-  SUCCESS: 'text-emerald-600',
-  WARN:    'text-amber-600',
-  ERROR:   'text-red-600',
+  INFO:    'text-sky-400',
+  SUCCESS: 'text-emerald-400',
+  WARN:    'text-amber-400',
+  ERROR:   'text-red-400',
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -246,16 +246,11 @@ export default function SincronizacionDeFuentesPage() {
   const [logs, setLogs]           = useState<LogEntry[]>([
     { time: '--:--:--', level: 'INFO', text: 'Sistema listo. Configure los conectores y sus filtros, luego ejecute la sincronización.' },
   ]);
-  const logContainerRef = useRef<HTMLDivElement>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll al final del log (solo del contenedor de la consola)
+  // Auto-scroll al final del log
   useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTo({
-        top: logContainerRef.current.scrollHeight,
-        behavior: 'smooth',
-      });
-    }
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
   // Carga inicial de salud
@@ -285,30 +280,28 @@ export default function SincronizacionDeFuentesPage() {
       }
       try {
         const st = await syncService.getJobStatus(id);
-        
-        if (st.progress_logs && st.progress_logs.length > 0) {
-          setLogs([
-            { time: '--:--:--', level: 'INFO', text: 'Sistema listo. Configure los conectores y sus filtros, luego ejecute la sincronización.' },
-            ...st.progress_logs
-          ]);
-        } else if (st.status === 'running') {
+        if (st.status === 'running') {
           setLogs((p) => addLog(p, 'INFO', `En proceso… [${st.sources.join(' · ')}]`));
         }
-
         if (st.status === 'completed') {
           clearInterval(iv);
           setRunning(false);
           if (st.report) {
+            for (const [src, rep] of Object.entries(st.report)) {
+              setLogs((p) => addLog(p, rep.errores > 0 ? 'WARN' : 'SUCCESS',
+                `${src} — procesados: ${rep.procesados}, reconciliados: ${rep.resueltos}, cuarentena: ${rep.cuarentena}, errores: ${rep.errores}`));
+            }
             sessionStorage.setItem('sgpi_sync_report', JSON.stringify(st.report));
             sessionStorage.setItem('sgpi_sync_job_id', id);
           }
           setLogs((p) => addLog(p, 'SUCCESS', '✓ Sincronización completada. Redirigiendo a resultados…'));
-          setTimeout(() => router.push('/sincronizacion/resultados'), 1500);
+          setTimeout(() => router.push('/SGPI-CFSF/resultados'), 1500);
         }
         if (st.status === 'failed') {
           clearInterval(iv);
           setRunning(false);
           setErrorMsg(st.error ?? 'El proceso falló en el servidor.');
+          setLogs((p) => addLog(p, 'ERROR', `Fallo: ${st.error ?? 'Error desconocido'}`));
         }
       } catch {
         setLogs((p) => addLog(p, 'WARN', 'Error temporal consultando estado — reintentando…'));
@@ -390,7 +383,7 @@ export default function SincronizacionDeFuentesPage() {
             <Button
               variant="secondary"
               size="lg"
-              onClick={() => router.push('/sincronizacion/cuarentena')}
+              onClick={() => router.push('/SGPI-CFSF/cuarentena')}
             >
               Revisar Cuarentena
             </Button>
@@ -657,30 +650,28 @@ export default function SincronizacionDeFuentesPage() {
           </div>
 
           {/* Consola de log */}
-          <div className="rounded border border-[#e2e8f0] bg-white overflow-hidden shadow-sm flex-1">
-            <div className="bg-slate-100/70 border-b border-[#e2e8f0] px-4 py-2.5 flex items-center justify-between">
-              <span className="font-sans text-[11px] font-bold tracking-[0.08em] uppercase text-slate-500">
+          <div className="rounded border border-[#334155] overflow-hidden shadow-sm flex-1">
+            <div className="bg-[#1e293b] px-4 py-2.5 flex items-center justify-between">
+              <span className="font-sans text-[11px] font-bold tracking-[0.08em] uppercase text-slate-400">
                 Consola de Sistema
               </span>
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-400 opacity-80" />
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 opacity-80" />
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 opacity-80" />
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 opacity-70" />
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 opacity-70" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 opacity-70" />
               </div>
             </div>
-            <div
-              ref={logContainerRef}
-              className="bg-slate-50 px-4 py-3.5 font-mono text-[11.5px] leading-6 min-h-[280px] max-h-[480px] overflow-y-auto"
-            >
+            <div className="bg-[#0f172a] px-4 py-3.5 font-mono text-[11.5px] leading-6 min-h-[280px] max-h-[480px] overflow-y-auto">
               {logs.map((log, i) => (
                 <div key={i} className="flex gap-2">
-                  <span className="text-slate-400 shrink-0">[{log.time}]</span>
+                  <span className="text-slate-600 shrink-0">[{log.time}]</span>
                   <span className={`shrink-0 font-bold w-[54px] ${LOG_COLORS[log.level]}`}>[{log.level}]</span>
-                  <span className={i === logs.length - 1 && log.level === 'SUCCESS' ? 'text-emerald-600 font-semibold' : 'text-slate-700'}>
+                  <span className={i === logs.length - 1 && log.level === 'SUCCESS' ? 'text-emerald-400' : 'text-slate-300'}>
                     {log.text}
                   </span>
                 </div>
               ))}
+              <div ref={logEndRef} />
             </div>
           </div>
         </div>

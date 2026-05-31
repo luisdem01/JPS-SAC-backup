@@ -13,7 +13,9 @@
  */
 
 import type { Convocatoria, AlertaFiltros, NivelAlerta, EvidenciaPayload, Evidencia } from './types';
-import { MOCK_CONVOCATORIAS } from './mock';
+import { apiClient } from '@/SGPI-CFU/lib/api/client';
+import { supabase } from '@/SGPI-CFU/lib/supabase';
+import { removeAccents } from '@/SGPI-CFU/lib/utils/formatters';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers de semaforización
@@ -49,20 +51,26 @@ export function formatFechaCierre(iso: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocatoria[]> {
-  /* ── REAL API ─────────────────────────────────────────────────────────────
-  const params = new URLSearchParams({
-    buscar: filtros.buscar,
-    estado: filtros.estado,
-    orden:  filtros.orden,
-  });
-  const res  = await fetch(`/api/v1/convocatorias?${params}`);
-  return res.json() as Promise<Convocatoria[]>;
-  ──────────────────────────────────────────────────────────────────────── */
-
-  // MOCK ───────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 300));
-
-  let list = [...MOCK_CONVOCATORIAS];
+  const res = await apiClient.get<any[]>('/calls');
+  
+  let list: Convocatoria[] = res.map((c: any) => ({
+    id: String(c.id_convocatoria),
+    nombre: c.titulo_convocatoria,
+    entidad: c.entidad_emisora || 'VRIP-UNMSM',
+    estado: c.estado_convocatoria as any,
+    apertura: c.fecha_inicio_inscripcion,
+    fechaCierre: c.fecha_cierre || new Date().toISOString().split('T')[0],
+    fuente: 'VRIP',
+    ultimaSync: c.created_at,
+    evidencias: (c.evidencias || []).map((e: any) => ({
+      id: String(e.id_evidencia),
+      fileName: e.nombre_archivo,
+      descripcion: e.tipo_evidencia || '',
+      fechaCarga: e.fecha_carga,
+      cargadoPor: 'Usuario',
+      urlArchivo: e.url_archivo,
+    })),
+  }));
 
   // Filtro: estado
   if (filtros.estado !== 'Todos') {
@@ -71,12 +79,12 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
 
   // Filtro: búsqueda de texto
   if (filtros.buscar.trim()) {
-    const q = filtros.buscar.toLowerCase();
+    const q = removeAccents(filtros.buscar);
     list = list.filter(
       (c) =>
-        c.nombre.toLowerCase().includes(q) ||
-        c.entidad.toLowerCase().includes(q) ||
-        (c.programa?.toLowerCase().includes(q) ?? false)
+        removeAccents(c.nombre).includes(q) ||
+        removeAccents(c.entidad).includes(q) ||
+        (c.programa ? removeAccents(c.programa).includes(q) : false)
     );
   }
 
@@ -93,14 +101,29 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
 }
 
 export async function getConvocatoriaById(id: string): Promise<Convocatoria | null> {
-  /* ── REAL API ──────────────────────────────────────────────────────────────
-  const res = await fetch(`/api/v1/convocatorias/${id}`);
-  if (!res.ok) return null;
-  return res.json();
-  ──────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 200));
-  return MOCK_CONVOCATORIAS.find((c) => c.id === id) ?? null;
+  try {
+    const res = await apiClient.get<any>(`/calls/${id}`);
+    return {
+      id: String(res.id_convocatoria),
+      nombre: res.titulo_convocatoria,
+      entidad: res.entidad_emisora || 'VRIP-UNMSM',
+      estado: res.estado_convocatoria as any,
+      apertura: res.fecha_inicio_inscripcion,
+      fechaCierre: res.fecha_cierre || new Date().toISOString().split('T')[0],
+      fuente: 'VRIP',
+      ultimaSync: res.created_at,
+      evidencias: (res.evidencias || []).map((e: any) => ({
+        id: String(e.id_evidencia),
+        fileName: e.nombre_archivo,
+        descripcion: e.tipo_evidencia || '',
+        fechaCarga: e.fecha_carga,
+        cargadoPor: 'Usuario',
+        urlArchivo: e.url_archivo,
+      })),
+    };
+  } catch (error) {
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,34 +152,35 @@ export function validarEvidencia(file: File): { valid: boolean; error?: string }
 }
 
 export async function subirEvidencia(payload: EvidenciaPayload): Promise<Evidencia> {
-  /* ── REAL API ──────────────────────────────────────────────────────────────
-  const form = new FormData();
-  form.append('file',        payload.file);
-  form.append('descripcion', payload.descripcion);
-  const res = await fetch(`/api/v1/convocatorias/${payload.convocatoriaId}/evidencias`, {
-    method: 'POST',
-    body:   form,
+  // 1. Subir archivo al bucket de Supabase
+  const fileExt = payload.file.name.split('.').pop();
+  const uniqueName = `${payload.convocatoriaId}_${Date.now()}.${fileExt}`;
+  const filePath = `${payload.convocatoriaId}/${uniqueName}`;
+
+  const { data: uploadData, error: uploadError } = await supabase.storage
+    .from('evidencias')
+    .upload(filePath, payload.file);
+
+  if (uploadError) {
+    throw new Error(`Error al subir archivo a Supabase Storage: ${uploadError.message}`);
+  }
+
+  // 2. Registrar el metadato en la API
+  const res = await apiClient.post<any>(`/calls/${payload.convocatoriaId}/evidence`, {
+    id_convocatoria: parseInt(payload.convocatoriaId),
+    tipo_evidencia: payload.descripcion || 'Sin descripción',
+    nombre_archivo: payload.file.name,
+    url_archivo: filePath
   });
-  if (!res.ok) throw new Error('Error al subir la evidencia.');
-  return res.json();
-  ──────────────────────────────────────────────────────────────────────── */
 
-  // MOCK
-  await new Promise((r) => setTimeout(r, 1000));
-
-  const nueva: Evidencia = {
-    id:          `EV-${Date.now()}`,
-    fileName:    payload.file.name,
+  return {
+    id: String(res.id_evidencia),
+    fileName: res.nombre_archivo,
     descripcion: payload.descripcion,
-    fechaCarga:  new Date().toISOString().split('T')[0],
-    cargadoPor:  'Ana Mendoza',
+    fechaCarga: res.fecha_carga,
+    cargadoPor: 'Usuario Actual',
+    urlArchivo: filePath,
   };
-
-  // Actualizar mock en memoria
-  const conv = MOCK_CONVOCATORIAS.find((c) => c.id === payload.convocatoriaId);
-  if (conv) conv.evidencias.push(nueva);
-
-  return nueva;
 }
 
 export { EVIDENCIA_MAX_SIZE_MB, EVIDENCIA_ALLOWED_EXTS };

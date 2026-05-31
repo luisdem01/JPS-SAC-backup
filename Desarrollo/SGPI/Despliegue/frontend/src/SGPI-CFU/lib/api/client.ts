@@ -164,6 +164,9 @@ async function request<T>(
       if (response.status === 401) {
         clearAllSessionData();
         globalCallbacks.onUnauthorized?.();
+        // Devolver una promesa que nunca se resuelve para evitar que
+        // la aplicación React lance un Unhandled Runtime Error mientras el router redirige.
+        return new Promise(() => {}) as Promise<T>;
       }
 
       // 403 → Sin permisos para la acción
@@ -350,6 +353,9 @@ export const apiClient = {
         if (response.status === 401) {
           clearAllSessionData();
           globalCallbacks.onUnauthorized?.();
+          // Devolver una promesa que nunca se resuelve para evitar que
+          // la aplicación React lance un Unhandled Runtime Error mientras el router redirige.
+          return new Promise(() => {}) as Promise<T>;
         }
         if (response.status === 403) {
           globalCallbacks.onForbidden?.();

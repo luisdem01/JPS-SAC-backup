@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type EstadoConvocatoria =
-  | 'Activa'
+  | 'Abierta'
   | 'Por Vencer'
   | 'Cerrada'
   | 'Suspendida';
@@ -30,6 +30,7 @@ export interface Evidencia {
   descripcion: string;
   fechaCarga:  string;   // ISO date
   cargadoPor:  string;
+  urlArchivo?: string;
 }
 
 export interface Convocatoria {

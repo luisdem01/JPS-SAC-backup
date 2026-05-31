@@ -1,9 +1,9 @@
 import uuid
 from sqlalchemy import Column, Integer, String, Text, Numeric, Date, DateTime, JSON, UUID, func
-from sqlalchemy.orm import declarative_base
 
 # Reutilizar el Base definido en connection
 from db.connection import Base
+
 
 class Convocatoria(Base):
     __tablename__ = "convocatoria"
@@ -21,7 +21,11 @@ class Convocatoria(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), default=func.now())
 
     def __repr__(self):
-        return f"<Convocatoria id={self.id_convocatoria} titulo='{self.titulo_convocatoria[:30]}...' estado='{self.estado_convocatoria}'>"
+        return (
+            f"<Convocatoria id={self.id_convocatoria} "
+            f"titulo='{self.titulo_convocatoria[:30]}...' "
+            f"estado='{self.estado_convocatoria}'>"
+        )
 
 
 class LogAuditoria(Base):
