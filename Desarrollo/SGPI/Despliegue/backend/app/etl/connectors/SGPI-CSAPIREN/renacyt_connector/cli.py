@@ -52,6 +52,7 @@ def main():
     group.add_argument('-o', '--orcid', type=str, help="Query researcher by ORCID identifier (exact match).")
     group.add_argument('-c', '--code', type=str, help="Query researcher by RENACYT registration code (exact match).")
     group.add_argument('-n', '--name', type=str, help="Query researchers by full/partial name (ilike match).")
+    group.add_argument('-a', '--lastname', type=str, help="Query researchers by last name (ilike match).")
     group.add_argument('-i', '--institution', type=str, help="Query researchers by self-declared CTI VITAE main institution (ilike match).")
     
     # Pagination
@@ -109,7 +110,12 @@ def main():
             logging.info(f"Querying by Name: '{args.name}' (Page: {args.page}, Limit: {args.limit})")
             results = connector.search_by_name(args.name, page=args.page, page_size=args.limit, normalize=True)
             
-        # 5. Query by Institution (returns search list)
+        # 5. Query by Last Name (returns search list)
+        elif args.lastname:
+            logging.info(f"Querying by Last Name: '{args.lastname}' (Page: {args.page}, Limit: {args.limit})")
+            results = connector.search_by_lastname(args.lastname, page=args.page, page_size=args.limit, normalize=True)
+            
+        # 6. Query by Institution (returns search list)
         elif args.institution:
             logging.info(f"Querying by Institution: '{args.institution}' (Page: {args.page}, Limit: {args.limit})")
             results = connector.search_by_institution(args.institution, page=args.page, page_size=args.limit, normalize=True)

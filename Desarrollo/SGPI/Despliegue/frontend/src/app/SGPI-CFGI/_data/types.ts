@@ -40,6 +40,8 @@ export interface GrupoInvestigacion {
   fuente: FuenteOrigen;
   miembros: MiembroGrupo[];
   proyectosVinculados: ProyectoVinculado[];
+  articulosScopus?: number;
+  tesisEnCurso?: number;
 }
 
 export interface FiltrosGrupos {

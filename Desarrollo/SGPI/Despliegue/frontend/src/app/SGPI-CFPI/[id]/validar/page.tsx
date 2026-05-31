@@ -9,9 +9,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
-import type { Proyecto, MiembroProyecto, RolMiembroProyecto, EstadoProyecto } from '../../_data/types';
-import { getProyectoById, buscarInvestigadores, validarProyecto } from '../../_data/service';
-import { GRUPOS_DISPONIBLES, CONVOCATORIAS_DISPONIBLES } from '../../_data/mock';
+import type { Proyecto, MiembroProyecto, RolMiembroProyecto, EstadoProyecto, Convocatoria } from '../../_data/types';
+import { getProyectoById, buscarInvestigadores, validarProyecto, getGruposDisponibles, getConvocatorias, type GrupoInvestigacion } from '../../_data/service';
 import type { InvestigatorPadron } from '../../../SGPI-CFGI/_data/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,12 +135,44 @@ export default function AuditoriaProyectoPage() {
   const [errors,       setErrors]       = useState<string[]>([]);
   const [showToast,    setShowToast]    = useState(false);
 
+  const [grupos, setGrupos] = useState<GrupoInvestigacion[]>([]);
+  const [convocatorias, setConvocatorias] = useState<string[]>([]);
+
+
   // Carga inicial
   useEffect(() => {
     async function cargar() {
       setCargando(true);
       try {
-        const data = await getProyectoById(id);
+        const [data, dataGrupos, dataConvocatorias] = await Promise.all([
+          getProyectoById(id),
+          getGruposDisponibles(),
+          getConvocatorias()
+        ]);
+
+        if (dataGrupos && dataGrupos.length > 0) {
+          setGrupos(dataGrupos);
+        } else {
+          setGrupos([
+            { codigo_grupo: 'IA en Salud Pública', nombre_grupo: 'IA en Salud Pública' },
+            { codigo_grupo: 'Ciberseguridad Avanzada', nombre_grupo: 'Ciberseguridad Avanzada' },
+            { codigo_grupo: 'Sistemas de Información y Ciberseguridad Avanzada', nombre_grupo: 'Sistemas de Información y Ciberseguridad Avanzada' },
+            { codigo_grupo: 'Redes y Sistemas Computacionales', nombre_grupo: 'Redes y Sistemas Computacionales' },
+            { codigo_grupo: 'Ciencia de Datos Aplicada', nombre_grupo: 'Ciencia de Datos Aplicada' }
+          ]);
+        }
+
+        if (dataConvocatorias && dataConvocatorias.length > 0) {
+          setConvocatorias(dataConvocatorias.map(c => c.titulo_convocatoria));
+        } else {
+          setConvocatorias([
+            'Convocatoria VRIP 2026',
+            'Convocatoria VRIP 2025',
+            'Convocatoria VRIP 2024',
+            'VRIP General'
+          ]);
+        }
+
         if (data) {
           setProyecto(data);
           setTitle(data.title);
@@ -307,7 +338,7 @@ export default function AuditoriaProyectoPage() {
               </span>
               <span className="inline-flex items-center gap-1.5 text-[11px] text-[#475569] bg-slate-100 px-2 py-0.5 rounded font-sans font-medium">
                 <ScannerIcon />
-                RR extraída por OCR el 10/05
+                Fuente: {proyecto.fuente}
               </span>
             </div>
           </div>
@@ -444,7 +475,7 @@ export default function AuditoriaProyectoPage() {
                     onChange={(e) => setConvocatoria(e.target.value)}
                     className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-[#e2e8f0] rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
                   >
-                    {CONVOCATORIAS_DISPONIBLES.map(c => (
+                    {convocatorias.map(c => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -528,8 +559,8 @@ export default function AuditoriaProyectoPage() {
                     onChange={(e) => setGrupoVinculado(e.target.value)}
                     className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-[#e2e8f0] rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
                   >
-                    {GRUPOS_DISPONIBLES.map(g => (
-                      <option key={g} value={g}>{g}</option>
+                    {grupos.map(g => (
+                      <option key={g.codigo_grupo} value={g.codigo_grupo}>{g.nombre_grupo}</option>
                     ))}
                   </select>
                   <p className="mt-1.5 font-sans text-[11px] text-[#64748b]">

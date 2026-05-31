@@ -62,6 +62,11 @@ export function validateInstitutionalEmail(email: string): ValidationResult {
     return 'Debe utilizar su correo institucional (@unmsm.edu.pe).';
   }
 
+  const username = email.trim().split('@')[0];
+  if (/^\d+$/.test(username)) {
+    return 'No se permiten correos basados en DNI.';
+  }
+
   return null;
 }
 

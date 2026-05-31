@@ -82,3 +82,10 @@ export interface StatsProyectos {
   enEjecucion: number;
   concluidos: number;
 }
+
+export interface Convocatoria {
+  id_convocatoria: number;
+  titulo_convocatoria: string;
+  estado_convocatoria: string;
+}
+

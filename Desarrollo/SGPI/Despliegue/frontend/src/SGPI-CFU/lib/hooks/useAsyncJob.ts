@@ -19,7 +19,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { JobStatus, SyncSummary }               from '../types/api';
+import type { JobStatus, SyncSummary, JobLogEntry }               from '../types/api';
 import { ApiClientError }                            from '../api/client';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +45,12 @@ export interface AsyncJobState {
   isRunning: boolean;
   /** true cuando el job completó exitosamente */
   isSuccess: boolean;
+  /** Logs/actividades del proceso para visualizar en el frontend */
+  logs?:     JobLogEntry[];
+  /** Cantidad de registros procesados */
+  processed: number;
+  /** Cantidad de errores o advertencias encontrados */
+  errors:    number;
 }
 
 /** Función de status que consulta el backend según el tipo de job */
@@ -55,6 +61,7 @@ export type StatusFetcher = (jobId: string) => Promise<{
   errors?:   number;
   processed?: number;
   reportId?: string;
+  logs?:     JobLogEntry[];
 }>;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +93,9 @@ export function useAsyncJob(statusFetcher: StatusFetcher) {
     error:     null,
     isRunning: false,
     isSuccess: false,
+    logs:      [],
+    processed: 0,
+    errors:    0,
   });
 
   // Ref para el intervalo de polling
@@ -94,14 +104,6 @@ export function useAsyncJob(statusFetcher: StatusFetcher) {
   const currentJobIdRef = useRef<string | null>(null);
   // Ref para saber si el componente sigue montado
   const isMountedRef    = useRef(true);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      stopPolling();
-    };
-  }, []);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Control del polling
@@ -114,6 +116,14 @@ export function useAsyncJob(statusFetcher: StatusFetcher) {
       pollingRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      stopPolling();
+    };
+  }, [stopPolling]);
 
   /**
    * Inicia el polling del status del job.
@@ -142,6 +152,9 @@ export function useAsyncJob(statusFetcher: StatusFetcher) {
           status:    result.status,
           progress:  result.progress ?? prev.progress,
           summary:   result.summary ?? prev.summary,
+          logs:      result.logs ?? prev.logs,
+          processed: result.processed ?? prev.processed ?? 0,
+          errors:    result.errors ?? prev.errors ?? 0,
           error:     null,
         }));
 
@@ -193,7 +206,7 @@ export function useAsyncJob(statusFetcher: StatusFetcher) {
         }));
       }
     }, POLLING_INTERVAL_MS);
-  }, [statusFetcher, stopPolling]);
+  }, [statusFetcher]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Iniciar job
@@ -226,6 +239,9 @@ export function useAsyncJob(statusFetcher: StatusFetcher) {
       error:     null,
       isRunning: true,
       isSuccess: false,
+      logs:      [],
+      processed: 0,
+      errors:    0,
     });
 
     try {
@@ -275,6 +291,9 @@ export function useAsyncJob(statusFetcher: StatusFetcher) {
       error:     null,
       isRunning: false,
       isSuccess: false,
+      logs:      [],
+      processed: 0,
+      errors:    0,
     });
   }, [stopPolling]);
 
@@ -318,6 +337,9 @@ export function useAsyncJob(statusFetcher: StatusFetcher) {
     error:       state.error,
     isRunning:   state.isRunning,
     isSuccess:   state.isSuccess,
+    logs:        state.logs,
+    processed:   state.processed,
+    errors:      state.errors,
     statusLabel,
 
     // Acciones

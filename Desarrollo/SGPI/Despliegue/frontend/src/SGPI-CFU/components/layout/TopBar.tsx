@@ -13,7 +13,8 @@
 
 import React from 'react';
 import { usePathname } from 'next/navigation';
-// import { useAuth } from '@/lib/hooks/useAuth';
+import { useAuth } from '../../lib/hooks/useAuth';
+import { SessionTimer } from './SessionTimer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Íconos
@@ -42,17 +43,41 @@ const ROUTE_LABELS: Record<string, string> = {
   '':              'Inicio',
   'dashboard':     'Dashboard',
   'search':        'Búsqueda Global',
+  'busqueda':      'Búsqueda Global',
   'projects':      'Proyectos',
+  'proyectos':     'Proyectos',
   'investigators': 'Investigadores',
+  'investigadores': 'Investigadores',
   'groups':        'Grupos de Investigación',
+  'grupos':        'Grupos de Investigación',
   'sync':          'Sincronización ETL',
+  'sincronizacion': 'Sincronización',
   'import':        'Importación de Datos',
+  'importacion':   'Importación de Datos',
   'calls':         'Alertas de Convocatorias',
+  'convocatorias': 'Alertas de Convocatorias',
   'publications':  'Publicaciones y Tesis',
+  'publicaciones': 'Publicaciones y Tesis',
   'reports':       'Reportes',
+  'reportes':      'Reportes',
   'admin':         'Administración',
   'users':         'Usuarios',
   'logs':          'Auditoría',
+  'configuracion': 'Configuración del Sistema',
+  'Gestion_de_Cuentas_Activas': 'Gestión de Cuentas Activas',
+  'Modulo_de_auditoria': 'Módulo de Auditoría de Logs',
+  
+  // Nombres de carpetas físicas
+  'SGPI-CFAC':     'Alertas de Convocatorias',
+  'SGPI-CFB':      'Búsqueda Global',
+  'SGPI-CFGI':     'Grupos de Investigación',
+  'SGPI-CFIM':     'Importación de Datos',
+  'SGPI-CFMH':     'Investigadores',
+  'SGPI-CFPI':     'Proyectos de Investigación',
+  'SGPI-CFPT':     'Publicaciones y Tesis',
+  'SGPI-CFR':      'Reportes Académicos',
+  'SGPI-CFSA':     'Seguridad y Configuración',
+  'SGPI-CFSF':     'Sincronización ETL',
 };
 
 /** Convierte la ruta actual en breadcrumbs */
@@ -104,11 +129,7 @@ export interface TopBarProps {
 
 export function TopBar({ title, subtitle }: TopBarProps) {
   const pathname = usePathname();
-  // const { user, showExpiryWarning, minutesRemaining, dismissWarning } = useAuth();
-  const user = { name: "Ana Mendoza", role: "Admin Vicedecanato" };
-  const showExpiryWarning = false;
-  const minutesRemaining = 0;
-  const dismissWarning = () => {};
+  const { user, showExpiryWarning, minutesRemaining, dismissWarning } = useAuth();
   const breadcrumbs = parseBreadcrumbs(pathname);
   const currentLabel = title ?? breadcrumbs[breadcrumbs.length - 1]?.label ?? 'SGPI';
 
@@ -128,7 +149,7 @@ export function TopBar({ title, subtitle }: TopBarProps) {
       {/* ── Izquierda: Título ────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0">
         <h1 className="font-sans font-bold text-[15px] text-[#001631] truncate">
-          {title || 'Sistema de Gestión de Proyectos de Investigación'}
+          {title || currentLabel || 'Sistema de Gestión de Proyectos de Investigación'}
         </h1>
       </div>
 
@@ -142,20 +163,15 @@ export function TopBar({ title, subtitle }: TopBarProps) {
         ">
           <ClockIcon />
           <span>
-            Sesión expira en <strong>{minutesRemaining} min</strong>
+            Su sesión expira pronto (<strong>{minutesRemaining} min</strong>). Por favor, interactúe con el sistema para mantenerla activa.
           </span>
-          <button
-            onClick={dismissWarning}
-            className="ml-2 text-[11px] font-semibold underline hover:no-underline"
-            type="button"
-          >
-            Extender
-          </button>
         </div>
       )}
 
       {/* ── Derecha: Perfil de usuario ───────────────────────────────────── */}
       <div className="flex items-center gap-4 flex-shrink-0">
+        {user && <SessionTimer />}
+
         {/* Notificaciones */}
         <button
           type="button"

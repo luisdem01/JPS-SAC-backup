@@ -302,3 +302,54 @@ class RenacytConnector:
         ]
         
         return self.search(criteria, page=page, page_size=page_size, normalize=normalize)
+
+    def search_by_lastname(self, lastname, page=1, page_size=10, normalize=True):
+        """
+        Queries the RENACYT database by researcher last name(s).
+        Supports single last name (searches paternal OR maternal)
+        and double last name (searches paternal AND maternal).
+        """
+        clean_lastname = str(lastname).strip()
+        words = [w.strip() for w in clean_lastname.split() if w.strip()]
+        if not words:
+            raise RenacytError("Last name query cannot be empty.")
+            
+        if len(words) >= 2:
+            # Match first word as paternal and second word as maternal
+            criteria = [
+                {
+                    "id": 999,
+                    "campo": "a.apellido_paterno",
+                    "valor": words[0],
+                    "operadorBusqueda": "ilike",
+                    "operadorLogico": "and"
+                },
+                {
+                    "id": 999,
+                    "campo": "a.apellido_materno",
+                    "valor": words[1],
+                    "operadorBusqueda": "ilike",
+                    "operadorLogico": "and"
+                }
+            ]
+        else:
+            # Single word: match either paternal OR maternal
+            criteria = [
+                {
+                    "id": 999,
+                    "campo": "a.apellido_paterno",
+                    "valor": words[0],
+                    "operadorBusqueda": "ilike",
+                    "operadorLogico": "or"
+                },
+                {
+                    "id": 999,
+                    "campo": "a.apellido_materno",
+                    "valor": words[0],
+                    "operadorBusqueda": "ilike",
+                    "operadorLogico": "and"
+                }
+            ]
+            
+        return self.search(criteria, page=page, page_size=page_size, normalize=normalize)
+

@@ -1,9 +1,11 @@
 import sys
 import os
 import json
+import time
 from typing import Dict, Any, List, Optional
 
 from pydantic import ValidationError
+from app.core.logger import logger, log_connector_status
 
 from sgpi_ci.engines.parsers import ParserFactory
 from sgpi_ci.core.models import (
@@ -17,10 +19,12 @@ if csapiren_path not in sys.path:
     sys.path.insert(0, csapiren_path)
 
 try:
-    from renacyt_connector import search_by_name
+    from renacyt_connector import search_by_name, search_by_lastname, extract_lastnames
     from renacyt_connector.api import RenacytConnector
 except ImportError:
     search_by_name = None
+    search_by_lastname = None
+    extract_lastnames = None
     RenacytConnector = None
 
 import re
@@ -35,16 +39,24 @@ class EtlProcessor:
 
     def process(self, upload_to_db: bool = True) -> Dict[str, Any]:
         """Orquesta la extracción, enriquecimiento y carga."""
-        print(f"[{self.filename}] Iniciando procesamiento...")
+        start_time = time.time()
+        log_connector_status("SGPI-CI", "START", 0.0, details=f"Iniciando procesamiento del archivo {self.filename}")
         
         # 1. Extracción (Parsers Heurísticos)
         try:
             parser = ParserFactory.get_parser(self.filename)
             raw_data = parser.parse(self.file_path)
         except Exception as e:
+            duration = time.time() - start_time
+            log_connector_status(
+                connector_name="SGPI-CI",
+                status="FAILED",
+                duration=duration,
+                details=f"Fallo al parsear el archivo {self.filename}: {str(e)}"
+            )
             return {"error": f"Fallo al parsear el archivo: {e}"}
 
-        print(f"[{self.filename}] Datos extraídos. Iniciando enriquecimiento RENACYT...")
+        logger.info(f"[{self.filename}] Datos extraídos. Iniciando enriquecimiento RENACYT...")
 
         # 2. Enriquecimiento (Extraer nombres únicos y consultar Renacyt)
         unique_names = set()
@@ -63,7 +75,7 @@ class EtlProcessor:
         investigadores_validos = []
 
         if not search_by_name:
-            print("ADVERTENCIA: renacyt_connector no disponible. No se podrá enriquecer.")
+            logger.warning(f"[{self.filename}] renacyt_connector no disponible. No se podrá enriquecer.")
 
         # Función auxiliar de búsqueda robusta
         
@@ -84,6 +96,22 @@ class EtlProcessor:
             if not words: return None
             original_parts = [normalize_str(w) for w in words]
 
+            # 1. Intentamos buscar usando el conector de apellidos (más preciso)
+            if extract_lastnames and hasattr(renacyt_client, 'search_by_lastname'):
+                try:
+                    extracted_lastname = extract_lastnames(name_str)
+                    if extracted_lastname:
+                        res = renacyt_client.search_by_lastname(extracted_lastname, page_size=100)
+                        if res and res.get('total', 0) > 0 and res.get('data'):
+                            for r in res['data']:
+                                c_full = normalize_str(str(r.get('nombre_completo', '')))
+                                matches = sum(1 for p in original_parts if p in c_full)
+                                if matches >= len(original_parts) - 1:
+                                    return r
+                except Exception:
+                    pass
+
+            # 2. Fallback de búsqueda anterior
             candidates = []
             if len(words) >= 2:
                 candidates.append(f"{words[-2]} {words[-1]}")
@@ -153,18 +181,18 @@ class EtlProcessor:
                     "dato": name
                 })
 
-        print(f"[{self.filename}] Enriquecimiento completo. {len(name_to_dni)} DNIs resueltos.")
+        logger.info(f"[{self.filename}] Enriquecimiento completo. {len(name_to_dni)} DNIs resueltos.")
 
         # ---------------------------------------------------------
         # MATCHING DE GRUPOS DE INVESTIGACIÓN (Fuzzy / Exacto)
         # ---------------------------------------------------------
-        print(f"[{self.filename}] Obteniendo padrón de grupos para Foreign Keys...")
+        logger.info(f"[{self.filename}] Obteniendo padrón de grupos para Foreign Keys...")
         try:
             from rapidfuzz import process, fuzz
             has_rapidfuzz = True
         except ImportError:
             has_rapidfuzz = False
-            print("ADVERTENCIA: rapidfuzz no instalado, el mapeo de grupos será exacto.")
+            logger.warning(f"[{self.filename}] rapidfuzz no instalado, el mapeo de grupos será exacto.")
             
         grupos_db = self.uploader.fetch_grupos()
         
@@ -301,7 +329,7 @@ class EtlProcessor:
         # 4. Carga (Supabase)
         resultados_db = {}
         if upload_to_db:
-            print(f"[{self.filename}] Cargando a BD...")
+            logger.info(f"[{self.filename}] Cargando a BD...")
             if investigadores_validos:
                 resultados_db['investigadores'] = self.uploader.upload('importar_ci_investigadores', investigadores_validos)
             if proyectos_validos:
@@ -312,6 +340,25 @@ class EtlProcessor:
                 resultados_db['publicaciones'] = self.uploader.upload('importar_ci_publicaciones', publicaciones_validas)
             if tesis_validas:
                 resultados_db['tesis'] = self.uploader.upload('importar_ci_tesis', tesis_validas)
+
+        duration = time.time() - start_time
+        total_records = (
+            len(investigadores_validos)
+            + len(proyectos_validos)
+            + len(publicaciones_validas)
+            + len(tesis_validas)
+            + len(grupos_validos)
+        )
+        total_errors = len(self.failed_rows)
+        
+        log_connector_status(
+            connector_name="SGPI-CI",
+            status="SUCCESS" if total_errors == 0 else "DEGRADED",
+            duration=duration,
+            processed_records=total_records,
+            errors=total_errors,
+            details=f"Procesamiento finalizado para archivo: {self.filename}"
+        )
 
         return {
             "archivo": self.filename,

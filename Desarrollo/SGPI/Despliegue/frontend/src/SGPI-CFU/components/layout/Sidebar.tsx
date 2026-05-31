@@ -13,22 +13,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-// import { useAuth } from '../../lib/hooks/useAuth';
+import { useAuth } from '../../lib/hooks/useAuth';
 import type { UserRole } from '../../lib/types/auth';
-
-// ── Mock temporal de useAuth (sin backend) ───────────────────────────────────
-// TODO: reemplazar por useAuth real cuando el backend esté disponible
-function useMockAuth() {
-  return {
-    user: {
-      id: 'mock-1',
-      name: 'Ana Mendoza',
-      email: 'amendoza@unmsm.edu.pe',
-      role: 'admin' as UserRole,
-    },
-    logout: async () => { console.log('logout (mock)'); },
-  };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Íconos SVG inline (outline, 18×18, stroke-1.75)
@@ -132,6 +118,15 @@ const AuditIcon = () => (
   </svg>
 );
 
+const CatalogIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+    <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+  </svg>
+);
+
+
 const LogoutIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -168,83 +163,83 @@ const NAV_ITEMS: NavItem[] = [
   {
     id: 'search',
     label: 'Búsqueda Global',
-    href: '/search',
+    href: '/busqueda',
     icon: SearchIcon,
   },
   {
     id: 'config',
     label: 'Configuración',
-    href: '/SGPI-CFSA/Gestion_de_Cuentas_Activas',
+    href: '/configuracion/Gestion_de_Cuentas_Activas',
     icon: ConfigIcon,
-    matchPrefixes: ['/SGPI-CFSA/Gestion_de_Cuentas_Activas'],
+    matchPrefixes: ['/configuracion/Gestion_de_Cuentas_Activas'],
     roles: ['admin'],
   },
   {
     id: 'projects',
     label: 'Proyectos',
-    href: '/SGPI-CFPI',
+    href: '/proyectos',
     icon: FolderIcon,
-    matchPrefixes: ['/projects', '/SGPI-CFPI'],
+    matchPrefixes: ['/proyectos'],
   },
   {
     id: 'investigators',
     label: 'Docentes/Inv.',
-    href: '/investigators',
+    href: '/investigadores',
     icon: UserIcon,
-    matchPrefixes: ['/investigators', '/SGPI-CFMH'],
+    matchPrefixes: ['/investigadores'],
   },
   {
     id: 'groups',
     label: 'Grupos de Inv.',
-    href: '/SGPI-CFGI',
+    href: '/grupos',
     icon: UsersIcon,
-    matchPrefixes: ['/groups', '/SGPI-CFGI'],
+    matchPrefixes: ['/grupos'],
   },
   {
     id: 'sync',
     label: 'Sincronización',
-    href: '/SGPI-CFSF',
+    href: '/sincronizacion',
     icon: SyncIcon,
-    matchPrefixes: ['/SGPI-CFSF'],
+    matchPrefixes: ['/sincronizacion'],
     roles: ['admin'],
   },
   {
     id: 'import',
     label: 'Importación de datos',
-    href: '/SGPI-CFIM',
+    href: '/importacion',
     icon: ImportIcon,
-    matchPrefixes: ['/import', '/SGPI-CFIM'],
+    matchPrefixes: ['/importacion'],
     roles: ['admin', 'secretary'],
   },
   {
     id: 'calls',
     label: 'Alertas Convocatorias',
-    href: '/calls',
+    href: '/convocatorias',
     icon: BellIcon,
-    matchPrefixes: ['/calls', '/SGPI-CFAC'],
+    matchPrefixes: ['/convocatorias'],
     roles: ['admin', 'secretary', 'chief'],
   },
   {
     id: 'publications',
     label: 'Publicaciones y Tesis',
-    href: '/publications',
+    href: '/publicaciones',
     icon: BookIcon,
-    matchPrefixes: ['/publications', '/SGPI-CFPT'],
+    matchPrefixes: ['/publicaciones'],
   },
   {
     id: 'reports',
     label: 'Reportes',
-    href: '/reports',
+    href: '/reportes',
     icon: ChartIcon,
-    matchPrefixes: ['/reports', '/SGPI-CFR'],
+    matchPrefixes: ['/reportes'],
     roles: ['admin', 'secretary', 'chief'],
   },
   {
     id: 'audit',
     label: 'Auditoría de Logs',
-    href: '/SGPI-CFSA/Modulo_de_auditoria',
+    href: '/configuracion/Modulo_de_auditoria',
     icon: AuditIcon,
-    matchPrefixes: ['/SGPI-CFSA/Modulo_de_auditoria'],
+    matchPrefixes: ['/configuracion/Modulo_de_auditoria'],
     roles: ['admin'],
   },
 ];
@@ -256,7 +251,7 @@ const NAV_ITEMS: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useMockAuth();
+  const { user, logout } = useAuth();
 
   /** Filtra los items visibles según el rol del usuario */
   const visibleItems = NAV_ITEMS.filter((item) => {
@@ -274,8 +269,13 @@ export function Sidebar() {
     return decodedPath === item.href || decodedPath.startsWith(`${item.href}/`);
   };
 
-  const handleLogout = () => {
-    router.push('/SGPI-CFIS/login');
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+      router.push('/auth/login');
+    }
   };
 
   return (
@@ -328,7 +328,7 @@ export function Sidebar() {
                     group flex items-center gap-2.5
                     px-3 py-[9px] rounded-md
                     text-[13px] font-sans leading-5
-                    transition-colors duration-100
+                    transition-all duration-300 ease-out
                     ${isActive
                       ? 'bg-[#eef2ff] text-[#001631] font-bold border-r-[3px] border-[#001631]'
                       : 'text-[#475569] font-normal hover:bg-[#f1f5f9] hover:text-[#0f172a] border-r-[3px] border-transparent'
@@ -337,7 +337,7 @@ export function Sidebar() {
                 >
                   {/* Ícono */}
                   <span className={`
-                    flex-shrink-0 transition-colors duration-100 rounded-md p-0.5
+                    flex-shrink-0 transition-all duration-300 ease-out rounded-md p-0.5
                     ${isActive
                       ? 'text-[#001631] bg-[#dde5ff]'
                       : 'text-[#94a3b8] group-hover:text-[#475569]'
@@ -365,12 +365,12 @@ export function Sidebar() {
             text-[13px] font-sans font-normal leading-5
             text-[#64748b] hover:text-[#b91c1c] hover:bg-[#fef2f2]
             border-l-[3px] border-transparent pl-[9px]
-            transition-colors duration-100
+            transition-all duration-300 ease-out
           "
           aria-label="Cerrar sesión"
           type="button"
         >
-          <span className="flex-shrink-0 transition-colors duration-100">
+          <span className="flex-shrink-0 transition-all duration-300 ease-out">
             <LogoutIcon />
           </span>
           <span>Cerrar Sesión</span>

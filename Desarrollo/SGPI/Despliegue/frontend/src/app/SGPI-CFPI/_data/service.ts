@@ -27,253 +27,180 @@ import type {
   MiembroProyecto,
   HitoProyecto,
   HistorialProyecto,
+  EstadoProyecto,
+  RolMiembroProyecto,
+  Convocatoria,
 } from './types';
 import type { InvestigatorPadron } from '../../SGPI-CFGI/_data/types';
-import {
-  MOCK_PROYECTOS,
-  MOCK_PADRON_INVESTIGADORES,
-  getMockStats,
-} from './mock';
-
-// Cuando se active Supabase, descomentar esta importación:
-// import { supabase } from '@/lib/supabase';
-
+import { supabase } from '../../../SGPI-CFU/lib/supabase';
+import { apiClient } from '../../../SGPI-CFU/lib/api/client';
+ 
 const PAGE_SIZE = 10;
-
+ 
+function mapToProyecto(p: any): Proyecto {
+  let status: EstadoProyecto = 'pendiente_validar';
+  if (p.estado_proyecto === 'En ejecución') status = 'en_ejecucion';
+  else if (p.estado_proyecto === 'Concluido') status = 'concluido';
+ 
+  const responsable = p.investigador_proyecto?.find((ip: any) => ip.condicion_rol === 'Responsable');
+  const responsablePrincipal = responsable?.investigador ? `${responsable.investigador.nombres} ${responsable.investigador.apellidos}` : '';
+ 
+  return {
+    id: p.codigo_proyecto,
+    code: p.codigo_proyecto,
+    title: p.titulo_proyecto,
+    tipo: (p.tipo_proyecto === 'Básico' ? 'Básico' : 'Aplicado') as 'Básico' | 'Aplicado',
+    programa: p.tipo_programa || '',
+    convocatoria: String(p.anio_convocatoria || ''),
+    resolucion: p.resolucion_aprobacion || '',
+    montoFinanciado: Number(p.presupuesto_asignado || 0),
+    inicioPlanificado: p.fecha_inicio || '',
+    finPlanificado: p.fecha_informe_final || '',
+    status,
+    grupoVinculado: p.grupo_investigacion?.codigo_grupo || '',
+    responsablePrincipal,
+    createdAt: p.created_at,
+    updatedAt: p.updated_at,
+    fuente: p.presupuesto_asignado > 0 ? 'RAIS' : 'Manual',
+    miembros: (p.investigador_proyecto || []).map((ip: any) => {
+      let rol: RolMiembroProyecto = 'Colaborador';
+      if (ip.condicion_rol === 'Responsable') rol = 'Responsable Principal';
+      else if (ip.condicion_rol === 'Co-investigador') rol = 'Co-investigador';
+      else if (ip.condicion_rol === 'Tesista') rol = 'Tesista vinculado';
+      
+      return {
+        dni: ip.dni_investigador,
+        nombre: ip.investigador ? `${ip.investigador.nombres} ${ip.investigador.apellidos}` : ip.dni_investigador,
+        rol,
+      };
+    }),
+    hitos: (p.entregable || []).map((e: any) => ({
+      id: String(e.id_entregable),
+      nombre: e.tipo_entregable,
+      fechaVencimiento: e.fecha_limite_programada || '',
+      estado: (e.estado_entregable?.toLowerCase() || 'pendiente') as 'pendiente' | 'completado' | 'bloqueado',
+      porcentaje: e.estado_entregable === 'Completado' ? 100 : 0,
+    })).sort((a: any, b: any) => a.id.localeCompare(b.id)),
+    historial: (p.proyecto_estado_historial || []).map((h: any) => ({
+      id: String(h.id_historial),
+      fecha: h.fecha_cambio,
+      usuario: h.usuario?.correo_institucional || 'Sistema',
+      cambio: `${h.estado_anterior || 'Inicio'} → ${h.estado_nuevo}`,
+      observacion: h.justificacion,
+    })).sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)),
+  };
+}
+ 
 export interface PaginatedProyectos {
   items: Proyecto[];
   total: number;
   page: number;
   pages: number;
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
-// Listado paginado con filtros
+// Listado paginado con filtros (ruteado por backend para habilitar logging)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getProyectos(
   filtros: FiltrosProyectos,
   page: number = 1,
 ): Promise<PaginatedProyectos> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  let query = supabase
-    .from('proyecto')
-    .select('*, proyecto_miembro(*), proyecto_hito(*)', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+  // Mapear estado frontend → valor BD
+  let estadoBackend: string | undefined;
+  if (filtros.estado === 'en_ejecucion') estadoBackend = 'En ejecución';
+  else if (filtros.estado === 'concluido') estadoBackend = 'Concluido';
+  else if (filtros.estado === 'pendiente_validar') estadoBackend = 'Aprobado';
 
-  if (filtros.buscar.trim()) {
-    query = query.or(
-      `code.ilike.%${filtros.buscar}%,title.ilike.%${filtros.buscar}%,responsable_principal.ilike.%${filtros.buscar}%`
-    );
-  }
-  if (filtros.estado)            query = query.eq('status', filtros.estado);
-  if (filtros.convocatoria)      query = query.eq('convocatoria', filtros.convocatoria);
-  if (filtros.inicioPlanificado) query = query.eq('inicio_planificado', filtros.inicioPlanificado);
+  const params: Record<string, any> = { page, limit: 10 };
+  if (filtros.buscar?.trim()) params.buscar = filtros.buscar.trim();
+  if (estadoBackend) params.estado = estadoBackend;
+  if (filtros.convocatoria) params.convocatoria = filtros.convocatoria;
+  if (filtros.inicioPlanificado) params.inicio_planificado = filtros.inicioPlanificado;
 
-  const { data, count, error } = await query;
-  if (error) throw new Error(error.message);
+  const qs = Object.entries(params)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&');
 
-  const total = count ?? 0;
-  
-  const items = (data || []).map((p: any) => ({
-    id: p.code,
-    code: p.code,
-    title: p.title,
-    tipo: p.tipo,
-    programa: p.programa,
-    convocatoria: p.convocatoria,
-    resolucion: p.resolucion,
-    montoFinanciado: p.monto_financiado,
-    inicioPlanificado: p.inicio_planificado,
-    finPlanificado: p.fin_planificado,
-    status: p.status,
-    grupoVinculado: p.grupo_vinculado,
-    responsablePrincipal: p.responsable_principal,
-    createdAt: p.created_at,
-    updatedAt: p.updated_at,
-    fuente: p.fuente,
-    miembros: (p.proyecto_miembro || []).map((m: any) => ({
-      dni: m.docente_dni,
-      nombre: m.nombre,
-      rol: m.rol,
-      estado: m.estado,
-    })),
-    hitos: (p.proyecto_hito || []).map((h: any) => ({
-      id: h.id,
-      nombre: h.nombre,
-      fechaVencimiento: h.fecha_vencimiento,
-      estado: h.estado,
-      porcentaje: h.porcentaje,
-    })),
-    historial: [], // Cargar a demanda en el detalle
-  }));
+  const data = await apiClient.get<{ items: any[]; total: number; page: number; pages: number }>(
+    `/projects?${qs}`
+  );
 
   return {
-    items,
-    total,
-    page,
-    pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
-  };
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 300));
-
-  let list = [...MOCK_PROYECTOS];
-
-  if (filtros.buscar.trim()) {
-    const q = filtros.buscar.toLowerCase();
-    list = list.filter(
-      (p) =>
-        p.code.toLowerCase().includes(q) ||
-        p.title.toLowerCase().includes(q) ||
-        p.responsablePrincipal.toLowerCase().includes(q)
-    );
-  }
-
-  if (filtros.estado) {
-    list = list.filter((p) => p.status === filtros.estado);
-  }
-
-  if (filtros.convocatoria) {
-    list = list.filter((p) => p.convocatoria === filtros.convocatoria);
-  }
-
-  if (filtros.inicioPlanificado) {
-    list = list.filter((p) => p.inicioPlanificado === filtros.inicioPlanificado);
-  }
-
-  const total = list.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const start = (page - 1) * PAGE_SIZE;
-
-  return {
-    items: list.slice(start, start + PAGE_SIZE),
-    total,
-    page,
-    pages,
+    items: (data.items || []).map(mapToProyecto),
+    total: data.total,
+    page: data.page,
+    pages: data.pages,
   };
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
-// Obtener proyecto por ID o código
+// Obtener proyecto por ID o código (ruteado por backend para habilitar logging)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getProyectoById(id: string): Promise<Proyecto | null> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  const { data: p, error } = await supabase
-    .from('proyecto')
-    .select('*, proyecto_miembro(*), proyecto_hito(*), proyecto_historial(*)')
-    .eq('code', id)
-    .single();
-
-  if (error || !p) return null;
-
-  return {
-    id: p.code,
-    code: p.code,
-    title: p.title,
-    tipo: p.tipo,
-    programa: p.programa,
-    convocatoria: p.convocatoria,
-    resolucion: p.resolucion,
-    montoFinanciado: p.monto_financiado,
-    inicioPlanificado: p.inicio_planificado,
-    finPlanificado: p.fin_planificado,
-    status: p.status,
-    grupoVinculado: p.grupo_vinculado,
-    responsablePrincipal: p.responsable_principal,
-    createdAt: p.created_at,
-    updatedAt: p.updated_at,
-    fuente: p.fuente,
-    miembros: (p.proyecto_miembro || []).map((m: any) => ({
-      dni: m.docente_dni,
-      nombre: m.nombre,
-      rol: m.rol,
-      estado: m.estado,
-    })),
-    hitos: (p.proyecto_hito || []).map((h: any) => ({
-      id: h.id,
-      nombre: h.nombre,
-      fechaVencimiento: h.fecha_vencimiento,
-      estado: h.estado,
-      porcentaje: h.porcentaje,
-    })).sort((a: any, b: any) => a.id.localeCompare(b.id)),
-    historial: (p.proyecto_historial || []).map((h: any) => ({
-      id: h.id,
-      fecha: h.fecha,
-      usuario: h.usuario,
-      cambio: h.cambio,
-      observacion: h.observacion,
-    })).sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)),
-  };
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 150));
-  return MOCK_PROYECTOS.find((p) => p.id === id || p.code === id) ?? null;
+  try {
+    const p = await apiClient.get<any>(`/projects/${id}`);
+    if (!p) return null;
+    return mapToProyecto(p);
+  } catch (err: any) {
+    // 404 devuelto por el backend
+    if (err?.status === 404 || err?.message?.includes('404')) return null;
+    throw err;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Obtener estadísticas del módulo
 // ─────────────────────────────────────────────────────────────────────────────
-export async function getStats(): Promise<StatsProyectos> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  const { data, error } = await supabase
-    .from('proyecto')
-    .select('status');
-
-  if (error) throw new Error(error.message);
-
-  const total = data.length;
-  const pending = data.filter((p: any) => p.status === 'pendiente_validar').length;
-  const execution = data.filter((p: any) => p.status === 'en_ejecucion').length;
-  const completed = data.filter((p: any) => p.status === 'concluido').length;
-
-  return {
-    totalProyectos: total,
-    pendientesValidar: pending,
-    enEjecucion: execution,
-    concluidos: completed,
-  };
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 100));
-  return getMockStats();
+function mapToEstadoProyecto(estado_proyecto: string): EstadoProyecto {
+  if (estado_proyecto === 'En ejecución') return 'en_ejecucion';
+  if (estado_proyecto === 'Concluido') return 'concluido';
+  return 'pendiente_validar';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Buscar investigadores en el padrón
+// Obtener estadísticas del módulo (ruteado por backend para habilitar logging)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getStats(): Promise<StatsProyectos> {
+  // Solicitamos todas las páginas mínimas solo para el conteo por estado;
+  // el backend ya calcula el total, así que hacemos 3 peticiones ligeras.
+  const [all, enEjecucion, concluidos] = await Promise.all([
+    apiClient.get<{ total: number }>('/projects?limit=1'),
+    apiClient.get<{ total: number }>('/projects?limit=1&estado=En%20ejecuci%C3%B3n'),
+    apiClient.get<{ total: number }>('/projects?limit=1&estado=Concluido'),
+  ]);
+
+  const total = (all as any).total ?? 0;
+  const execution = (enEjecucion as any).total ?? 0;
+  const completed = (concluidos as any).total ?? 0;
+  const pending = total - execution - completed;
+
+  return {
+    totalProyectos: total,
+    pendientesValidar: Math.max(0, pending),
+    enEjecucion: execution,
+    concluidos: completed,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Buscar investigadores en el padrón (ruteado por backend para habilitar logging)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function buscarInvestigadores(buscar: string): Promise<InvestigatorPadron[]> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  const { data, error } = await supabase
-    .from('docentes')
-    .select('dni, nombres, apellidos, email, facultad, departamento')
-    .or(`dni.eq.${buscar},nombres.ilike.%${buscar}%,apellidos.ilike.%${buscar}%`)
-    .limit(10);
+  if (!buscar.trim()) return [];
 
-  if (error) throw new Error(error.message);
+  const data = await apiClient.get<{ items: any[]; total: number } | any[]>(
+    `/investigators?buscar=${encodeURIComponent(buscar.trim())}&limit=10`
+  );
 
-  return (data || []).map((d: any) => ({
+  const items = Array.isArray(data) ? data : (data as any).items ?? [];
+
+  return items.map((d: any) => ({
     dni: d.dni,
     nombre: `${d.nombres} ${d.apellidos}`,
-    email: d.email,
-    facultad: d.facultad || '',
-    departamento: d.departamento || '',
+    email: `${d.dni}@unmsm.edu.pe`,
+    facultad: d.facultad_dependencia || '',
+    departamento: d.departamento_academico || '',
   }));
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 150));
-  if (!buscar.trim()) return [];
-  const q = buscar.toLowerCase();
-  return MOCK_PADRON_INVESTIGADORES.filter(
-    (inv) =>
-      inv.nombre.toLowerCase().includes(q) ||
-      inv.dni.includes(q) ||
-      inv.email.toLowerCase().includes(q)
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,109 +210,78 @@ export async function validarProyecto(
   id: string,
   payload: ProyectoPayload
 ): Promise<Proyecto> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  // 1. Actualizar el proyecto principal
-  const { error: errProy } = await supabase
-    .from('proyecto')
-    .update({
-      title: payload.title,
-      tipo: payload.tipo,
-      programa: payload.programa,
-      convocatoria: payload.convocatoria,
-      resolucion: payload.resolucion,
-      monto_financiado: payload.montoFinanciado,
-      inicio_planificado: payload.inicioPlanificado,
-      fin_planificado: payload.finPlanificado,
-      status: payload.status,
-      grupo_vinculado: payload.grupoVinculado,
-      responsable_principal: payload.responsablePrincipal,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('code', id);
+  // Mapear estado
+  let estadoProyecto = 'Aprobado';
+  if (payload.status === 'en_ejecucion') estadoProyecto = 'En ejecución';
+  else if (payload.status === 'concluido') estadoProyecto = 'Concluido';
 
-  if (errProy) throw new Error(errProy.message);
+  // 1. Actualizar datos del proyecto vía backend
+  await apiClient.put<any>(`/projects/${id}`, {
+    titulo_proyecto: payload.title,
+    tipo_proyecto: payload.tipo,
+    tipo_programa: payload.programa,
+    anio_convocatoria: Number(payload.convocatoria) || null,
+    resolucion_aprobacion: payload.resolucion,
+    presupuesto_asignado: payload.montoFinanciado,
+    fecha_inicio: payload.inicioPlanificado || null,
+    fecha_informe_final: payload.finPlanificado || null,
+    estado_proyecto: estadoProyecto,
+    codigo_grupo: payload.grupoVinculado || null,
+    justificacion: payload.cambioEstadoObs || null,
+  });
 
-  // 2. Insertar historial de auditoría si corresponde
-  if (payload.cambioEstadoObs) {
-    await supabase.from('proyecto_historial').insert({
-      proyecto_code: id,
-      usuario: 'Ana Mendoza (Admin)',
-      cambio: `Auditoría / Validación`,
-      observacion: payload.cambioEstadoObs,
-      fecha: new Date().toISOString(),
-    });
+  // 2. Limpiar investigadores asociados
+  try {
+    await apiClient.delete<any>(`/projects/${id}/investigators`);
+  } catch (err) {
+    console.warn(`No se pudieron eliminar investigadores para el proyecto ${id}:`, err);
   }
 
-  // 3. Sincronizar miembros (Delete & Insert)
-  await supabase.from('proyecto_miembro').delete().eq('proyecto_code', id);
+  // 3. Insertar nuevos investigadores
   if (payload.miembros.length > 0) {
-    const { error: errMbr } = await supabase.from('proyecto_miembro').insert(
-      payload.miembros.map((m) => ({
-        proyecto_code: id,
-        docente_dni: m.dni,
-        nombre: m.nombre,
-        rol: m.rol,
-        estado: m.estado || 'activo',
-      }))
-    );
-    if (errMbr) throw new Error(errMbr.message);
+    for (const m of payload.miembros) {
+      let condicion_rol = 'Colaborador';
+      if (m.rol === 'Responsable Principal') condicion_rol = 'Responsable';
+      else if (m.rol === 'Co-investigador') condicion_rol = 'Co-investigador';
+      else if (m.rol === 'Tesista vinculado') condicion_rol = 'Tesista';
+
+      try {
+        await apiClient.post<any>(`/projects/${id}/investigators`, {
+          codigo_proyecto: id,
+          dni_investigador: m.dni,
+          condicion_rol,
+          tipo_vinculo: 'Docente',
+          facultad_integrante: 'Ingeniería de Sistemas e Informática',
+        });
+      } catch (err) {
+        console.warn(`No se pudo agregar investigador ${m.dni}:`, err);
+      }
+    }
   }
 
   // Devolver el objeto actualizado completo
   const proyAct = await getProyectoById(id);
   if (!proyAct) throw new Error('No se pudo recuperar el proyecto actualizado.');
   return proyAct;
-  ──────────────────────────────────────────────────────────────────────────── */
+}
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 500));
+// ─────────────────────────────────────────────────────────────────────────────
+// Obtener grupos de investigación disponibles desde el backend
+// ─────────────────────────────────────────────────────────────────────────────
+export interface GrupoInvestigacion {
+  codigo_grupo: string;
+  nombre_grupo: string;
+  estado_grupo?: string;
+}
 
-  const idx = MOCK_PROYECTOS.findIndex((p) => p.id === id || p.code === id);
-  if (idx === -1) throw new Error('Proyecto no encontrado.');
-
-  const original = MOCK_PROYECTOS[idx];
-
-  // Si cambia de estado o se audita, creamos una entrada en el historial
-  const nuevoHistorial = [...original.historial];
-  if (payload.status !== original.status || payload.cambioEstadoObs) {
-    nuevoHistorial.unshift({
-      id: `hist-${Date.now()}`,
-      fecha: new Date().toISOString(),
-      usuario: 'Ana Mendoza (Admin)',
-      cambio: `${original.status === 'pendiente_validar' ? 'Pendiente Validar' : original.status === 'en_ejecucion' ? 'En Ejecución' : 'Concluido'} → ${payload.status === 'pendiente_validar' ? 'Pendiente Validar' : payload.status === 'en_ejecucion' ? 'En Ejecución' : 'Concluido'}`,
-      observacion: payload.cambioEstadoObs || 'Validación y actualización de datos técnicos/financieros y equipo.'
-    });
+export async function getGruposDisponibles(): Promise<GrupoInvestigacion[]> {
+  try {
+    const data = await apiClient.get<GrupoInvestigacion[]>('/groups/?limit=200');
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('Error cargando grupos de investigación:', err);
+    return [];
   }
-
-  // Modificar hitos en base al estado del proyecto
-  const nuevosHitos = [...original.hitos];
-  if (payload.status === 'en_ejecucion') {
-    if (nuevosHitos[0]) nuevosHitos[0].estado = 'pendiente';
-  } else if (payload.status === 'concluido') {
-    nuevosHitos.forEach(h => h.estado = 'completado');
-  }
-
-  const updated: Proyecto = {
-    ...original,
-    title: payload.title,
-    tipo: payload.tipo,
-    programa: payload.programa,
-    convocatoria: payload.convocatoria,
-    resolucion: payload.resolucion,
-    montoFinanciado: payload.montoFinanciado,
-    inicioPlanificado: payload.inicioPlanificado,
-    finPlanificado: payload.finPlanificado,
-    status: payload.status,
-    grupoVinculado: payload.grupoVinculado,
-    responsablePrincipal: payload.responsablePrincipal,
-    miembros: payload.miembros,
-    hitos: nuevosHitos,
-    historial: nuevoHistorial,
-    updatedAt: new Date().toISOString()
-  };
-
-  MOCK_PROYECTOS[idx] = updated;
-  return updated;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,117 +290,52 @@ export async function validarProyecto(
 export async function crearProyecto(
   payload: ProyectoPayload & { code: string; fuente: string }
 ): Promise<Proyecto> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  const { error: errProy } = await supabase.from('proyecto').insert({
-    code: payload.code,
-    title: payload.title,
-    tipo: payload.tipo,
-    programa: payload.programa,
-    convocatoria: payload.convocatoria,
-    resolucion: payload.resolucion,
-    monto_financiado: payload.montoFinanciado,
-    inicio_planificado: payload.inicioPlanificado,
-    fin_planificado: payload.finPlanificado,
-    status: payload.status,
-    grupo_vinculado: payload.grupoVinculado,
-    responsable_principal: payload.responsablePrincipal,
-    fuente: payload.fuente,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+  // Mapear estado frontend → valor BD
+  let estadoProyecto = 'Aprobado';
+  if (payload.status === 'en_ejecucion') estadoProyecto = 'En ejecución';
+  else if (payload.status === 'concluido') estadoProyecto = 'Concluido';
+
+  // 1. Crear el proyecto vía backend (resuelve codigo_grupo → id_grupo internamente)
+  await apiClient.post<any>('/projects/', {
+    codigo_proyecto:      payload.code,
+    titulo_proyecto:      payload.title,
+    tipo_proyecto:        payload.tipo,
+    tipo_programa:        payload.programa,
+    anio_convocatoria:    Number(payload.convocatoria) || null,
+    resolucion_aprobacion: payload.resolucion,
+    presupuesto_asignado: payload.montoFinanciado,
+    fecha_inicio:         payload.inicioPlanificado || null,
+    fecha_informe_final:  payload.finPlanificado || null,
+    estado_proyecto:      estadoProyecto,
+    codigo_grupo:         payload.grupoVinculado || null,
   });
 
-  if (errProy) throw new Error(errProy.message);
+  // 2. Agregar investigadores al proyecto
+  for (const m of payload.miembros) {
+    let condicion_rol = 'Colaborador';
+    if (m.rol === 'Responsable Principal') condicion_rol = 'Responsable';
+    else if (m.rol === 'Co-investigador')  condicion_rol = 'Co-investigador';
+    else if (m.rol === 'Tesista vinculado') condicion_rol = 'Tesista';
 
-  // Insertar miembros iniciales
-  if (payload.miembros.length > 0) {
-    await supabase.from('proyecto_miembro').insert(
-      payload.miembros.map((m) => ({
-        proyecto_code: payload.code,
-        docente_dni: m.dni,
-        nombre: m.nombre,
-        rol: m.rol,
-        estado: 'activo',
-      }))
-    );
+    try {
+      await apiClient.post<any>(`/projects/${payload.code}/investigators`, {
+        codigo_proyecto:     payload.code,
+        dni_investigador:    m.dni,
+        condicion_rol,
+        tipo_vinculo:        'Docente',
+        facultad_integrante: 'Ingeniería de Sistemas e Informática',
+      });
+    } catch (err) {
+      console.warn(`No se pudo agregar investigador ${m.dni}:`, err);
+    }
   }
 
-  // Insertar hitos iniciales por defecto
-  const h1Vence = new Date(new Date(payload.inicioPlanificado).setMonth(new Date(payload.inicioPlanificado).getMonth() + 12)).toISOString().split('T')[0];
-  const h2Vence = new Date(new Date(payload.inicioPlanificado).setMonth(new Date(payload.inicioPlanificado).getMonth() + 36)).toISOString().split('T')[0];
-  
-  await supabase.from('proyecto_hito').insert([
-    { proyecto_code: payload.code, nombre: 'Informe Académico (12 Meses)', fecha_vencimiento: h1Vence, estado: 'pendiente', porcentaje: 0 },
-    { proyecto_code: payload.code, nombre: 'Productos Entregables (36 Meses)', fecha_vencimiento: h2Vence, estado: 'bloqueado', porcentaje: 0 }
-  ]);
-
-  // Insertar primer historial
-  await supabase.from('proyecto_historial').insert({
-    proyecto_code: payload.code,
-    usuario: 'Ana Mendoza (Admin)',
-    cambio: 'Creación Manual',
-    observacion: 'Proyecto creado manualmente en el sistema.',
-    fecha: new Date().toISOString(),
-  });
-
+  // 3. Recuperar el proyecto creado para devolverlo al formulario
   const proyNvo = await getProyectoById(payload.code);
   if (!proyNvo) throw new Error('No se pudo recuperar el proyecto creado.');
   return proyNvo;
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 500));
-
-  const existe = MOCK_PROYECTOS.some((p) => p.code === payload.code);
-  if (existe) throw new Error('El código del proyecto ya existe.');
-
-  const nuevo: Proyecto = {
-    id: payload.code,
-    code: payload.code,
-    title: payload.title,
-    tipo: payload.tipo,
-    programa: payload.programa,
-    convocatoria: payload.convocatoria,
-    resolucion: payload.resolucion,
-    montoFinanciado: payload.montoFinanciado,
-    inicioPlanificado: payload.inicioPlanificado,
-    finPlanificado: payload.finPlanificado,
-    status: payload.status,
-    grupoVinculado: payload.grupoVinculado,
-    responsablePrincipal: payload.responsablePrincipal,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    fuente: payload.fuente,
-    miembros: payload.miembros,
-    hitos: [
-      {
-        id: `hito-${Date.now()}-1`,
-        nombre: 'Informe Académico (12 Meses)',
-        fechaVencimiento: new Date(new Date(payload.inicioPlanificado).setMonth(new Date(payload.inicioPlanificado).getMonth() + 12)).toISOString().split('T')[0],
-        estado: payload.status === 'en_ejecucion' ? 'pendiente' : 'bloqueado',
-        porcentaje: 0
-      },
-      {
-        id: `hito-${Date.now()}-2`,
-        nombre: 'Productos Entregables (36 Meses)',
-        fechaVencimiento: new Date(new Date(payload.inicioPlanificado).setMonth(new Date(payload.inicioPlanificado).getMonth() + 36)).toISOString().split('T')[0],
-        estado: 'bloqueado',
-        porcentaje: 0
-      }
-    ],
-    historial: [
-      {
-        id: `hist-${Date.now()}`,
-        fecha: new Date().toISOString(),
-        usuario: 'Ana Mendoza (Admin)',
-        cambio: 'Creación Manual',
-        observacion: 'Proyecto creado manualmente en el sistema.'
-      }
-    ]
-  };
-
-  MOCK_PROYECTOS.push(nuevo);
-  return nuevo;
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Registrar hito completado
@@ -513,74 +344,51 @@ export async function completarHito(
   proyectoId: string,
   hitoId: string
 ): Promise<Proyecto> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  // 1. Actualizar estado del hito en base de datos
-  const { error: errHito } = await supabase
-    .from('proyecto_hito')
-    .update({ estado: 'completado', porcentaje: 100 })
-    .eq('id', hitoId);
+  let id_entregable: number | null = null;
 
-  if (errHito) throw new Error(errHito.message);
-
-  // 2. Si se completó el hito de 12 meses, desbloquear el hito de 36 meses
-  if (hitoId === 'hito-1' || hitoId.endsWith('-1')) {
-    // Buscar el hito de 36 meses (usualmente tiene id hito-2)
-    await supabase
-      .from('proyecto_hito')
-      .update({ estado: 'pendiente' })
-      .eq('proyecto_code', proyectoId)
-      .eq('estado', 'bloqueado');
+  // 1. Determinar el ID numérico y si es el primer hito
+  if (/^\d+$/.test(hitoId)) {
+    id_entregable = Number(hitoId);
+  } else {
+    const isFirstHito = hitoId.endsWith('-1') || hitoId === 'hito-1';
+    try {
+      const p = await apiClient.get<any>(`/projects/${proyectoId}`);
+      if (p && p.entregable && p.entregable.length > 0) {
+        const sorted = [...p.entregable].sort((a: any, b: any) => a.id_entregable - b.id_entregable);
+        if (isFirstHito) {
+          id_entregable = sorted[0].id_entregable;
+        } else if (sorted.length > 1) {
+          id_entregable = sorted[1].id_entregable;
+        }
+      }
+    } catch (err) {
+      console.error('Error recuperando entregables para hito mock:', err);
+    }
   }
 
-  // 3. Registrar en el historial de auditorías
-  await supabase.from('proyecto_historial').insert({
-    proyecto_code: proyectoId,
-    usuario: 'Ana Mendoza (Admin)',
-    cambio: 'Seguimiento de Hitos',
-    observacion: 'Recepción registrada para el hito.',
-    fecha: new Date().toISOString(),
+  if (id_entregable === null) throw new Error('Hito no encontrado.');
+
+  // 2. Actualizar el estado del hito en entregable vía backend
+  await apiClient.patch<any>(`/projects/${proyectoId}/deliverables/${id_entregable}`, {
+    estado_entregable: 'Completado',
+    fecha_entrega_real: new Date().toISOString().split('T')[0],
   });
 
   const proyAct = await getProyectoById(proyectoId);
   if (!proyAct) throw new Error('No se pudo recuperar el proyecto actualizado.');
   return proyAct;
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const idx = MOCK_PROYECTOS.findIndex((p) => p.id === proyectoId || p.code === proyectoId);
-  if (idx === -1) throw new Error('Proyecto no encontrado.');
-
-  const original = MOCK_PROYECTOS[idx];
-  const nuevosHitos = original.hitos.map(h => {
-    if (h.id === hitoId) {
-      return { ...h, estado: 'completado' as const, porcentaje: 100 };
-    }
-    return h;
-  });
-
-  if (hitoId === 'hito-1' || hitoId.endsWith('-1')) {
-    const hito2 = nuevosHitos.find(h => h.id === 'hito-2' || h.id.endsWith('-2'));
-    if (hito2 && hito2.estado === 'bloqueado') {
-      hito2.estado = 'pendiente';
-    }
-  }
-
-  const updated: Proyecto = {
-    ...original,
-    hitos: nuevosHitos,
-    historial: [
-      {
-        id: `hist-${Date.now()}`,
-        fecha: new Date().toISOString(),
-        usuario: 'Ana Mendoza (Admin)',
-        cambio: 'Seguimiento de Hitos',
-        observacion: `Recepción registrada para el hito.`
-      },
-      ...original.historial
-    ],
-    updatedAt: new Date().toISOString()
-  };
-
-  MOCK_PROYECTOS[idx] = updated;
-  return updated;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Obtener convocatorias disponibles desde el backend
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getConvocatorias(): Promise<Convocatoria[]> {
+  try {
+    const data = await apiClient.get<Convocatoria[]>('/calls/?limit=200');
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('Error cargando convocatorias:', err);
+    return [];
+  }
+}
+

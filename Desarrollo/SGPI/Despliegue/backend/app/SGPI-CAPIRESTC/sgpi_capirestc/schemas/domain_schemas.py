@@ -129,13 +129,18 @@ class ProyectoUpdate(BaseModel):
     resolucion_aprobacion: Optional[str] = None
     titulo_proyecto: Optional[str] = None
     tipo_proyecto: Optional[str] = None
+    tipo_programa: Optional[str] = None
+    anio_convocatoria: Optional[int] = None
     fecha_inicio: Optional[date] = None
     fecha_rendicion_35: Optional[date] = None
     fecha_rendicion_70: Optional[date] = None
     fecha_rendicion_100: Optional[date] = None
     fecha_informe_final: Optional[date] = None
     presupuesto_asignado: Optional[float] = None
+    estado_proyecto: Optional[str] = None
+    codigo_grupo: Optional[str] = None
     observaciones: Optional[str] = None
+    justificacion: Optional[str] = None
 
 class ProyectoEstadoUpdate(BaseModel):
     estado_proyecto: str

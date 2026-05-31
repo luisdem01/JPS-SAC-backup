@@ -19,8 +19,8 @@ export const API_BASE_URL =
 /** Prefijo de versión de la API */
 export const API_PREFIX = '/api/v1';
 
-/** Timeout por defecto para peticiones normales (5 segundos) */
-export const DEFAULT_TIMEOUT_MS = 5_000;
+/** Timeout por defecto para peticiones normales (15 segundos) */
+export const DEFAULT_TIMEOUT_MS = 15_000;
 
 /** Timeout para operaciones pesadas: importaciones, sync, reportes (10 minutos) */
 export const HEAVY_OPERATION_TIMEOUT_MS = 10 * 60 * 1_000;
@@ -120,33 +120,33 @@ export const STORAGE_KEY_LOCK_UNTIL     = `${STORAGE_PREFIX}lock_until`;
 /** Rutas principales de la aplicación */
 export const ROUTES = {
   /** Página de inicio de sesión */
-  LOGIN:          '/login',
+  LOGIN:          '/auth/login',
   /** Dashboard principal */
   DASHBOARD:      '/dashboard',
   /** Módulo de investigadores */
-  INVESTIGATORS:  '/investigators',
+  INVESTIGATORS:  '/investigadores',
   /** Detalle de un investigador */
-  INVESTIGATOR:   (id: string) => `/investigators/${id}`,
+  INVESTIGATOR:   (id: string) => `/investigadores/${id}`,
   /** Módulo de proyectos */
-  PROJECTS:       '/projects',
+  PROJECTS:       '/proyectos',
   /** Detalle de un proyecto */
-  PROJECT:        (id: string) => `/projects/${id}`,
+  PROJECT:        (id: string) => `/proyectos/${id}`,
   /** Módulo de publicaciones */
-  PUBLICATIONS:   '/publications',
+  PUBLICATIONS:   '/publicaciones',
   /** Módulo de convocatorias */
-  CALLS:          '/calls',
+  CALLS:          '/convocatorias',
   /** Módulo de importación */
-  IMPORT:         '/import',
+  IMPORT:         '/importacion',
   /** Módulo de sincronización ETL */
-  SYNC:           '/sync',
+  SYNC:           '/sincronizacion',
   /** Módulo de reportes */
-  REPORTS:        '/reports',
+  REPORTS:        '/reportes',
   /** Panel de administración de usuarios */
   USERS:          '/admin/users',
   /** Panel de logs de auditoría */
   LOGS:           '/admin/logs',
   /** Búsqueda global */
-  SEARCH:         '/search',
+  SEARCH:         '/busqueda',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────

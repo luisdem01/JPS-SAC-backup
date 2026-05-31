@@ -385,7 +385,7 @@ function Checkbox({ id, label, checked, count, onChange }: {
 // Página principal
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function BusquedaGlobalPage() {
+function BusquedaGlobalPageContent() {
   const router       = useRouter();
   const searchParams = useSearchParams();
 
@@ -761,5 +761,13 @@ export default function BusquedaGlobalPage() {
 
       </div>
     </MainLayout>
+  );
+}
+
+export default function BusquedaGlobalPage() {
+  return (
+    <React.Suspense fallback={<div className="p-6 text-center text-on-surface-variant font-sans animate-pulse">Cargando búsqueda...</div>}>
+      <BusquedaGlobalPageContent />
+    </React.Suspense>
   );
 }

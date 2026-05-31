@@ -1,8 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from sqlalchemy import select, func, or_
+from typing import List, Optional
+from pydantic import BaseModel
+import math
 
 from app.db.session import get_db
+from app.models.domain import Investigador
+from app.core.logger import logger
 from sgpi_capirestc.crud.crud_investigador import investigador
 from sgpi_capirestc.schemas.domain_schemas import InvestigadorCreate, InvestigadorUpdate, InvestigadorResponse
 from app.core.security import get_current_user
@@ -10,9 +15,86 @@ from app.core.audit import log_audit_event
 
 router = APIRouter()
 
-@router.get("/", response_model=List[InvestigadorResponse])
-async def list_investigadores(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    return await investigador.get_multi(db, skip=skip, limit=limit)
+
+class PaginatedInvestigadoresResponse(BaseModel):
+    items: List[InvestigadorResponse]
+    total: int
+    page: int
+    pages: int
+
+
+@router.get("/", response_model=PaginatedInvestigadoresResponse)
+async def list_investigadores(
+    buscar: Optional[str] = None,
+    departamento: Optional[str] = None,
+    nivelRenacyt: Optional[str] = None,
+    estado: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Lista y filtra investigadores con soporte de paginación y logging.
+    """
+    logger.info(
+        f"Search query triggered: buscar={buscar}, departamento={departamento}, "
+        f"nivelRenacyt={nivelRenacyt}, estado={estado}, page={page}, limit={limit}"
+    )
+
+    # Construir consulta base
+    stmt = select(Investigador)
+    count_stmt = select(func.count(Investigador.dni))
+
+    # Filtros
+    filters = []
+    if buscar and buscar.strip():
+        term = f"%{buscar.strip()}%"
+        filters.append(or_(
+            Investigador.dni.ilike(term),
+            Investigador.apellidos.ilike(term),
+            Investigador.nombres.ilike(term)
+        ))
+    if departamento:
+        filters.append(Investigador.departamento_academico == departamento)
+    if nivelRenacyt:
+        filters.append(Investigador.categoria_renacyt == nivelRenacyt)
+    if estado:
+        estado_map = {
+            "activo": "Activo",
+            "inactivo": "Inactivo",
+            "por_vencer": "Por Vencer"
+        }
+        estado_mapped = estado_map.get(estado, estado)
+        filters.append(Investigador.estado_vigencia == estado_mapped)
+
+    if filters:
+        stmt = stmt.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+
+    # Ordenar por apellidos ascendente
+    stmt = stmt.order_by(Investigador.apellidos.asc())
+
+    # Conteo total
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar_one()
+
+    # Paginación
+    skip = (page - 1) * limit
+    stmt = stmt.offset(skip).limit(limit)
+
+    # Ejecutar consulta
+    result = await db.execute(stmt)
+    items = result.scalars().all()
+
+    pages = math.ceil(total / limit) if total > 0 else 1
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "pages": pages
+    }
 
 @router.get("/{dni}", response_model=InvestigadorResponse)
 async def get_investigador(dni: str, db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):

@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     JWT_SECRET: str = ""
 
+    # -------------------------------------------------------------------------
+    # Logging Configuration
+    # -------------------------------------------------------------------------
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE_PATH: str = "logs/sgpi.log"
+    LOG_MAX_BYTES: int = 10485760  # 10MB
+    LOG_BACKUP_COUNT: int = 5
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
