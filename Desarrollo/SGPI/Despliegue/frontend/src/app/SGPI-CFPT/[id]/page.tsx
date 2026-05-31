@@ -19,7 +19,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
-import { ExportButton } from '@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow';
 import type {
   RegistroProduccion, InvestigadorVinculado, InvestigadorResumen,
   RolPublicacion, Cuartil,
@@ -525,10 +524,6 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
             aria-label="Volver a la bandeja">
             <BackArrowIcon /> Volver a Bandeja
           </button>
-          <ExportButton
-            context="publicaciones_tesis"
-            label="Generar Constancia"
-          />
         </div>
       </div>
 

@@ -39,7 +39,7 @@ async def export_excel(
     # Registrar evento de auditoría
     await log_audit_event(
         db=db,
-        tipo_evento="EXPORT_EXCEL",
+        tipo_evento="EXPORT_REPORT",
         entidad_afectada="report_export",
         pk_entidad=f"tipo_{params.tipo_reporte.replace(' ', '_').lower()}",
         valor_nuevo={"parametros": params.model_dump(mode='json'), "formato": "excel"},

@@ -2,7 +2,7 @@
 
 /**
  * @file page.tsx
- * @route /reportes  (alias: /reports)
+ * @route /SGPI-CFR  (alias: /reports)
  * @description Módulo de Generador de Reportes del SGPI.
  *
  * Estados de pantalla:
@@ -25,7 +25,6 @@ import {
   PASOS_CARGA, UMBRAL_ALTO, UMBRAL_BAJO,
 } from './_data/service';
 import { ExportButton } from '@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow';
-import { removeAccents } from '@/SGPI-CFU/lib/utils/formatters';
 
 const getExportContext = (tipo: string) => {
   switch(tipo) {
@@ -158,14 +157,22 @@ const ArrowBack = () => (
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LoadingModal() {
-  const [seconds, setSeconds] = useState(0);
+  const [pasoIdx,   setPasoIdx]   = useState(0);
+  const [progreso,  setProgreso]  = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSeconds((s) => s + 1);
-    }, 1000);
-    return () => clearInterval(timer);
+    intervalRef.current = setInterval(() => {
+      setPasoIdx((idx) => {
+        const next = Math.min(idx + 1, PASOS_CARGA.length - 1);
+        setProgreso(PASOS_CARGA[next].progreso);
+        return next;
+      });
+    }, 420);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
+
+  const paso = PASOS_CARGA[pasoIdx];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -198,20 +205,20 @@ function LoadingModal() {
             Generando Reporte
           </h2>
           <p className="font-sans text-[13px] text-on-surface-variant leading-[20px]">
-            Procesando información y calculando indicadores dinámicamente.<br/>Por favor, espere.
+            Procesando información y calculando indicadores…<br/>Por favor, espere.
           </p>
         </div>
 
-        {/* Barra de progreso indeterminada + contador de tiempo */}
+        {/* Barra de progreso */}
         <div className="w-full">
-          <div className="w-full h-2 rounded bg-slate-100 overflow-hidden relative">
-            <div className="h-full bg-[#001631] rounded animate-pulse w-full" />
+          <div className="w-full h-2.5 rounded-full bg-[#e2e8f0] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-[#001631] transition-all duration-500"
+              style={{ width: `${progreso}%` }}
+            />
           </div>
-          <p className="mt-3 font-sans font-medium text-[12px] text-on-surface text-center">
-            {seconds} {seconds === 1 ? 'segundo' : 'segundos'} transcurridos...
-          </p>
-          <p className="mt-1 font-sans text-[11px] text-[#64748b] text-center">
-            Consultando la base de datos institucional en tiempo real
+          <p className="mt-2 font-mono text-[11px] text-on-surface-variant text-center">
+            {paso.mensaje}
           </p>
         </div>
 
@@ -693,12 +700,12 @@ function VistaResultados({
   // ── Filtrado y paginación ──────────────────────────────────────────────────
   const registrosFiltrados = useMemo(() => {
     if (!filtro.trim()) return result.registros;
-    const q = removeAccents(filtro);
+    const q = filtro.toLowerCase();
     return result.registros.filter(
       (r) =>
-        removeAccents(r.nombre).includes(q) ||
+        r.nombre.toLowerCase().includes(q) ||
         r.dni.includes(q) ||
-        removeAccents(r.departamento).includes(q)
+        r.departamento.toLowerCase().includes(q)
     );
   }, [filtro, result.registros]);
 
@@ -759,7 +766,6 @@ function VistaResultados({
           <ExportButton 
             context={getExportContext(result.params.tipo)} 
             label="Exportar" 
-            result={result}
           />
 
           {/* Guardar snapshot */}

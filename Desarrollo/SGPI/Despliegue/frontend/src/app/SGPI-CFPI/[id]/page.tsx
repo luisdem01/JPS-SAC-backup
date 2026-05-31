@@ -11,8 +11,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type { Proyecto } from '../_data/types';
 import { getProyectoById, completarHito } from '../_data/service';
-import { ExportButton } from '@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow';
-
+import { getProyectoById, completarHito } from '../_data/service';
 // ─────────────────────────────────────────────────────────────────────────────
 // Íconos SVG
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,10 +176,6 @@ export default function ExpedienteDigitalPage() {
               <BackIcon />
               Volver a la Bandeja
             </button>
-            <ExportButton
-              context="proyectos_expediente"
-              label="Exportar Ficha"
-            />
           </div>
         </div>
 

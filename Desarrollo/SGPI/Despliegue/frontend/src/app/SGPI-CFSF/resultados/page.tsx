@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import { PageHeader } from '@/SGPI-CFU/components/shared';
 import { Button } from '@/SGPI-CFU/components/ui';
-import { ExportFlow } from '@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow';
 import type { SyncSourceReport } from '@/SGPI-CFU/lib/services/syncService';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -142,13 +141,7 @@ function EstadoAccionBadge({ estado }: { estado: EstadoAccion }) {
   );
 }
 
-const DownloadIcon = () => (
-  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    <polyline points="7 10 12 15 17 10" />
-    <line x1="12" y1="15" x2="12" y2="3" />
-  </svg>
-);
+
 
 const ArrowRightIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -169,7 +162,6 @@ const TerminalDots = () => (
 
 export default function ResultadosSincronizacionPage() {
   const router = useRouter();
-  const [isExportOpen, setIsExportOpen] = useState(false);
   const [syncLogs, setSyncLogs]     = useState<LogEntry[]>(FALLBACK_LOGS);
   const [acciones, setAcciones]     = useState<AccionResumen[]>(FALLBACK_ACCIONES);
   const [jobId, setJobId]           = useState<string | null>(null);
@@ -410,14 +402,7 @@ export default function ResultadosSincronizacionPage() {
             Revisar Cuarentena →
           </Button>
         )}
-        <Button
-          variant="secondary"
-          size="md"
-          iconLeft={<DownloadIcon />}
-          onClick={() => setIsExportOpen(true)}
-        >
-          Descargar Reporte PDF
-        </Button>
+
         <Button
           variant={totalCuarentena > 0 ? "secondary" : "primary"}
           size="md"
@@ -428,13 +413,6 @@ export default function ResultadosSincronizacionPage() {
         </Button>
       </div>
 
-      {/* Modal de exportación */}
-      {isExportOpen && (
-        <ExportFlow
-          context="reporte_sincronizacion"
-          onClose={() => setIsExportOpen(false)}
-        />
-      )}
     </MainLayout>
   );
 }

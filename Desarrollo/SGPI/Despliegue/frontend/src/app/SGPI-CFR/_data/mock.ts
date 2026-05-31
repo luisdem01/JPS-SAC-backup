@@ -11,9 +11,7 @@
 export const DEPARTAMENTOS_ACADEMICOS = [
   'Ingeniería de Sistemas',
   'Ingeniería de Software',
-  'Ciencia de la Computación',
   'Ciencias de la Computación',
-  'Inteligencia Artificial',
   'Ingeniería Eléctrica',
   'Ingeniería Industrial',
 ];

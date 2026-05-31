@@ -7,8 +7,6 @@
  */
 
 import type { ReporteParams, ReporteResult, PasoCarga, RegistroDocente } from './types';
-import { getAccessToken } from '@/SGPI-CFU/lib/auth/storage';
-import { apiClient } from '@/SGPI-CFU/lib/api/client';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -55,9 +53,9 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
     default: tipoReporte = 'Carga No Lectiva';
   }
 
-  const backendParams: any = {
+  const backendParams = {
     tipo_reporte: tipoReporte,
-    anio_corte: (tipoReporte === 'Produccion Cientifica' || tipoReporte === 'Resumen General') ? undefined : params.anioFiscal,
+    anio_corte: params.anioFiscal,
     periodo_corte: params.corte,
     fecha_inicio_desde: params.fechaInicio || undefined,
     fecha_fin_hasta: params.fechaFin || undefined,
@@ -65,7 +63,26 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
     grupo_investigacion: params.grupoInvestigacion || undefined
   };
 
-  const data = await apiClient.post<any>('/reports/generate', backendParams);
+  // Obtener token de auth desde donde se almacene (ej. localStorage)
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : '';
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  const res = await fetch(`${API_URL}/api/v1/reports/generate`, {
+    method:  'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}` 
+    },
+    body: JSON.stringify(backendParams),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.text();
+    throw new Error('Error al generar el reporte en el servidor: ' + errorData);
+  }
+
+  const data = await res.json();
 
   const corteLabel = CORTE_LABELS[params.corte] ?? params.corte;
   const tipoLabel  = TIPO_LABELS[params.tipo]   ?? params.tipo;
@@ -107,43 +124,9 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
     result.totalDocentes = data.total_investigadores_evaluados || 0;
     result.proyectosActivos = data.total_proyectos_activos || 0;
     result.promedioCargaNoLectiva = data.promedio_carga_no_lectiva ? Math.round(data.promedio_carga_no_lectiva) : 0;
-    
-    // Resumen general mapea las métricas a registros para no mostrar una tabla vacía
-    const rows = [];
-    if (data.investigadores_por_categoria_renacyt) {
-      let idx = 1;
-      for (const [cat, count] of Object.entries(data.investigadores_por_categoria_renacyt)) {
-        rows.push({
-          id: String(idx++),
-          nombre: `Investigadores Renacyt: ${cat}`,
-          dni: 'RENACYT',
-          departamento: 'Métricas Generales',
-          hrsProyectos: 0,
-          hrsAsesorias: 0,
-          totalCarga: Number(count)
-        });
-      }
-      rows.push({
-        id: 'pub',
-        nombre: 'Total Publicaciones en el Periodo',
-        dni: 'METRICA',
-        departamento: 'Métricas Generales',
-        hrsProyectos: 0,
-        hrsAsesorias: 0,
-        totalCarga: data.total_publicaciones_periodo || 0
-      });
-      rows.push({
-        id: 'tesis',
-        nombre: 'Total Tesis en el Periodo',
-        dni: 'METRICA',
-        departamento: 'Métricas Generales',
-        hrsProyectos: 0,
-        hrsAsesorias: 0,
-        totalCarga: data.total_tesis_periodo || 0
-      });
-    }
-    result.registros = rows;
-    result.totalRegistros = rows.length;
+    // Resumen general no tiene registros para la tabla por defecto
+    result.registros = [];
+    result.totalRegistros = 0;
 
   } else if (tipoReporte === 'Proyectos Activos') {
     result.proyectosActivos = data.total_proyectos || 0;
@@ -165,9 +148,8 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
   } else if (tipoReporte === 'Produccion Cientifica') {
     result.totalPublicaciones = data.total_publicaciones || 0;
     result.totalTesis = data.total_tesis || 0;
-    let registros = [];
     if (data.publicaciones) {
-      registros = data.publicaciones.map((p: any) => ({
+      result.registros = data.publicaciones.map((p: any) => ({
         id: String(p.id_publicacion),
         nombre: p.titulo,
         dni: p.doi || p.tipo,
@@ -177,19 +159,6 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
         totalCarga: 0
       }));
     }
-    if (data.tesis) {
-      const tesisRegistros = data.tesis.map((t: any) => ({
-        id: t.url_cybertesis || String(Math.random()),
-        nombre: `[TESIS] ${t.titulo}`,
-        dni: 'Tesis',
-        departamento: t.nivel_grado || 'Grado no especificado',
-        hrsProyectos: 0,
-        hrsAsesorias: 0,
-        totalCarga: 0
-      }));
-      registros = [...registros, ...tesisRegistros];
-    }
-    result.registros = registros;
     result.totalRegistros = result.registros.length;
   }
 
@@ -215,9 +184,9 @@ export async function guardarSnapshot(result: ReporteResult): Promise<void> {
     default: tipoReporte = 'Carga No Lectiva';
   }
 
-  const backendParams: any = {
+  const backendParams = {
     tipo_reporte: tipoReporte,
-    anio_corte: (tipoReporte === 'Produccion Cientifica' || tipoReporte === 'Resumen General') ? undefined : result.params.anioFiscal,
+    anio_corte: result.params.anioFiscal,
     periodo_corte: result.params.corte,
     fecha_inicio_desde: result.params.fechaInicio || undefined,
     fecha_fin_hasta: result.params.fechaFin || undefined,
@@ -225,7 +194,24 @@ export async function guardarSnapshot(result: ReporteResult): Promise<void> {
     grupo_investigacion: result.params.grupoInvestigacion || undefined
   };
 
-  await apiClient.post('/reports/snapshot', backendParams);
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : '';
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  const res = await fetch(`${API_URL}/api/v1/reports/snapshot`, {
+    method:  'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}` 
+    },
+    body: JSON.stringify(backendParams),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.text();
+    console.error('Error al guardar snapshot:', errorData);
+    throw new Error('Error al guardar el snapshot en el servidor.');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,10 +236,20 @@ export const UMBRAL_BAJO = 7;   // totalCarga < UMBRAL_BAJO → naranja/amarillo
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function obtenerCatalogos(): Promise<{ departamentos: string[], grupos: string[] }> {
-  try {
-    return await apiClient.get<{ departamentos: string[], grupos: string[] }>('/reports/catalogs');
-  } catch (error) {
-    console.error('Error al conectar con el servidor para obtener catálogos:', error);
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : '';
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const res = await fetch(`${API_URL}/api/v1/reports/catalogs`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  });
+
+  if (!res.ok) {
+    console.error('Error al obtener catálogos, usando predeterminados vacíos');
     return { departamentos: [], grupos: [] };
   }
+
+  return res.json();
 }
