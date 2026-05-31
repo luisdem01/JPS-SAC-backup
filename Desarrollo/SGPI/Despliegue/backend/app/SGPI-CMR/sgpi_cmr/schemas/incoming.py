@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
+from datetime import date
 
 class BaseReconciliationPayload(BaseModel):
     fuente_origen: str = Field(..., description="La fuente desde donde provienen los datos: RAIS, RENACYT, Cybertesis, VRIP")
@@ -36,7 +37,7 @@ class ProyectoInput(BaseModel):
     codigo_grupo: Optional[str] = None
     area_academica: Optional[str] = None
     anio_convocatoria: Optional[int] = None
-    fecha_inicio: Optional[str] = None # YYYY-MM-DD
+    fecha_inicio: Optional[date] = None # YYYY-MM-DD
     estado_proyecto: Optional[str] = None
 
 class BulkProyectoPayload(BaseReconciliationPayload):

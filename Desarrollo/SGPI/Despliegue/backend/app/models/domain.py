@@ -3,6 +3,7 @@ from sqlalchemy import Column, String, Boolean, Integer, DateTime, Text, Foreign
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime, timezone
+import uuid
 
 Base = declarative_base()
 
@@ -100,7 +101,7 @@ class Entregable(Base):
 
 class LogAuditoria(Base):
     __tablename__ = 'log_auditoria'
-    id_log = Column(UUID(as_uuid=True), primary_key=True)
+    id_log = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tipo_evento = Column(String(50), nullable=False)
     entidad_afectada = Column(String(100))
     pk_entidad = Column(String(100))
