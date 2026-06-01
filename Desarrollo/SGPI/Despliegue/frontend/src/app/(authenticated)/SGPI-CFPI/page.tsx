@@ -2,7 +2,7 @@
 
 /**
  * @file page.tsx
- * @route /SGPI-CFPI
+ * @route /proyectos
  * @description Bandeja principal de Gestión de Proyectos de Investigación (SGPI-CFPI).
  */
 
@@ -10,8 +10,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type { FiltrosProyectos, EstadoProyecto } from './_data/types';
-import { getProyectos, getStats, getConvocatorias, type PaginatedProyectos } from './_data/service';
+import { getProyectos, getConvocatorias, type PaginatedProyectos } from './_data/service';
 import type { StatsProyectos } from './_data/types';
+import { useAuth } from '@/SGPI-CFU/lib/hooks';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración visual de badges
@@ -206,6 +207,7 @@ function Pagination({ page, pages, onChange }: {
 
 export default function ProyectosBandejaPage() {
   const router = useRouter();
+  const { user } = useAuth();
 
   const [filtros,    setFiltros]    = useState<FiltrosProyectos>(DEFAULT_FILTROS);
   const [tempBuscar, setTempBuscar] = useState('');
@@ -214,7 +216,6 @@ export default function ProyectosBandejaPage() {
   const [tempInicio, setTempInicio] = useState('');
 
   const [resultado, setResultado] = useState<PaginatedProyectos | null>(null);
-  const [stats,     setStats]     = useState<StatsProyectos | null>(null);
   const [cargando,  setCargando]  = useState(true);
   const [pagina,    setPagina]    = useState(1);
   const [convocatorias, setConvocatorias] = useState<string[]>([]);
@@ -250,12 +251,8 @@ export default function ProyectosBandejaPage() {
   const cargarDatos = useCallback(async () => {
     setCargando(true);
     try {
-      const [dataProyectos, dataStats] = await Promise.all([
-        getProyectos(filtros, pagina),
-        getStats(),
-      ]);
+      const dataProyectos = await getProyectos(filtros, pagina);
       setResultado(dataProyectos);
-      setStats(dataStats);
     } catch (error) {
       console.error('Error al cargar proyectos de investigación:', error);
     } finally {
@@ -301,13 +298,15 @@ export default function ProyectosBandejaPage() {
               Certifique, audite y monitorea los hitos de los proyectos importados del RAIS y VRIP.
             </p>
           </div>
-          <button
-            onClick={() => router.push('/SGPI-CFPI/nuevo')}
-            className="flex items-center gap-1.5 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded shadow transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-          >
-            <PlusIcon />
-            Nuevo Proyecto
-          </button>
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => router.push('/proyectos/nuevo')}
+              className="flex items-center gap-1.5 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded shadow transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
+            >
+              <PlusIcon />
+              Nuevo Proyecto
+            </button>
+          )}
         </div>
 
         {/* Barra de Filtros */}
@@ -454,7 +453,13 @@ export default function ProyectosBandejaPage() {
                       return !isNaN(limite.getTime()) && limite < new Date();
                     });
 
-                    if (proy.fuente && (proy.fuente.toLowerCase().includes('ocr') || proy.fuente.toLowerCase().includes('extrac'))) {
+                    if (proy.fuente === 'Externo (VRIP)') {
+                      alertaElement = (
+                        <span className="inline-flex mt-1 text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded bg-[#e0f2fe] text-[#0369a1] uppercase tracking-wider">
+                          Externo (VRIP)
+                        </span>
+                      );
+                    } else if (proy.fuente && (proy.fuente.toLowerCase().includes('ocr') || proy.fuente.toLowerCase().includes('extrac'))) {
                       alertaElement = (
                         <span className="inline-flex mt-1 text-[10px] font-sans font-medium px-1.5 py-0.5 rounded bg-[#f3e8ff] text-[#6b21a8] uppercase tracking-wider">
                           Extracción OCR (RR)
@@ -488,9 +493,19 @@ export default function ProyectosBandejaPage() {
                           {alertaElement}
                         </td>
                         <td className="px-5 py-3.5 text-right">
-                          {isPendiente ? (
+                          {proy.fuente === 'Externo (VRIP)' ? (
+                            user?.role === 'admin' && (
+                              <button
+                                onClick={() => router.push(`/SGPI-CFPI/nuevo?importCode=${proy.code}`)}
+                                className="inline-flex items-center gap-1 border border-[#16a34a] text-[#16a34a] hover:bg-[#16a34a] hover:text-white font-sans font-bold text-[12px] px-3 py-1 rounded transition-colors cursor-pointer"
+                              >
+                                <PlusIcon />
+                                Importar
+                              </button>
+                            )
+                          ) : isPendiente ? (
                             <button
-                              onClick={() => router.push(`/SGPI-CFPI/${proy.code}/validar`)}
+                              onClick={() => router.push(`/proyectos/${proy.code}/validar`)}
                               className="inline-flex items-center gap-1 border border-[#001631] text-[#001631] hover:bg-[#001631] hover:text-white font-sans font-bold text-[12px] px-3 py-1 rounded transition-colors cursor-pointer"
                             >
                               <DocumentIcon />
@@ -498,7 +513,7 @@ export default function ProyectosBandejaPage() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => router.push(`/SGPI-CFPI/${proy.code}`)}
+                              onClick={() => router.push(`/proyectos/${proy.code}`)}
                               className="inline-flex items-center justify-center text-[#475569] hover:text-[#001631] p-1.5 rounded hover:bg-slate-100 transition-colors cursor-pointer"
                               title="Ver Expediente Digital"
                               aria-label="Ver Expediente"

@@ -32,8 +32,9 @@ import type {
   Convocatoria,
 } from './types';
 import type { InvestigatorPadron } from '../../SGPI-CFGI/_data/types';
-import { supabase } from '../../../SGPI-CFU/lib/supabase';
-import { apiClient } from '../../../SGPI-CFU/lib/api/client';
+import { supabase } from '@/SGPI-CFU/lib/supabase';
+import { apiClient } from '@/SGPI-CFU/lib/api/client';
+import { formatEmail } from '@/SGPI-CFU/lib/utils/formatters';
  
 const PAGE_SIZE = 10;
  
@@ -61,7 +62,8 @@ function mapToProyecto(p: any): Proyecto {
     responsablePrincipal,
     createdAt: p.created_at,
     updatedAt: p.updated_at,
-    fuente: p.presupuesto_asignado > 0 ? 'RAIS' : 'Manual',
+    fuente: p.is_external ? 'Externo (VRIP)' : (p.presupuesto_asignado > 0 ? 'RAIS' : 'Manual'),
+    is_external: !!p.is_external,
     miembros: (p.investigador_proyecto || []).map((ip: any) => {
       let rol: RolMiembroProyecto = 'Colaborador';
       if (ip.condicion_rol === 'Responsable') rol = 'Responsable Principal';
@@ -161,25 +163,12 @@ function mapToEstadoProyecto(estado_proyecto: string): EstadoProyecto {
 // Obtener estadísticas del módulo (ruteado por backend para habilitar logging)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getStats(): Promise<StatsProyectos> {
-  // Solicitamos todas las páginas mínimas solo para el conteo por estado;
-  // el backend ya calcula el total, así que hacemos 3 peticiones ligeras.
-  const [all, enEjecucion, concluidos] = await Promise.all([
-    apiClient.get<{ total: number }>('/projects?limit=1'),
-    apiClient.get<{ total: number }>('/projects?limit=1&estado=En%20ejecuci%C3%B3n'),
-    apiClient.get<{ total: number }>('/projects?limit=1&estado=Concluido'),
-  ]);
-
-  const total = (all as any).total ?? 0;
-  const execution = (enEjecucion as any).total ?? 0;
-  const completed = (concluidos as any).total ?? 0;
-  const pending = total - execution - completed;
-
-  return {
-    totalProyectos: total,
-    pendientesValidar: Math.max(0, pending),
-    enEjecucion: execution,
-    concluidos: completed,
-  };
+  try {
+    const res = await apiClient.get<StatsProyectos>('/projects/stats');
+    return res;
+  } catch (err: any) {
+    throw new Error(err.message || 'Error al obtener las estadísticas.');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -197,7 +186,7 @@ export async function buscarInvestigadores(buscar: string): Promise<Investigator
   return items.map((d: any) => ({
     dni: d.dni,
     nombre: `${d.nombres} ${d.apellidos}`,
-    email: `${d.dni}@unmsm.edu.pe`,
+    email: formatEmail(d.correo),
     facultad: d.facultad_dependencia || '',
     departamento: d.departamento_academico || '',
   }));
@@ -209,14 +198,29 @@ export async function buscarInvestigadores(buscar: string): Promise<Investigator
 export async function validarProyecto(
   id: string,
   payload: ProyectoPayload
-): Promise<Proyecto> {
+): Promise<any> {
   // Mapear estado
   let estadoProyecto = 'Aprobado';
   if (payload.status === 'en_ejecucion') estadoProyecto = 'En ejecución';
   else if (payload.status === 'concluido') estadoProyecto = 'Concluido';
 
-  // 1. Actualizar datos del proyecto vía backend
-  await apiClient.put<any>(`/projects/${id}`, {
+  // Mapear investigadores
+  const investigadores = payload.miembros.map((m) => {
+    let condicion_rol = 'Colaborador';
+    if (m.rol === 'Responsable Principal') condicion_rol = 'Responsable';
+    else if (m.rol === 'Co-investigador') condicion_rol = 'Co-investigador';
+    else if (m.rol === 'Tesista vinculado') condicion_rol = 'Tesista';
+
+    return {
+      dni_investigador: m.dni,
+      condicion_rol,
+      tipo_vinculo: 'Docente',
+      facultad_integrante: 'Ingeniería de Sistemas e Informática',
+    };
+  });
+
+  // Actualizar datos del proyecto e investigadores en una sola petición PUT atómica
+  return await apiClient.put<any>(`/projects/${id}`, {
     titulo_proyecto: payload.title,
     tipo_proyecto: payload.tipo,
     tipo_programa: payload.programa,
@@ -228,41 +232,8 @@ export async function validarProyecto(
     estado_proyecto: estadoProyecto,
     codigo_grupo: payload.grupoVinculado || null,
     justificacion: payload.cambioEstadoObs || null,
+    investigadores: investigadores,
   });
-
-  // 2. Limpiar investigadores asociados
-  try {
-    await apiClient.delete<any>(`/projects/${id}/investigators`);
-  } catch (err) {
-    console.warn(`No se pudieron eliminar investigadores para el proyecto ${id}:`, err);
-  }
-
-  // 3. Insertar nuevos investigadores
-  if (payload.miembros.length > 0) {
-    for (const m of payload.miembros) {
-      let condicion_rol = 'Colaborador';
-      if (m.rol === 'Responsable Principal') condicion_rol = 'Responsable';
-      else if (m.rol === 'Co-investigador') condicion_rol = 'Co-investigador';
-      else if (m.rol === 'Tesista vinculado') condicion_rol = 'Tesista';
-
-      try {
-        await apiClient.post<any>(`/projects/${id}/investigators`, {
-          codigo_proyecto: id,
-          dni_investigador: m.dni,
-          condicion_rol,
-          tipo_vinculo: 'Docente',
-          facultad_integrante: 'Ingeniería de Sistemas e Informática',
-        });
-      } catch (err) {
-        console.warn(`No se pudo agregar investigador ${m.dni}:`, err);
-      }
-    }
-  }
-
-  // Devolver el objeto actualizado completo
-  const proyAct = await getProyectoById(id);
-  if (!proyAct) throw new Error('No se pudo recuperar el proyecto actualizado.');
-  return proyAct;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -295,7 +266,22 @@ export async function crearProyecto(
   if (payload.status === 'en_ejecucion') estadoProyecto = 'En ejecución';
   else if (payload.status === 'concluido') estadoProyecto = 'Concluido';
 
-  // 1. Crear el proyecto vía backend (resuelve codigo_grupo → id_grupo internamente)
+  // 1. Mapear investigadores para la transacción atómica
+  const investigadores = payload.miembros.map((m) => {
+    let condicion_rol = 'Colaborador';
+    if (m.rol === 'Responsable Principal') condicion_rol = 'Responsable';
+    else if (m.rol === 'Co-investigador')  condicion_rol = 'Co-investigador';
+    else if (m.rol === 'Tesista vinculado') condicion_rol = 'Tesista';
+
+    return {
+      dni_investigador: m.dni,
+      condicion_rol,
+      tipo_vinculo: 'Docente',
+      facultad_integrante: 'Ingeniería de Sistemas e Informática',
+    };
+  });
+
+  // 2. Crear el proyecto e integrantes vía backend en una sola petición atómica
   await apiClient.post<any>('/projects/', {
     codigo_proyecto:      payload.code,
     titulo_proyecto:      payload.title,
@@ -308,27 +294,8 @@ export async function crearProyecto(
     fecha_informe_final:  payload.finPlanificado || null,
     estado_proyecto:      estadoProyecto,
     codigo_grupo:         payload.grupoVinculado || null,
+    investigadores:       investigadores,
   });
-
-  // 2. Agregar investigadores al proyecto
-  for (const m of payload.miembros) {
-    let condicion_rol = 'Colaborador';
-    if (m.rol === 'Responsable Principal') condicion_rol = 'Responsable';
-    else if (m.rol === 'Co-investigador')  condicion_rol = 'Co-investigador';
-    else if (m.rol === 'Tesista vinculado') condicion_rol = 'Tesista';
-
-    try {
-      await apiClient.post<any>(`/projects/${payload.code}/investigators`, {
-        codigo_proyecto:     payload.code,
-        dni_investigador:    m.dni,
-        condicion_rol,
-        tipo_vinculo:        'Docente',
-        facultad_integrante: 'Ingeniería de Sistemas e Informática',
-      });
-    } catch (err) {
-      console.warn(`No se pudo agregar investigador ${m.dni}:`, err);
-    }
-  }
 
   // 3. Recuperar el proyecto creado para devolverlo al formulario
   const proyNvo = await getProyectoById(payload.code);
@@ -373,6 +340,47 @@ export async function completarHito(
     estado_entregable: 'Completado',
     fecha_entrega_real: new Date().toISOString().split('T')[0],
   });
+
+  const proyAct = await getProyectoById(proyectoId);
+  if (!proyAct) throw new Error('No se pudo recuperar el proyecto actualizado.');
+  return proyAct;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verificar hito con conector Cybertesis (DSpace 7)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function verificarHitoConCybertesis(
+  proyectoId: string,
+  hitoId: string,
+  thesisData?: { thesis_url?: string; titulo_tesis?: string; autor_texto?: string; anio_publicacion?: number; resumen?: string }
+): Promise<Proyecto> {
+  let id_entregable: number | null = null;
+
+  if (/^\d+$/.test(hitoId)) {
+    id_entregable = Number(hitoId);
+  } else {
+    const isFirstHito = hitoId.endsWith('-1') || hitoId === 'hito-1';
+    try {
+      const p = await apiClient.get<any>(`/projects/${proyectoId}`);
+      if (p && p.entregable && p.entregable.length > 0) {
+        const sorted = [...p.entregable].sort((a: any, b: any) => a.id_entregable - b.id_entregable);
+        if (isFirstHito) {
+          id_entregable = sorted[0].id_entregable;
+        } else if (sorted.length > 1) {
+          id_entregable = sorted[1].id_entregable;
+        }
+      }
+    } catch (err) {
+      console.error('Error recuperando entregables para hito mock:', err);
+    }
+  }
+
+  if (id_entregable === null) throw new Error('Hito no encontrado.');
+
+  await apiClient.post<any>(
+    `/projects/${proyectoId}/deliverables/${id_entregable}/verify-cybertesis`,
+    thesisData || {}
+  );
 
   const proyAct = await getProyectoById(proyectoId);
   if (!proyAct) throw new Error('No se pudo recuperar el proyecto actualizado.');

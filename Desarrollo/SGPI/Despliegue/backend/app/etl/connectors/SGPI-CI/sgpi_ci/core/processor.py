@@ -77,14 +77,22 @@ class EtlProcessor:
         if not search_by_name:
             logger.warning(f"[{self.filename}] renacyt_connector no disponible. No se podrá enriquecer.")
 
-        # Función auxiliar de búsqueda robusta
+        # Obtener todos los investigadores registrados localmente para evitar búsquedas redundantes
+        logger.info(f"[{self.filename}] Cargando investigadores registrados localmente...")
+        investigadores_db = self.uploader.fetch_investigadores()
         
-        # Instanciar el cliente UNA sola vez y bajar el delay para que no tarde 1 segundo por reglamento
+        # Instanciar el conector una sola vez y bajar el delay
         renacyt_client = RenacytConnector(verify_ssl=False) if RenacytConnector else None
         if renacyt_client:
             renacyt_client.rate_limit_delay = 0.1
 
         import asyncio
+        try:
+            from app.core.cache import cache_get, cache_set, normalize_query
+        except ImportError:
+            cache_get = None
+            cache_set = None
+            normalize_query = None
 
         def run_sync(coro):
             try:
@@ -93,9 +101,6 @@ class EtlProcessor:
                 try:
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
-                        # If loop is already running, we might need a fallback or nest_asyncio.
-                        # But EtlProcessor is synchronous and run in background thread or CLI,
-                        # so the event loop in this thread is not running.
                         return loop.run_until_complete(coro)
                     else:
                         return loop.run_until_complete(coro)
@@ -110,16 +115,91 @@ class EtlProcessor:
         def normalize_str(s):
             return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8').upper()
 
+        # Construir mapa local en memoria de investigadores por nombre y apellido
+        local_db_by_name = {}
+        for inv in investigadores_db:
+            full_name_1 = f"{inv['nombres']} {inv['apellidos']}"
+            full_name_2 = f"{inv['apellidos']} {inv['nombres']}"
+            local_db_by_name[normalize_str(full_name_1)] = inv
+            local_db_by_name[normalize_str(full_name_2)] = inv
+
+        def match_local_db(name_str: str) -> Optional[Dict[str, Any]]:
+            clean_str = name_str.replace(',', ' ').replace('-', ' ')
+            words = [w.strip() for w in clean_str.split() if len(w.strip()) > 2]
+            if not words: return None
+            normalized_parts = [normalize_str(w) for w in words]
+            
+            # 1. Coincidencia exacta de nombre completo
+            norm_q = normalize_str(name_str)
+            if norm_q in local_db_by_name:
+                return local_db_by_name[norm_q]
+                
+            # 2. Coincidencia parcial/heurística
+            for inv in investigadores_db:
+                db_full = normalize_str(f"{inv['nombres']} {inv['apellidos']}")
+                matches = sum(1 for p in normalized_parts if p in db_full)
+                if matches >= len(normalized_parts) - 1:
+                    return inv
+            return None
+
         def robust_renacyt_search(name_str: str):
+            # 1. Comprobación local en memoria (Base de Datos)
+            db_match = match_local_db(name_str)
+            if db_match:
+                logger.info(f"Coincidencia local en BD para '{name_str}': DNI {db_match.get('dni')}")
+                return {
+                    "numero_documento": db_match.get("dni"),
+                    "nombres": db_match.get("nombres"),
+                    "apellido_paterno": db_match.get("apellidos", "").split()[0] if db_match.get("apellidos") else "",
+                    "apellido_materno": " ".join(db_match.get("apellidos", "").split()[1:]) if db_match.get("apellidos") and len(db_match.get("apellidos", "").split()) > 1 else "",
+                    "institucion_laboral_principal": db_match.get("institucion_principal"),
+                    "codigo_registro": db_match.get("codigo_renacyt"),
+                    "orcid": db_match.get("orcid"),
+                    "nivel": db_match.get("categoria_renacyt", "No Clasificado"),
+                    "condicion": db_match.get("estado_renacyt"),
+                    "cti_vitae": db_match.get("url_cti_vitae"),
+                    "nombre_completo": f"{db_match.get('apellidos', '')}, {db_match.get('nombres', '')}"
+                }
+
+            # 2. Comprobación en caché de Redis
+            if cache_get and normalize_query:
+                norm_name = normalize_query(name_str)
+                cache_key = f"renacyt:search:{norm_name}:p1:l1"
+                try:
+                    cached_data = run_sync(cache_get(cache_key))
+                    if cached_data is not None:
+                        cached_items = cached_data.get("items", [])
+                        if cached_items:
+                            cached_item = cached_items[0]
+                            logger.info(f"Coincidencia en caché de Redis para '{name_str}': DNI {cached_item.get('dni')}")
+                            return {
+                                "numero_documento": cached_item.get("dni"),
+                                "nombres": cached_item.get("nombres"),
+                                "apellido_paterno": cached_item.get("apellidos", "").split()[0] if cached_item.get("apellidos") else "",
+                                "apellido_materno": " ".join(cached_item.get("apellidos", "").split()[1:]) if cached_item.get("apellidos") and len(cached_item.get("apellidos", "").split()) > 1 else "",
+                                "institucion_laboral_principal": cached_item.get("institucion_principal"),
+                                "codigo_registro": cached_item.get("codigo_renacyt"),
+                                "orcid": cached_item.get("orcid"),
+                                "nivel": cached_item.get("categoria_renacyt", "No Clasificado"),
+                                "condicion": cached_item.get("estado_renacyt"),
+                                "cti_vitae": cached_item.get("url_cti_vitae"),
+                                "nombre_completo": f"{cached_item.get('apellidos', '')}, {cached_item.get('nombres', '')}"
+                            }
+                except Exception as cache_err:
+                    logger.warning(f"Error al leer caché de Redis en ETL: {cache_err}")
+
             if not renacyt_client:
                 return None
+                
             # Limpiamos comas y guiones para separar bien las palabras (ej. "Herrera-quispe")
             clean_str = name_str.replace(',', ' ').replace('-', ' ')
             words = [w.strip() for w in clean_str.split() if len(w.strip()) > 2]
             if not words: return None
             original_parts = [normalize_str(w) for w in words]
 
-            # 1. Intentamos buscar usando el nuevo método optimizado en paralelo (search_by_fullname)
+            match = None
+
+            # 3.1. Intentamos buscar usando el nuevo método optimizado en paralelo (search_by_fullname)
             if hasattr(renacyt_client, 'search_by_fullname'):
                 try:
                     res = run_sync(renacyt_client.search_by_fullname(name_str, page_size=100))
@@ -128,12 +208,13 @@ class EtlProcessor:
                             c_full = normalize_str(str(r.get('nombre_completo', '')))
                             matches = sum(1 for p in original_parts if p in c_full)
                             if matches >= len(original_parts) - 1:
-                                return r
+                                match = r
+                                break
                 except Exception as e:
                     logger.warning(f"Error en search_by_fullname para '{name_str}', usando fallback: {e}")
 
-            # 2. Fallback secuencial original: Búsqueda por apellidos (más preciso)
-            if extract_lastnames and hasattr(renacyt_client, 'search_by_lastname'):
+            # 3.2. Fallback secuencial original: Búsqueda por apellidos (más preciso)
+            if not match and extract_lastnames and hasattr(renacyt_client, 'search_by_lastname'):
                 try:
                     extracted_lastname = extract_lastnames(name_str)
                     if extracted_lastname:
@@ -143,30 +224,74 @@ class EtlProcessor:
                                 c_full = normalize_str(str(r.get('nombre_completo', '')))
                                 matches = sum(1 for p in original_parts if p in c_full)
                                 if matches >= len(original_parts) - 1:
-                                    return r
+                                    match = r
+                                    break
                 except Exception:
                     pass
 
-            # 3. Fallback secuencial original: Búsqueda por nombre iterativa
-            candidates = []
-            if len(words) >= 2:
-                candidates.append(f"{words[-2]} {words[-1]}")
-                candidates.append(f"{words[0]} {words[1]}")
-            candidates.append(words[-1])
-            candidates.append(words[0])
+            # 3.3. Fallback secuencial original: Búsqueda por nombre iterativa
+            if not match:
+                candidates = []
+                if len(words) >= 2:
+                    candidates.append(f"{words[-2]} {words[-1]}")
+                    candidates.append(f"{words[0]} {words[1]}")
+                candidates.append(words[-1])
+                candidates.append(words[0])
 
-            for cand in candidates:
+                for cand in candidates:
+                    try:
+                        res = run_sync(renacyt_client.search_by_name(cand, page_size=100))
+                        if res and res.get('total', 0) > 0 and res.get('data'):
+                            for r in res['data']:
+                                c_full = normalize_str(str(r.get('nombre_completo', '')))
+                                matches = sum(1 for p in original_parts if p in c_full)
+                                if matches >= len(original_parts) - 1:
+                                    match = r
+                                    break
+                            if match:
+                                break
+                    except Exception:
+                        pass
+
+            # 4. Escribir resultados encontrados en caché de Redis
+            if match and cache_set and normalize_query:
                 try:
-                    res = run_sync(renacyt_client.search_by_name(cand, page_size=100))
-                    if res and res.get('total', 0) > 0 and res.get('data'):
-                        for r in res['data']:
-                            c_full = normalize_str(str(r.get('nombre_completo', '')))
-                            matches = sum(1 for p in original_parts if p in c_full)
-                            if matches >= len(original_parts) - 1:
-                                return r
-                except Exception:
-                    pass
-            return None
+                    dni_val = match.get("numero_documento")
+                    if dni_val:
+                        # Cache DNI (24h)
+                        dni_key = f"renacyt:dni:{dni_val}"
+                        run_sync(cache_set(dni_key, match, 86400))
+                        
+                        # Cache búsqueda (1h)
+                        mapped_item = {
+                            "dni": dni_val,
+                            "nombres": str(match.get('nombres', '')).title(),
+                            "apellidos": f"{match.get('apellido_paterno', '')} {match.get('apellido_materno', '')}".strip().title(),
+                            "codigo_interno_vrip": None,
+                            "condicion_laboral": None,
+                            "departamento_academico": "Externo (RENACYT)",
+                            "facultad_dependencia": "Ingeniería de Sistemas e Informática",
+                            "grado_academico_max": None,
+                            "institucion_principal": match.get("institucion_laboral_principal"),
+                            "codigo_renacyt": match.get("codigo_registro"),
+                            "orcid": match.get("orcid"),
+                            "categoria_renacyt": match.get("nivel", "Sin nivel"),
+                            "estado_renacyt": match.get("condicion"),
+                            "url_cti_vitae": match.get("cti_vitae"),
+                            "investigador_sm": "SAN MARCOS" in (match.get("institucion_laboral_principal") or "").upper() or "UNMSM" in (match.get("institucion_laboral_principal") or "").upper(),
+                            "estado_vigencia": "Activo",
+                            "tiene_deuda_gi": False,
+                            "tiene_deuda_pi": False,
+                            "is_external": True
+                        }
+                        norm_name = normalize_query(name_str)
+                        search_key = f"renacyt:search:{norm_name}:p1:l1"
+                        run_sync(cache_set(search_key, {"total": 1, "items": [mapped_item]}, 3600))
+                except Exception as cache_err:
+                    logger.warning(f"Error al escribir en caché de Redis en ETL: {cache_err}")
+
+            return match
+
 
         for name in unique_names:
             if not name or not search_by_name:

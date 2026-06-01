@@ -2,14 +2,15 @@
 
 /**
  * @file [id]/ficha/page.tsx
- * @route /SGPI-CFGI/[id]/ficha
+ * @route /grupos/[id]/ficha
  * @description Ficha Consolidada de Grupo — usa el ExportFlow compartido de SGPI-CFE.
  */
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
-import { ExportFlow } from '@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow';
+import dynamic from 'next/dynamic';
+const ExportFlow = dynamic(() => import('@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow').then(mod => mod.ExportFlow), { ssr: false });
 import type { GrupoInvestigacion, EstadoGrupo } from '../../_data/types';
 import { getGrupoById, buscarTesisExternas, vincularTesis } from '../../_data/service';
 
@@ -89,6 +90,21 @@ export default function FichaGrupoPage() {
   const [vinculandoUrl,      setVinculandoUrl]      = useState<string | null>(null);
   const [vinculadasSesion,   setVinculadasSesion]   = useState<string[]>([]);
   const [toastMsg,           setToastMsg]           = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('created') === 'true') {
+        setToastMsg("Grupo creado y validado exitosamente.");
+        const timer = setTimeout(() => setToastMsg(null), 3000);
+        return () => clearTimeout(timer);
+      } else if (urlParams.get('validated') === 'true') {
+        setToastMsg("Grupo validado exitosamente.");
+        const timer = setTimeout(() => setToastMsg(null), 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     async function cargar() {
@@ -177,7 +193,7 @@ export default function FichaGrupoPage() {
       <MainLayout title="" subtitle="">
         <div className="bg-red-50 text-red-800 p-6 rounded border border-red-200">
           <p className="font-sans font-bold">No se encontró el grupo.</p>
-          <button onClick={() => router.push('/SGPI-CFGI')} className="mt-3 text-[13px] underline cursor-pointer">Volver</button>
+          <button onClick={() => router.push('/grupos')} className="mt-3 text-[13px] underline cursor-pointer">Volver</button>
         </div>
       </MainLayout>
     );
@@ -204,7 +220,7 @@ export default function FichaGrupoPage() {
 
           <div className="flex items-center gap-2 flex-shrink-0 ml-4">
             <button
-              onClick={() => router.push('/SGPI-CFGI')}
+              onClick={() => router.push('/grupos')}
               className="flex items-center gap-1.5 border border-outline-variant hover:bg-surface-container font-sans text-[13px] text-on-surface px-4 py-2 rounded transition-colors cursor-pointer"
             >
               <BackIcon />
@@ -409,7 +425,7 @@ export default function FichaGrupoPage() {
                           </p>
                           {t.resumen_abstract && (
                             <p className="font-sans text-[11px] text-[#64748b] mt-1.5 line-clamp-2 leading-relaxed italic text-left">
-                              "{t.resumen_abstract}"
+                              &quot;{t.resumen_abstract}&quot;
                             </p>
                           )}
                         </div>
@@ -506,7 +522,7 @@ export default function FichaGrupoPage() {
 
       {/* ── ExportFlow (componente compartido SGPI-CFE) ────────────────── */}
       {showExportFlow && (
-        <ExportFlow context={`ficha_grupo_${id}`} onClose={() => setShowExportFlow(false)} />
+        <ExportFlow context={`ficha_grupo_${id}`} result={grupo} onClose={() => setShowExportFlow(false)} />
       )}
 
       {/* Toast de éxito */}

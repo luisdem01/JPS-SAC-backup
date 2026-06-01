@@ -134,10 +134,10 @@ export async function getDocenteById(id: string): Promise<DocenteInvestigador | 
 export async function crearDocente(payload: DocentePayload): Promise<DocenteInvestigador> {
   const estadoMapeado = payload.estado === 'activo' ? 'Activo' : payload.estado === 'inactivo' ? 'Inactivo' : 'Por Vencer';
   
-  // 1. Insertar el perfil principal en la tabla 'investigador'
+  // 1. Registrar o actualizar (upsert) el perfil principal en la tabla 'investigador'
   const { data: docente, error: errDoc } = await supabase
     .from('investigador')
-    .insert([{
+    .upsert({
       dni:                    payload.dni,
       nombres:                payload.nombres,
       apellidos:              payload.apellidos,
@@ -155,7 +155,8 @@ export async function crearDocente(payload: DocentePayload): Promise<DocenteInve
       estado_vigencia:        estadoMapeado,
       tiene_deuda_gi:         false,
       tiene_deuda_pi:         false,
-    }])
+      is_external:            false, // Al registrarse formalmente, deja de ser puramente externo
+    }, { onConflict: 'dni' })
     .select()
     .single();
  

@@ -1,17 +1,17 @@
 'use client';
 
 /**
- * @file nuevo/page.tsx
- * @route /SGPI-CFGI/nuevo
- * @description Registro de Nuevo Grupo de Investigación — Carga Manual (Tabs: Datos Maestros / Gestión de Miembros)
+ * @file [id]/validar/page.tsx
+ * @route /grupos/[id]/validar
+ * @description Curación de Datos — Tabs: Datos Maestros / Gestión de Miembros
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
-import type { MiembroGrupo, RolMiembro, InvestigatorPadron, EstadoGrupo, FuenteOrigen } from '../_data/types';
-import { buscarInvestigadores, crearGrupo, validarCodigoGrupo } from '../_data/service';
-import { LINEAS_INVESTIGACION } from '../_data/mock';
+import { Button } from '@/SGPI-CFU/components/ui';
+import type { GrupoInvestigacion, MiembroGrupo, RolMiembro, InvestigatorPadron, EstadoGrupo } from '../../_data/types';
+import { getGrupoById, buscarInvestigadores, validarGrupo, getLineasInvestigacion } from '../../_data/service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Íconos SVG
@@ -61,6 +61,21 @@ const InfoIcon = () => (
   </svg>
 );
 
+const CalendarIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </svg>
+);
+
+const ClearIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+);
+
 const CheckCircleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
     stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -76,7 +91,7 @@ const SpinnerIcon = () => (
   </svg>
 );
 
-const ClearIcon = () => (
+const CloseIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
   </svg>
@@ -86,19 +101,36 @@ const ClearIcon = () => (
 // Componente Principal
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function NuevoGrupoPage() {
+export default function CuracionGrupoPage() {
   const router = useRouter();
+  const { id } = useParams() as { id: string };
 
   const [activeTab, setActiveTab] = useState<'datos-maestros' | 'miembros'>('datos-maestros');
+  const [grupo,     setGrupo]     = useState<GrupoInvestigacion | null>(null);
+  const [cargando,  setCargando]  = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
 
   // Form — Datos Maestros
-  const [code,            setCode]            = useState('');
   const [name,            setName]            = useState('');
-  const [acronym,         setAcronym]         = useState('');
-  const [selectedLine,    setSelectedLine]    = useState(LINEAS_INVESTIGACION[0]);
-  const [status,          setStatus]          = useState<EstadoGrupo>('pendiente_validacion');
-  const [recognitionDate, setRecognitionDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [fuente,          setFuente]          = useState<FuenteOrigen>('Manual');
+  const [lineas,          setLineas]          = useState<string[]>([]);
+  const [selectedLine,    setSelectedLine]    = useState('');
+  const [status,          setStatus]          = useState<EstadoGrupo>('validado_activo');
+  const [recognitionDate, setRecognitionDate] = useState('');
+
+  // Cargar líneas de investigación reales desde configuracion_global
+  useEffect(() => {
+    async function loadLineas() {
+      try {
+        const data = await getLineasInvestigacion();
+        if (data && data.length > 0) {
+          setLineas(data);
+        }
+      } catch (err) {
+        console.error("Error cargando líneas de investigación:", err);
+      }
+    }
+    loadLineas();
+  }, []);
 
   // Form — Miembros
   const [miembros,           setMiembros]           = useState<MiembroGrupo[]>([]);
@@ -112,6 +144,34 @@ export default function NuevoGrupoPage() {
   const [errors,       setErrors]       = useState<string[]>([]);
   const [showToast,    setShowToast]    = useState(false);
 
+  // Carga inicial
+  const cargarDatos = useCallback(async () => {
+    setCargando(true);
+    setErrorCarga(null);
+    try {
+      const data = await getGrupoById(id);
+      if (data) {
+        setGrupo(data);
+        setName(data.name);
+        setSelectedLine(data.researchLines[0] || '');
+        setStatus(data.status);
+        setRecognitionDate(data.recognitionDate || '');
+        setMiembros(data.miembros || []);
+      } else {
+        setErrorCarga('El grupo no existe o no se pudieron cargar sus datos.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrorCarga(err?.message || 'Error al conectar con el servidor. Por favor, intente de nuevo.');
+    } finally {
+      setCargando(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    cargarDatos();
+  }, [cargarDatos]);
+
   // Detector de anomalías en el nombre
   const isNameAnomalous = useCallback(() => {
     if (!name.trim()) return false;
@@ -120,7 +180,7 @@ export default function NuevoGrupoPage() {
     return hasUpperAnomaly || hasMultipleSpaces;
   }, [name]);
 
-  // Búsqueda debounce en el padrón
+  // Búsqueda debounce
   useEffect(() => {
     if (!busquedaInv.trim()) {
       setResultadosBusqueda([]);
@@ -153,7 +213,7 @@ export default function NuevoGrupoPage() {
       nombre: inv.nombre,
       nombres: inv.nombres,
       apellidos: inv.apellidos,
-      rol: miembros.length === 0 ? 'Director' : 'Colaborador', // Default to Director if first member
+      rol: 'Colaborador',
       fechaIncorporacion: new Date().toISOString().split('T')[0],
       estado: 'activo',
       isExternal: inv.isExternal,
@@ -174,111 +234,141 @@ export default function NuevoGrupoPage() {
   };
 
   const handleRemoveMiembro = (dni: string) => {
+    const m = miembros.find((x) => x.dni === dni);
+    if (!m) return;
+    const tieneActivos = grupo?.proyectosVinculados.some((p) => p.estado === 'active');
+    if (tieneActivos && m.rol === 'Director') {
+      alert('Regla EX1: No se puede remover al Director con proyectos activos en ejecución.');
+      return;
+    }
     setMiembros(miembros.filter((x) => x.dni !== dni));
   };
 
   const handleGuardar = async () => {
     setErrors([]);
-    const errs: string[] = [];
-
-    if (!code.trim()) {
-      errs.push('El código único del grupo es requerido.');
-    } else {
-      const esUnico = await validarCodigoGrupo(code);
-      if (!esUnico) {
-        errs.push(`Regla EX2: El código de grupo "${code}" ya existe.`);
-      }
-    }
-
-    if (!name.trim()) {
-      errs.push('El nombre oficial del grupo es requerido.');
-    }
-
+    if (!name.trim()) { setErrors(['El nombre oficial del grupo es requerido.']); return; }
     const director = miembros.find((m) => m.rol === 'Director' && m.estado === 'activo');
-    if (!director) {
-      errs.push('Debe existir un Director activo en el grupo.');
-    }
-
-    if (errs.length > 0) {
-      setErrors(errs);
-      // Redirige al tab correspondiente según el error
-      if (!code.trim() || !name.trim()) {
-        setActiveTab('datos-maestros');
-      } else {
-        setActiveTab('miembros');
-      }
-      return;
+    if (!director) { setErrors(['Regla EX1: Debe existir un Director activo en el grupo.']); return; }
+    const tieneActivos = grupo?.proyectosVinculados.some((p) => p.estado === 'active');
+    if (tieneActivos && status === 'validado_inactivo') {
+      setErrors(['Regla EX1: No se puede desactivar un grupo con proyectos activos.']); return;
     }
 
     setGuardando(true);
     try {
-      await crearGrupo({
-        code: code.trim().toUpperCase(),
-        name: name.trim(),
-        acronym: acronym.trim() || undefined,
-        researchLines: [selectedLine],
-        status,
-        recognitionDate: recognitionDate || undefined,
-        fuente,
-        miembros,
-      });
-      setShowToast(true);
-      setTimeout(() => {
-        router.push(`/SGPI-CFGI/${code.trim().toUpperCase()}/ficha`);
-      }, 2000);
+      await validarGrupo(id, { name, researchLines: [selectedLine], status, recognitionDate: recognitionDate || undefined, miembros });
+      router.push(`/grupos/${id}/ficha?validated=true`);
     } catch (err: any) {
-      setErrors([err.message || 'Error al guardar el grupo.']);
+      setErrors([err.message || 'Error al guardar.']);
       setGuardando(false);
     }
   };
+
+  if (cargando) {
+    return (
+      <MainLayout title="Curación de Datos" subtitle="">
+        <div className="flex flex-col gap-4 animate-pulse">
+          <div className="h-8 bg-slate-100 rounded w-1/3"/>
+          <div className="h-64 bg-slate-100 rounded"/>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (errorCarga) {
+    return (
+      <MainLayout title="Curación de Datos" subtitle="Curación de información del grupo de investigación">
+        <div className="max-w-[600px] mx-auto bg-red-50 text-red-800 p-6 rounded border border-red-200 flex flex-col gap-4 font-sans shadow-level-1">
+          <div>
+            <h3 className="font-bold text-[15px]">Error al cargar datos del grupo</h3>
+            <p className="mt-1 text-[13px] text-red-700">{errorCarga}</p>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={cargarDatos}
+            >
+              Reintentar conexión
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => router.push('/grupos')}
+            >
+              Volver a la bandeja
+            </Button>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (!grupo) {
+    return (
+      <MainLayout title="Curación de Datos" subtitle="">
+        <div className="bg-red-50 text-red-800 p-6 rounded border border-red-200 shadow-level-1">
+          <p className="font-sans font-bold">Grupo no encontrado o inexistente.</p>
+          <button onClick={() => router.push('/grupos')} className="mt-3 text-[13px] font-bold text-red-700 underline cursor-pointer">
+            Volver a la bandeja
+          </button>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  const tieneActivos = grupo.proyectosVinculados.some((p) => p.estado === 'active');
 
   return (
     <MainLayout title="" subtitle="">
       <div className="flex flex-col gap-0">
 
-        {/* ── Barra Superior: Breadcrumb + título + botones ── */}
+        {/* ── Barra Superior: Breadcrumb + título + badge + fuente / Botones ── */}
         <div className="flex items-start justify-between pb-4">
 
           {/* Izquierda */}
           <div>
             {/* Back link */}
             <button
-              onClick={() => router.push('/SGPI-CFGI')}
+              onClick={() => router.push('/grupos')}
               className="inline-flex items-center gap-1 text-[13px] font-sans text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer mb-2"
-              aria-label="Volver a la bandeja principal"
             >
               <BackIcon />
             </button>
 
-            {/* Título + badges */}
+            {/* Título + badges en línea */}
             <h1 className="font-heading font-semibold text-h1 text-on-surface leading-[38px]">
-              Crear Nuevo Grupo de Investigación
+              Curación de Datos: {grupo.name}
             </h1>
             <div className="flex items-center gap-2.5 mt-1.5 flex-wrap">
-              <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 font-sans font-bold text-[10px] px-2 py-0.5 rounded border border-slate-200 uppercase tracking-widest">
-                • Ingreso Manual
+              <span className="inline-flex items-center gap-1 bg-[#fef3c7] text-[#92400e] font-sans font-bold text-[10px] px-2 py-0.5 rounded uppercase tracking-widest">
+                • Pendiente Validar
+              </span>
+              <span className="inline-flex items-center gap-1 text-[11px] text-on-surface-variant font-sans">
+                <CalendarIcon />
+                Extraído de Archivo Excel RAIS (Carga {new Date(grupo.createdAt).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '/')})
               </span>
             </div>
           </div>
 
-          {/* Derecha — Cancelar + Guardar */}
+          {/* Derecha — Cancelar + Guardar y Validar */}
           <div className="flex gap-2 flex-shrink-0 ml-4">
-            <button
-              type="button"
-              onClick={() => router.push('/SGPI-CFGI')}
-              className="border border-[#e2e8f0] hover:bg-slate-50 font-sans text-[13px] text-[#475569] px-4 py-2 rounded transition-colors cursor-pointer"
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => router.push('/grupos')}
             >
               Cancelar
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
               onClick={handleGuardar}
-              disabled={guardando}
-              className="flex items-center gap-2 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded shadow transition-colors cursor-pointer disabled:opacity-60"
+              loading={guardando}
+              iconLeft={<CheckIcon />}
             >
-              <CheckIcon />
-              {guardando ? 'Guardando...' : 'Guardar y Validar'}
-            </button>
+              Guardar y Validar
+            </Button>
           </div>
         </div>
 
@@ -296,12 +386,13 @@ export default function NuevoGrupoPage() {
         <div className="border-b border-outline-variant flex bg-surface-container-lowest rounded-t border border-b-0">
           <button
             onClick={() => setActiveTab('datos-maestros')}
-            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-colors duration-100 cursor-pointer ${
+            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-all duration-300 ease-out cursor-pointer ${
               activeTab === 'datos-maestros'
                 ? 'border-[#001631] text-[#001631]'
                 : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline'
             }`}
           >
+            {/* Datos Maestros icon */}
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
             </svg>
@@ -309,12 +400,13 @@ export default function NuevoGrupoPage() {
           </button>
           <button
             onClick={() => setActiveTab('miembros')}
-            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-colors duration-100 cursor-pointer ${
+            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-all duration-300 ease-out cursor-pointer ${
               activeTab === 'miembros'
                 ? 'border-[#001631] text-[#001631]'
                 : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline'
             }`}
           >
+            {/* Gestión de Miembros icon */}
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
               <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -324,46 +416,33 @@ export default function NuevoGrupoPage() {
         </div>
 
         {/* ── Contenido del Tab ─────────────────────────────────────────────── */}
-        <div className="bg-surface-container-lowest border border-t-0 border-outline-variant rounded-b p-6 shadow-level-1">
+        <div key={activeTab} className="bg-surface-container-lowest border border-t-0 border-outline-variant rounded-b p-6 shadow-level-1 animate-sweep-in">
 
           {/* TAB 1 — DATOS MAESTROS */}
           {activeTab === 'datos-maestros' && (
             <div className="max-w-[620px] flex flex-col gap-5">
 
-              {/* Código + Fuente */}
+              {/* Código + Fecha */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="code" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
-                    Código Único (ID) <span className="text-red-500">*</span>
+                  <label className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
+                    Código Único (RAIS)
                   </label>
                   <input
-                    id="code"
-                    type="text"
-                    placeholder="Ej. GI-006"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
+                    type="text" value={grupo.code} disabled
+                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface-variant bg-surface-container-low border border-outline-variant rounded cursor-not-allowed"
                   />
                 </div>
                 <div>
-                  <label htmlFor="fuente" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
-                    Fuente de Origen
+                  <label className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
+                    Fecha de Creación Original
                   </label>
-                  <div className="relative">
-                    <select
-                      id="fuente"
-                      value={fuente}
-                      onChange={(e) => setFuente(e.target.value as FuenteOrigen)}
-                      className="w-full appearance-none px-3 pr-8 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
-                    >
-                      <option value="Manual">Manual</option>
-                      <option value="RAIS">RAIS</option>
-                      <option value="Res. Rectoral">Res. Rectoral</option>
-                    </select>
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </span>
-                  </div>
+                  <input
+                    type="text"
+                    value={new Date(grupo.createdAt).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    disabled
+                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface-variant bg-surface-container-low border border-outline-variant rounded cursor-not-allowed"
+                  />
                 </div>
               </div>
 
@@ -371,7 +450,7 @@ export default function NuevoGrupoPage() {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label htmlFor="nombre" className="font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest">
-                    Nombre Oficial del Grupo <span className="text-red-500">*</span>
+                    Nombre Oficial del Grupo
                   </label>
                   {isNameAnomalous() && (
                     <span className="font-sans font-bold text-[10px] text-[#d97706] uppercase tracking-widest">
@@ -381,7 +460,6 @@ export default function NuevoGrupoPage() {
                 </div>
                 <textarea
                   id="nombre"
-                  placeholder="Ingrese el nombre completo del grupo..."
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   rows={2}
@@ -394,75 +472,27 @@ export default function NuevoGrupoPage() {
                 )}
               </div>
 
-              {/* Acrónimo + Fecha Registro */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="acronym" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
-                    Acrónimo / Siglas
-                  </label>
-                  <input
-                    id="acronym"
-                    type="text"
-                    placeholder="Ej: GIAP"
-                    value={acronym}
-                    onChange={(e) => setAcronym(e.target.value)}
-                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="fechaRecon" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
-                    Fecha de Reconocimiento
-                  </label>
-                  <input
-                    id="fechaRecon"
-                    type="date"
-                    value={recognitionDate}
-                    onChange={(e) => setRecognitionDate(e.target.value)}
-                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
-                  />
-                </div>
-              </div>
-
-              {/* Línea de Investigación + Estado */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="linea" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
-                    Línea de Investigación Principal
-                  </label>
-                  <div className="relative">
-                    <select
-                      id="linea"
-                      value={selectedLine}
-                      onChange={(e) => setSelectedLine(e.target.value)}
-                      className="w-full appearance-none px-3 pr-8 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
-                    >
-                      {LINEAS_INVESTIGACION.map((l) => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="estado" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
-                    Estado Inicial del Grupo
-                  </label>
-                  <div className="relative">
-                    <select
-                      id="estado"
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value as EstadoGrupo)}
-                      className="w-full appearance-none px-3 pr-8 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
-                    >
-                      <option value="pendiente_validacion">Pendiente Validar</option>
-                      <option value="validado_activo">Validado / Activo</option>
-                      <option value="validado_inactivo">Validado / Inactivo</option>
-                    </select>
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[#94a3b8]">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </span>
-                  </div>
+              {/* Línea de Investigación */}
+              <div>
+                <label htmlFor="linea" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
+                  Línea de Investigación Principal
+                </label>
+                <div className="relative">
+                  <select
+                    id="linea"
+                    value={selectedLine}
+                    onChange={(e) => setSelectedLine(e.target.value)}
+                    className="w-full appearance-none px-3 pr-8 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
+                  >
+                    {lineas.length === 0 ? (
+                      <option value="">Cargando líneas de investigación...</option>
+                    ) : (
+                      lineas.map((l) => <option key={l} value={l}>{l}</option>)
+                    )}
+                  </select>
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[#94a3b8]">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+                  </span>
                 </div>
               </div>
 
@@ -476,7 +506,7 @@ export default function NuevoGrupoPage() {
               {/* Buscador en padrón */}
               <div>
                 <p className="font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
-                  Buscar en Padrón de Investigadores (CUO4)
+                  Buscar en Padrón de Investigadores
                 </p>
                 <div className="flex gap-2 items-center">
                   <div className="flex-1 relative max-w-xl">
@@ -552,7 +582,7 @@ export default function NuevoGrupoPage() {
                     )}
                   </div>
 
-                  {/* Regla de negocio inline a la derecha del botón */}
+                  {/* Regla de negocio inline */}
                   <div className="flex items-center gap-1.5 text-[13px] font-sans text-on-surface-variant ml-2">
                     <span className="text-on-surface-variant"><InfoIcon /></span>
                     <span>Debe existir un <strong className="text-on-surface">Director</strong> activo.</span>
@@ -605,7 +635,8 @@ export default function NuevoGrupoPage() {
                                 <select
                                   value={m.rol}
                                   onChange={(e) => handleRoleChange(m.dni, e.target.value as RolMiembro)}
-                                  className="w-full appearance-none pl-2 pr-6 py-1 font-sans text-[12px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-1 focus:ring-[#a8c8fa] cursor-pointer"
+                                  disabled={tieneActivos && isDir}
+                                  className="w-full appearance-none pl-2 pr-6 py-1 font-sans text-[12px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-1 focus:ring-[#a8c8fa] cursor-pointer disabled:bg-surface-container-low disabled:cursor-not-allowed"
                                 >
                                   <option value="Director">Director</option>
                                   <option value="Co-Investigador">Co-Investigador</option>
@@ -624,7 +655,8 @@ export default function NuevoGrupoPage() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveMiembro(m.dni)}
-                                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors cursor-pointer"
+                                disabled={tieneActivos && isDir}
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors cursor-pointer disabled:opacity-30"
                                 title="Remover del grupo"
                               >
                                 <TrashIcon />
@@ -644,6 +676,16 @@ export default function NuevoGrupoPage() {
                 </table>
               </div>
 
+              {/* Alerta EX1 si hay proyectos activos */}
+              {tieneActivos && (
+                <div className="flex gap-2 items-start bg-blue-50 text-blue-800 border border-blue-200 rounded p-3 text-[12px] font-sans">
+                  <span className="text-blue-600 flex-shrink-0 mt-0.5"><InfoIcon /></span>
+                  <p>
+                    <strong>Regla EX1:</strong> Este grupo tiene proyectos activos en ejecución. No se puede remover al Director ni desactivar el grupo.
+                  </p>
+                </div>
+              )}
+
             </div>
           )}
         </div>
@@ -656,7 +698,7 @@ export default function NuevoGrupoPage() {
           className="fixed bottom-8 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-lg bg-[#22c55e] text-white shadow-2xl font-sans font-semibold text-[14px] animate-[slideInRight_0.25s_ease-out]"
         >
           <CheckCircleIcon />
-          Grupo creado y validado exitosamente.
+          Grupo guardado y validado exitosamente.
         </div>
       )}
     </MainLayout>
