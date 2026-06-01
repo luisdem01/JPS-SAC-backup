@@ -104,7 +104,6 @@ export interface RegistroProduccion {
   importadoEn?:            string;        // ISO datetime
   confirmadoPor?:          string;
   confirmadoEn?:           string;
-  isExternal?:             boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 /**
  * @file [id]/page.tsx
- * @route /publicaciones/[id]
+ * @route /SGPI-CFPT/[id]
  * @description Página de detalle de una producción académica.
  *
  * Muestra dos vistas según el estado del registro:
@@ -24,7 +24,7 @@ import type {
   RolPublicacion, Cuartil, GrupoInvestigacionResumen
 } from '../_data/types';
 import {
-  getProduccionById, confirmarProduccion, validarDOI, buscarInvestigadores, buscarGrupos, importarTesis
+  getProduccionById, confirmarProduccion, validarDOI, buscarInvestigadores, buscarGrupos
 } from '../_data/service';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,14 +169,14 @@ function BuscarInvestigadorModal({
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const buscar = useCallback(async (query: string) => {
+  useEffect(() => { inputRef.current?.focus(); buscar(''); }, []);
+
+  const buscar = async (query: string) => {
     setLoading(true);
     const res = await buscarInvestigadores(query);
     setResultados(res.filter((r) => !excluirIds.includes(r.id)));
     setLoading(false);
-  }, [excluirIds]);
-
-  useEffect(() => { inputRef.current?.focus(); buscar(''); }, [buscar]);
+  };
 
   const handleChange = (v: string) => { setQ(v); buscar(v); };
 
@@ -252,14 +252,14 @@ function BuscarGrupoModal({
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const buscar = useCallback(async (query: string) => {
+  useEffect(() => { inputRef.current?.focus(); buscar(''); }, []);
+
+  const buscar = async (query: string) => {
     setLoading(true);
     const res = await buscarGrupos(query);
     setResultados(res);
     setLoading(false);
-  }, []);
-
-  useEffect(() => { inputRef.current?.focus(); buscar(''); }, [buscar]);
+  };
 
   const handleChange = (v: string) => { setQ(v); buscar(v); };
 
@@ -709,9 +709,9 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
                     <p className="font-sans text-[13px] text-on-surface-variant">Sin grupo vinculado.</p>
                   )
                 ) : (
-                  (prod.investigadoresVinculados || []).length > 0 ? (
+                  prod.investigadoresVinculados.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
-                      {(prod.investigadoresVinculados || []).map((v) => (
+                      {prod.investigadoresVinculados.map((v) => (
                         <span key={v.investigador.id} className="flex items-center gap-1.5 font-sans text-[13px] text-[#166534]">
                           <span className="w-4 h-4 flex items-center justify-center rounded-full bg-[#dcfce7]">
                             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -789,7 +789,7 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
               )}
 
               {/* Indicadores Tesis */}
-              {prod.tipo === 'tesis' && (prod.investigadoresVinculados || []).map((v) => (
+              {prod.tipo === 'tesis' && prod.investigadoresVinculados.map((v) => (
                 <div key={`carga-${v.investigador.id}`}
                   className="flex items-center gap-3 p-3 rounded border border-outline-variant hover:bg-surface-container-low transition-colors">
                   <span className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-[#dbeafe] text-[#1d4ed8]">
@@ -806,7 +806,7 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
                 </div>
               ))}
 
-              {((prod.tipo === 'tesis' && (!prod.investigadoresVinculados || prod.investigadoresVinculados.length === 0)) || (prod.tipo === 'articulo' && !prod.grupoVinculado)) && (
+              {((prod.tipo === 'tesis' && prod.investigadoresVinculados.length === 0) || (prod.tipo === 'articulo' && !prod.grupoVinculado)) && (
                 <p className="font-sans text-[13px] text-on-surface-variant text-center py-2">
                   Sin impacto calculado (no hay vinculación).
                 </p>
@@ -894,38 +894,6 @@ export default function ProduccionDetailPage() {
   const [doiError, setDoiError] = useState<string | null>(null);
   const [showBuscar, setShowBuscar] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
-
-  const handleImportarTesis = async () => {
-    if (!prod) return;
-    setIsImporting(true);
-    setSaveError(null);
-    try {
-      const payload = {
-        url_cybertesis: prod.urlCybertesis || meta.urlCybertesis || "",
-        titulo_tesis: prod.titulo || meta.titulo || "",
-        resumen_abstract: (prod as any).resumen || "",
-        cita_apa: `${prod.autores || ""} (${prod.fecha ? prod.fecha.split("-")[0] : new Date().getFullYear()}). ${prod.titulo}.`,
-        autor_estudiante_texto: prod.tesista || meta.tesista || "Estudiante no detectado",
-        asesor_texto: prod.autores || "Asesor no detectado",
-        dni_asesor: vinculados.find(v => v.rol === 'Asesor')?.investigador.id || null,
-        nivel_grado: prod.tipoTesis || meta.tipoTesis || "Pregrado",
-        tipo_trabajo: "Trabajo de investigación",
-        estado_validacion: "Pendiente",
-        fuente_origen: "CYBERTESIS",
-        palabras_clave: [],
-        jurados_evaluadores: []
-      };
-      await importarTesis(payload);
-      setProd(prev => prev ? { ...prev, isExternal: false } : null);
-      alert("✓ Tesis importada exitosamente a la base de datos local.");
-    } catch (err: any) {
-      console.error("Error importing thesis:", err);
-      setSaveError(err.message || "Error al importar la tesis.");
-    } finally {
-      setIsImporting(false);
-    }
-  };
 
   // Form state: metadata
   const [meta, setMeta] = useState<MetaState>({
@@ -1050,7 +1018,7 @@ export default function ProduccionDetailPage() {
       <MainLayout title="Sistema de Gestión de Proyectos de Investigación">
         <div className="text-center py-20">
           <p className="font-sans font-semibold text-[14px] text-on-surface mb-2">Registro no encontrado.</p>
-          <button onClick={() => router.push('/publicaciones')}
+          <button onClick={() => router.push('/SGPI-CFPT')}
             className="font-sans text-[13px] text-[#2563eb] hover:underline">
             Volver a la bandeja
           </button>
@@ -1063,7 +1031,7 @@ export default function ProduccionDetailPage() {
   if (prod.estado === 'validado') {
     return (
       <MainLayout title="Sistema de Gestión de Proyectos de Investigación">
-        <VistaValidada prod={prod} onVolver={() => router.push('/publicaciones')} />
+        <VistaValidada prod={prod} onVolver={() => router.push('/SGPI-CFPT')} />
       </MainLayout>
     );
   }
@@ -1080,7 +1048,7 @@ export default function ProduccionDetailPage() {
       {/* ── Cabecera de validación ───────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-5 pb-4">
         <div className="flex items-start gap-2">
-          <button onClick={() => router.push('/publicaciones')}
+          <button onClick={() => router.push('/SGPI-CFPT')}
             className="flex items-center gap-1 font-sans text-[13px] text-on-surface-variant hover:text-on-surface transition-colors mt-2"
             aria-label="Volver a la bandeja">
             <ArrowLeftIcon />
@@ -1102,7 +1070,7 @@ export default function ProduccionDetailPage() {
         <div className="flex gap-2 flex-shrink-0 ml-4">
           <button
             type="button"
-            onClick={() => router.push('/publicaciones')}
+            onClick={() => router.push('/SGPI-CFPT')}
             className="border border-[#e2e8f0] hover:bg-slate-50 font-sans text-[13px] text-[#475569] px-4 py-2 rounded transition-colors cursor-pointer"
           >
             Cancelar
@@ -1110,7 +1078,7 @@ export default function ProduccionDetailPage() {
           <button
             type="button"
             onClick={handleConfirmar}
-            disabled={isSaving || !!doiError || prod.isExternal}
+            disabled={isSaving || !!doiError}
             className="flex items-center gap-2 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded shadow transition-colors cursor-pointer disabled:opacity-60"
           >
             {isSaving ? (
@@ -1126,23 +1094,6 @@ export default function ProduccionDetailPage() {
           </button>
         </div>
       </div>
-
-      {/* ── Tesis Externa Cybertesis Banner ───────────────────────────────────── */}
-      {prod.isExternal && (
-        <div className="bg-[#fff9db] border border-[#ffe066] text-[#8c6d00] px-4 py-4 rounded font-sans text-[13px] mb-5 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
-          <div>
-            <span className="font-bold block mb-0.5">Tesis Externa (Cybertesis UNMSM)</span>
-            Esta tesis proviene del repositorio externo Cybertesis de la UNMSM y no está registrada en el sistema local. Debe importarla primero para poder validar e integrar sus docentes/asesores.
-          </div>
-          <button
-            onClick={handleImportarTesis}
-            disabled={isImporting}
-            className="bg-[#e67e22] hover:bg-[#d35400] text-white font-semibold py-2 px-4 rounded shadow transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap self-start md:self-auto"
-          >
-            {isImporting ? 'Importando...' : 'Importar e Integrar Tesis'}
-          </button>
-        </div>
-      )}
 
       {/* ── Error de guardado ─────────────────────────────────────────────────── */}
       {saveError && (
@@ -1167,7 +1118,7 @@ export default function ProduccionDetailPage() {
             <button key={t.id} onClick={() => setActiveTab(t.id)}
               className={`
                 flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px]
-                border-b-2 transition-all duration-300 ease-out
+                border-b-2 transition-colors duration-100
                 ${activeTab === t.id
                   ? 'border-[#001631] text-[#001631]'
                   : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline'}
@@ -1180,7 +1131,7 @@ export default function ProduccionDetailPage() {
         </div>
 
         {/* Tab content */}
-        <div role="tabpanel" key={activeTab} className="animate-sweep-in">
+        <div role="tabpanel">
           {activeTab === 'metadata' && (
             <TabMetadata
               prod={prod} meta={meta} onChange={handleMetaChange}

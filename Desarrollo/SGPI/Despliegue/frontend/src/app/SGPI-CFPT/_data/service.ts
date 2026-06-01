@@ -60,10 +60,6 @@ export async function confirmarProduccion(payload: ConfirmarPayload): Promise<Re
   return apiClient.post<RegistroProduccion>(`/cfpt/producciones/${payload.id}/confirmar`, payload);
 }
 
-export async function importarTesis(payload: any): Promise<any> {
-  return apiClient.post<any>('/theses', payload);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Validar DOI duplicado (EX2)
 // ─────────────────────────────────────────────────────────────────────────────

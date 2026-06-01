@@ -11,7 +11,6 @@ import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type { Proyecto } from '../_data/types';
 import { getProyectoById, completarHito } from '../_data/service';
-import { getProyectoById, completarHito } from '../_data/service';
 // ─────────────────────────────────────────────────────────────────────────────
 // Íconos SVG
 // ─────────────────────────────────────────────────────────────────────────────

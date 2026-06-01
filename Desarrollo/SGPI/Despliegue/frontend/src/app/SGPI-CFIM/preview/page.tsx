@@ -25,181 +25,17 @@ import { importEndpoints } from '@/SGPI-CFU/lib/api/endpoints';
 // Tipos
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ImportEntity = 'proyectos' | 'docentes' | 'publicaciones';
-
 interface ImportMeta {
-  entity:   ImportEntity;
+  entity:   string;
   fileName: string;
   fileSize: number;
   jobId:    string;
 }
 
-const ENTITY_LABELS: Record<ImportEntity, string> = {
-  docentes:      'Docentes / Investigadores',
-  proyectos:     'Proyectos de Investigación',
-  publicaciones: 'Publicaciones / Tesis',
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Mock data de previsualización (se mostrará una vez completada la carga)
+// (Las tablas de previsualización se han removido debido a que la 
+// importación determina automáticamente las entidades a insertar)
 // ─────────────────────────────────────────────────────────────────────────────
-
-const MOCK_DOCENTES = [
-  { dni: '70374721', codigoRenacyt: 'P0039101', nombre: 'Rodríguez Saavedra Lennin Roswell',  departamento: 'Ingeniería de Software',      nivel: 'VI',             estado: 'Activo'   },
-  { dni: '44749497', codigoRenacyt: 'P0186033', nombre: 'Torres Malima Sally Fernanda',        departamento: 'Ciencias de la Computación', nivel: 'VII',            estado: 'Activo'   },
-  { dni: '10293847', codigoRenacyt: 'P0012345', nombre: 'Pérez Silva Juan Carlos',             departamento: 'Sistemas de Información',    nivel: 'No Clasificado', estado: 'Inactivo' },
-];
-const MOCK_PROYECTOS = [
-  { codigo: 'PI-2024-001', titulo: 'Sistemas de detección temprana con IA',               responsable: 'Rodríguez Saavedra Lennin', estado: 'En Ejecución',  anio: '2024', presupuesto: 'S/ 45,000' },
-  { codigo: 'PI-2024-002', titulo: 'Análisis de datos climáticos en la Amazonía',         responsable: 'Torres Malima Sally',       estado: 'En Evaluación', anio: '2024', presupuesto: 'S/ 32,500' },
-  { codigo: 'PI-2023-015', titulo: 'Modelos predictivos para deserción universitaria',    responsable: 'Pérez Silva Juan Carlos',   estado: 'Concluido',     anio: '2023', presupuesto: 'S/ 28,000' },
-];
-const MOCK_PUBLICACIONES = [
-  { codigo: 'PUB-2024-0112', titulo: 'Deep Learning aplicado al diagnóstico médico',      autor: 'Rodríguez Saavedra Lennin', tipo: 'Artículo ISI',   anio: '2024', estado: 'Publicado'   },
-  { codigo: 'TES-2024-0088', titulo: 'Redes neuronales en visión computacional',          autor: 'Torres Malima Sally',        tipo: 'Tesis Doctoral', anio: '2024', estado: 'En revisión' },
-  { codigo: 'PUB-2023-0201', titulo: 'Algoritmos genéticos para optimización',            autor: 'Pérez Silva Juan Carlos',   tipo: 'Artículo Scopus', anio: '2023', estado: 'Publicado'  },
-];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Íconos
-// ─────────────────────────────────────────────────────────────────────────────
-
-function InfoCircleIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-      viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      aria-hidden="true" className="flex-shrink-0 mt-px">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" />
-      <line x1="12" y1="16" x2="12.01" y2="16" />
-    </svg>
-  );
-}
-
-function AlertCircleIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-      viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      aria-hidden="true" className="flex-shrink-0 mt-px">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" />
-      <line x1="12" y1="16" x2="12.01" y2="16" />
-    </svg>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers de celdas
-// ─────────────────────────────────────────────────────────────────────────────
-
-function NivelBadge({ nivel }: { nivel: string }) {
-  if (nivel === 'No Clasificado') {
-    return (
-      <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-[#f1f5f9] text-[#64748b] font-sans font-semibold text-[10px] leading-[14px] border border-[#e2e8f0] whitespace-nowrap">
-        No Clasificado
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#dbeafe] text-[#1d4ed8] font-sans font-bold text-[12px]">
-      {nivel}
-    </span>
-  );
-}
-
-function EstadoCell({ estado }: { estado: string }) {
-  const isActivo  = ['Activo', 'En Ejecución', 'Publicado'].includes(estado);
-  const isWarning = ['En Evaluación', 'En revisión'].includes(estado);
-  return (
-    <span className={`font-sans font-semibold text-[13px] ${isActivo ? 'text-[#059669]' : isWarning ? 'text-[#d97706]' : 'text-[#64748b]'}`}>
-      {estado}
-    </span>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tabla de previsualización
-// ─────────────────────────────────────────────────────────────────────────────
-
-function PreviewTable({ entity }: { entity: ImportEntity }) {
-  if (entity === 'docentes') {
-    return (
-      <table className="w-full border-collapse" aria-label="Vista previa de docentes e investigadores">
-        <thead>
-          <tr className="border-b border-outline-variant bg-surface-container-low">
-            {['DNI', 'CÓDIGO RENACYT', 'NOMBRES Y APELLIDOS', 'DEPARTAMENTO ACADÉMICO', 'NIVEL', 'ESTADO'].map((col) => (
-              <th key={col} scope="col" className="px-4 py-3 text-left font-sans text-label-caps text-on-surface-variant uppercase tracking-widest whitespace-nowrap">{col}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {MOCK_DOCENTES.map((row, i) => (
-            <tr key={row.dni} className={`border-b border-outline-variant last:border-b-0 transition-colors duration-100 ${i % 2 === 0 ? 'bg-surface-container-lowest' : 'bg-surface-container-low/40'} hover:bg-surface-container-low`}>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface font-medium whitespace-nowrap">{row.dni}</td>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface-variant whitespace-nowrap">{row.codigoRenacyt}</td>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface">{row.nombre}</td>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface-variant">{row.departamento}</td>
-              <td className="px-4 py-3"><NivelBadge nivel={row.nivel} /></td>
-              <td className="px-4 py-3"><EstadoCell estado={row.estado} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
-
-  if (entity === 'proyectos') {
-    return (
-      <table className="w-full border-collapse" aria-label="Vista previa de proyectos de investigación">
-        <thead>
-          <tr className="border-b border-outline-variant bg-surface-container-low">
-            {['CÓDIGO', 'TÍTULO', 'RESPONSABLE', 'AÑO', 'PRESUPUESTO', 'ESTADO'].map((col) => (
-              <th key={col} scope="col" className="px-4 py-3 text-left font-sans text-label-caps text-on-surface-variant uppercase tracking-widest whitespace-nowrap">{col}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {MOCK_PROYECTOS.map((row, i) => (
-            <tr key={row.codigo} className={`border-b border-outline-variant last:border-b-0 transition-colors duration-100 ${i % 2 === 0 ? 'bg-surface-container-lowest' : 'bg-surface-container-low/40'} hover:bg-surface-container-low`}>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface font-medium whitespace-nowrap">{row.codigo}</td>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface max-w-[260px]">{row.titulo}</td>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface-variant whitespace-nowrap">{row.responsable}</td>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface-variant">{row.anio}</td>
-              <td className="px-4 py-3 font-sans text-body-md text-on-surface-variant whitespace-nowrap">{row.presupuesto}</td>
-              <td className="px-4 py-3"><EstadoCell estado={row.estado} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
-
-  return (
-    <table className="w-full border-collapse" aria-label="Vista previa de publicaciones y tesis">
-      <thead>
-        <tr className="border-b border-outline-variant bg-surface-container-low">
-          {['CÓDIGO', 'TÍTULO', 'AUTOR', 'TIPO', 'AÑO', 'ESTADO'].map((col) => (
-            <th key={col} scope="col" className="px-4 py-3 text-left font-sans text-label-caps text-on-surface-variant uppercase tracking-widest whitespace-nowrap">{col}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {MOCK_PUBLICACIONES.map((row, i) => (
-          <tr key={row.codigo} className={`border-b border-outline-variant last:border-b-0 transition-colors duration-100 ${i % 2 === 0 ? 'bg-surface-container-lowest' : 'bg-surface-container-low/40'} hover:bg-surface-container-low`}>
-            <td className="px-4 py-3 font-sans text-body-md text-on-surface font-medium whitespace-nowrap">{row.codigo}</td>
-            <td className="px-4 py-3 font-sans text-body-md text-on-surface max-w-[260px]">{row.titulo}</td>
-            <td className="px-4 py-3 font-sans text-body-md text-on-surface-variant whitespace-nowrap">{row.autor}</td>
-            <td className="px-4 py-3"><Badge variant="info" size="sm">{row.tipo}</Badge></td>
-            <td className="px-4 py-3 font-sans text-body-md text-on-surface-variant">{row.anio}</td>
-            <td className="px-4 py-3"><EstadoCell estado={row.estado} /></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Barra de progreso animada
@@ -242,7 +78,6 @@ export default function ImportPreviewPage() {
   useEffect(() => {
     const raw = sessionStorage.getItem('import_meta');
     if (!raw) {
-      // Sin metadatos → volver a la pantalla de carga
       router.replace('/SGPI-CFIM');
       return;
     }
@@ -300,7 +135,7 @@ export default function ImportPreviewPage() {
               ? 'Vista Previa de Importación'
               : error
                 ? 'Error en la Importación'
-                : `Vista Previa de Importación: ${ENTITY_LABELS[entity as ImportEntity]}`
+                : 'Vista Previa de Importación'
           }
         </h1>
       </div>
@@ -386,19 +221,13 @@ export default function ImportPreviewPage() {
                 {(summary as any)?.errors > 0 && (
                   <> Con <span className="font-bold text-[#d97706]">{(summary as any)?.errors} errores</span>.</>
                 )}
-                {' '}Revise las primeras filas antes de confirmar.
               </p>
-            </div>
-
-            {/* Tabla preview */}
-            <div className="overflow-x-auto">
-              <PreviewTable entity={entity as ImportEntity} />
             </div>
 
             {/* Pie: contador + acciones */}
             <div className="flex items-center justify-between px-5 py-4 border-t border-outline-variant bg-surface-container-lowest">
               <p className="font-sans text-[13px] text-on-surface-variant italic">
-                Mostrando 3 registros de muestra. El proceso ya fue aplicado a la base de datos.
+                El proceso ha finalizado.
               </p>
               <div className="flex items-center gap-3">
                 <Button

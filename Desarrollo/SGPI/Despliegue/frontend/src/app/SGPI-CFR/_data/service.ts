@@ -53,9 +53,9 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
     default: tipoReporte = 'Carga No Lectiva';
   }
 
-  const backendParams = {
+  const backendParams: any = {
     tipo_reporte: tipoReporte,
-    anio_corte: params.anioFiscal,
+    anio_corte: (tipoReporte === 'Produccion Cientifica' || tipoReporte === 'Resumen General') ? undefined : params.anioFiscal,
     periodo_corte: params.corte,
     fecha_inicio_desde: params.fechaInicio || undefined,
     fecha_fin_hasta: params.fechaFin || undefined,
@@ -124,9 +124,43 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
     result.totalDocentes = data.total_investigadores_evaluados || 0;
     result.proyectosActivos = data.total_proyectos_activos || 0;
     result.promedioCargaNoLectiva = data.promedio_carga_no_lectiva ? Math.round(data.promedio_carga_no_lectiva) : 0;
-    // Resumen general no tiene registros para la tabla por defecto
-    result.registros = [];
-    result.totalRegistros = 0;
+    
+    // Resumen general mapea las métricas a registros para no mostrar una tabla vacía
+    const rows = [];
+    if (data.investigadores_por_categoria_renacyt) {
+      let idx = 1;
+      for (const [cat, count] of Object.entries(data.investigadores_por_categoria_renacyt)) {
+        rows.push({
+          id: String(idx++),
+          nombre: `Investigadores Renacyt: ${cat}`,
+          dni: 'RENACYT',
+          departamento: 'Métricas Generales',
+          hrsProyectos: 0,
+          hrsAsesorias: 0,
+          totalCarga: Number(count)
+        });
+      }
+      rows.push({
+        id: 'pub',
+        nombre: 'Total Publicaciones en el Periodo',
+        dni: 'METRICA',
+        departamento: 'Métricas Generales',
+        hrsProyectos: 0,
+        hrsAsesorias: 0,
+        totalCarga: data.total_publicaciones_periodo || 0
+      });
+      rows.push({
+        id: 'tesis',
+        nombre: 'Total Tesis en el Periodo',
+        dni: 'METRICA',
+        departamento: 'Métricas Generales',
+        hrsProyectos: 0,
+        hrsAsesorias: 0,
+        totalCarga: data.total_tesis_periodo || 0
+      });
+    }
+    result.registros = rows;
+    result.totalRegistros = rows.length;
 
   } else if (tipoReporte === 'Proyectos Activos') {
     result.proyectosActivos = data.total_proyectos || 0;
@@ -148,8 +182,9 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
   } else if (tipoReporte === 'Produccion Cientifica') {
     result.totalPublicaciones = data.total_publicaciones || 0;
     result.totalTesis = data.total_tesis || 0;
+    let registros = [];
     if (data.publicaciones) {
-      result.registros = data.publicaciones.map((p: any) => ({
+      registros = data.publicaciones.map((p: any) => ({
         id: String(p.id_publicacion),
         nombre: p.titulo,
         dni: p.doi || p.tipo,
@@ -159,6 +194,19 @@ export async function generarReporte(params: ReporteParams): Promise<ReporteResu
         totalCarga: 0
       }));
     }
+    if (data.tesis) {
+      const tesisRegistros = data.tesis.map((t: any) => ({
+        id: t.url_cybertesis || String(Math.random()),
+        nombre: `[TESIS] ${t.titulo}`,
+        dni: 'Tesis',
+        departamento: t.nivel_grado || 'Grado no especificado',
+        hrsProyectos: 0,
+        hrsAsesorias: 0,
+        totalCarga: 0
+      }));
+      registros = [...registros, ...tesisRegistros];
+    }
+    result.registros = registros;
     result.totalRegistros = result.registros.length;
   }
 
@@ -184,9 +232,9 @@ export async function guardarSnapshot(result: ReporteResult): Promise<void> {
     default: tipoReporte = 'Carga No Lectiva';
   }
 
-  const backendParams = {
+  const backendParams: any = {
     tipo_reporte: tipoReporte,
-    anio_corte: result.params.anioFiscal,
+    anio_corte: (tipoReporte === 'Produccion Cientifica' || tipoReporte === 'Resumen General') ? undefined : result.params.anioFiscal,
     periodo_corte: result.params.corte,
     fecha_inicio_desde: result.params.fechaInicio || undefined,
     fecha_fin_hasta: result.params.fechaFin || undefined,

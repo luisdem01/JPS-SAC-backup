@@ -2,7 +2,7 @@
 
 /**
  * @file page.tsx
- * @route /publicaciones  (alias: /publications)
+ * @route /SGPI-CFPT  (alias: /publications)
  * @description Tablero de control: Gestión de Publicaciones y Tesis.
  *
  * Pantalla 1 del flujo (pasos 2-3):
@@ -197,7 +197,7 @@ export default function PublicacionesTesisPage() {
     }
   }, []);
 
-  useEffect(() => { cargar(DEFAULT_FILTROS); }, [cargar]);
+  useEffect(() => { cargar(DEFAULT_FILTROS); }, []);
 
   // ── Aplicar filtros ────────────────────────────────────────────────────────
   const handleFiltrar = () => {
@@ -456,7 +456,7 @@ export default function PublicacionesTesisPage() {
                     <td className="px-5 py-3">
                       {prod.estado === 'pendiente' ? (
                         <button
-                          onClick={() => router.push(`/publicaciones/${prod.id}`)}
+                          onClick={() => router.push(`/SGPI-CFPT/${prod.id}`)}
                           className="
                             inline-flex items-center gap-1.5
                             px-3 py-1.5 rounded
@@ -471,7 +471,7 @@ export default function PublicacionesTesisPage() {
                         </button>
                       ) : (
                         <button
-                          onClick={() => router.push(`/publicaciones/${prod.id}`)}
+                          onClick={() => router.push(`/SGPI-CFPT/${prod.id}`)}
                           className="
                             w-8 h-8 flex items-center justify-center rounded
                             text-on-surface-variant
