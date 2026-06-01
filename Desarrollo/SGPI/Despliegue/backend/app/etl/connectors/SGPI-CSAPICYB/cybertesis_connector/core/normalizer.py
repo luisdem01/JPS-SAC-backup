@@ -2,19 +2,19 @@ import re
 import unicodedata
 from typing import Optional
 
+
 def clean_text(text: Optional[str]) -> str:
     """Limpia espacios en blanco múltiples y normaliza el espaciado del texto."""
     if not text:
         return ""
-    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r"\s+", " ", text)
     return text.strip()
+
 
 def strip_accents(text: str) -> str:
     """Remueve tildes y diéresis de una cadena de texto (ej. Félix -> Felix)."""
-    return "".join(
-        c for c in unicodedata.normalize('NFD', text)
-        if unicodedata.category(c) != 'Mn'
-    )
+    return "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
+
 
 def normalize_name(name_str: str, strip_tildes: bool = False) -> str:
     """
@@ -26,16 +26,16 @@ def normalize_name(name_str: str, strip_tildes: bool = False) -> str:
     """
     if not name_str:
         return ""
-    
+
     # Limpiar espaciados
     name = clean_text(name_str)
-    
+
     # Manejar formatos separados por coma 'Apellidos, Nombres'
     if "," in name:
         parts = name.split(",", 1)
         # Invertir el orden: Nombres Apellidos
         name = f"{parts[1].strip()} {parts[0].strip()}"
-    
+
     # Convertir a mayúsculas capitales en cada palabra (respetando conectores como 'de', 'la' si se desea)
     # Por simplicidad y robustez, usaremos .title() o capitalización de palabras
     words = name.split()
@@ -48,13 +48,14 @@ def normalize_name(name_str: str, strip_tildes: bool = False) -> str:
         else:
             # Capitalizar w
             capitalized_words.append(w.capitalize())
-            
+
     name = " ".join(capitalized_words)
-    
+
     if strip_tildes:
         name = strip_accents(name)
-        
+
     return clean_text(name)
+
 
 def clean_author_list(authors_str: str) -> list[str]:
     """
@@ -63,12 +64,12 @@ def clean_author_list(authors_str: str) -> list[str]:
     """
     if not authors_str or authors_str.lower() in ["desconocido", "n/a", "none"]:
         return []
-        
+
     # Separar por punto y coma (común en DSpace y metadatos múltiples) o coma (si no separa apellidos)
     # En DSpace 7 usualmente ya viene como una lista, pero si se recibe un string plano:
     separators = [";", "|"]
-    pattern = '|'.join(map(re.escape, separators))
-    
+    pattern = "|".join(map(re.escape, separators))
+
     if re.search(pattern, authors_str):
         parts = re.split(pattern, authors_str)
     else:
@@ -80,11 +81,11 @@ def clean_author_list(authors_str: str) -> list[str]:
             parts = authors_str.split(",")
         else:
             parts = [authors_str]
-            
+
     results = []
     for p in parts:
         cleaned = normalize_name(p)
         if cleaned:
             results.append(cleaned)
-            
+
     return results

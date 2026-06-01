@@ -1,10 +1,9 @@
 import re
 from typing import Optional
-from pydantic import BaseModel
 from sgpi_parser.core.base_parser import BaseParser
 from sgpi_parser.core.models import Cronograma, MetadataCronograma, ActividadCronograma
 from sgpi_parser.utils.pdf_utils import get_plumber_doc, extract_raw_text_fitz
-from sgpi_parser.utils.string_utils import clean_text, parse_spanish_date_range, fuzzy_match
+from sgpi_parser.utils.string_utils import clean_text, parse_spanish_date_range
 
 class HeuristicCronogramaParser(BaseParser):
     """
@@ -72,7 +71,8 @@ class HeuristicCronogramaParser(BaseParser):
             if best_line_idx + 1 < len(text_lines):
                 next_line = text_lines[best_line_idx + 1]
                 next_lower = next_line.lower()
-                # If next line is not an activity, not a bullet, and looks like a continuation (e.g. uppercase or contains years or parentheses)
+                # If next line is not an activity, not a bullet, and looks like a
+                # continuation (e.g. uppercase or contains years or parentheses)
                 if (
                     len(next_line) > 5 and
                     not any(next_line.strip().startswith(bullet) for bullet in ["", "\uf076", "•", "*", "-", "·"]) and

@@ -326,21 +326,19 @@ export default function PublicacionesTesisPage() {
             />
           </div>
 
-          {/* Indexación */}
+          {/* Fuente de Origen */}
           <div>
-            <label htmlFor="filtro-indexacion"
+            <label htmlFor="filtro-fuente"
               className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
-              Indexación
+              Fuente de Origen
             </label>
             <Select
-              id="filtro-indexacion" label="Fuente de indexación"
+              id="filtro-fuente" label="Fuente de Origen"
               value={tempIndexacion} onChange={setTempIndexacion}
               options={[
                 { value: 'todas',      label: 'Todas' },
-                { value: 'SCOPUS',     label: 'Scopus' },
-                { value: 'WOS',        label: 'WoS' },
-                { value: 'CYBERTESIS', label: 'Cybertesis' },
                 { value: 'MANUAL',     label: 'Manual' },
+                { value: 'CYBERTESIS', label: 'Cybertesis' },
               ]}
             />
           </div>
@@ -399,7 +397,7 @@ export default function PublicacionesTesisPage() {
                 <tr className="border-b border-outline-variant bg-surface-container-low">
                   {[
                     'Título de la Producción',
-                    'Autor / Tesista Detectado',
+                    'Asesor / Grupo de Inv. Detectado',
                     'Fecha',
                     'Fuente de Origen',
                     'Estado de Validación',

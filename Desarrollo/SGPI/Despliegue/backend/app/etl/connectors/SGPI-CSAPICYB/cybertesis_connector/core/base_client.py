@@ -4,6 +4,7 @@ import requests
 from typing import Optional, Dict, Any
 from cybertesis_connector.config import USER_AGENTS, HTTP_TIMEOUT, MAX_RETRIES, BACKOFF_FACTOR
 
+
 class BaseClient:
     def __init__(self):
         self.session = requests.Session()
@@ -13,11 +14,11 @@ class BaseClient:
         return random.choice(USER_AGENTS)
 
     def request(
-        self, 
-        url: str, 
-        params: Optional[Dict[str, Any]] = None, 
+        self,
+        url: str,
+        params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        quiet: bool = False
+        quiet: bool = False,
     ) -> Optional[requests.Response]:
         """
         Realiza una petición HTTP GET de forma robusta con reintentos,
@@ -37,13 +38,8 @@ class BaseClient:
             try:
                 if not quiet and attempt > 1:
                     print(f"[HTTP Client] Reintentando petición a {url} (Intento {attempt}/{retries})...")
-                
-                response = self.session.get(
-                    url, 
-                    params=params, 
-                    headers=req_headers, 
-                    timeout=HTTP_TIMEOUT
-                )
+
+                response = self.session.get(url, params=params, headers=req_headers, timeout=HTTP_TIMEOUT)
 
                 # Si es un error del servidor (5xx), reintentar
                 if response.status_code >= 500:
@@ -61,13 +57,13 @@ class BaseClient:
                     if not quiet:
                         print(f"[HTTP Client] Error crítico de conexión tras {retries} intentos: {e}")
                     return None
-                
+
                 # Backoff exponencial con jitter aleatorio
                 sleep_time = (backoff ** (attempt - 1)) + random.uniform(0.1, 0.5)
                 if not quiet:
                     print(f"[HTTP Client] Fallo de red: {e}. Esperando {sleep_time:.2f}s antes de reintentar...")
                 time.sleep(sleep_time)
-                
+
                 # Actualizar User-Agent para el siguiente intento por si es un bloqueo suave
                 req_headers["User-Agent"] = self.get_random_user_agent()
 

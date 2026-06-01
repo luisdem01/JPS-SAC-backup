@@ -5,6 +5,7 @@ from sqlalchemy.future import select
 from sqlalchemy import desc
 from app.models.domain import LogAuditoria
 
+
 class CRUDLogAuditoria:
     async def get_multi_filtered(
         self,
@@ -15,11 +16,11 @@ class CRUDLogAuditoria:
         fecha_inicio: Optional[datetime] = None,
         fecha_fin: Optional[datetime] = None,
         skip: int = 0,
-        limit: int = 50
+        limit: int = 50,
     ) -> List[LogAuditoria]:
-        
+
         stmt = select(LogAuditoria)
-        
+
         if tipo_evento:
             stmt = stmt.where(LogAuditoria.tipo_evento == tipo_evento)
         if id_usuario:
@@ -28,11 +29,12 @@ class CRUDLogAuditoria:
             stmt = stmt.where(LogAuditoria.timestamp_evento >= fecha_inicio)
         if fecha_fin:
             stmt = stmt.where(LogAuditoria.timestamp_evento <= fecha_fin)
-            
+
         stmt = stmt.order_by(desc(LogAuditoria.timestamp_evento))
         stmt = stmt.offset(skip).limit(limit)
-        
+
         result = await db.execute(stmt)
         return result.scalars().all()
+
 
 log = CRUDLogAuditoria()

@@ -3,11 +3,12 @@ import sys
 # Ensure app root is in path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi.testclient import TestClient
-from main import app
+from fastapi.testclient import TestClient  # noqa: E402
+from main import app  # noqa: E402
 
 # Initialize test client
 client = TestClient(app)
+
 
 def test_health_check_endpoint():
     """
@@ -19,6 +20,7 @@ def test_health_check_endpoint():
     json_data = response.json()
     assert json_data["status"] == "healthy"
     assert json_data["service"] == "SGPI-CMEPDF Engine"
+
 
 def test_api_generate_pdf_report_success():
     """
@@ -40,14 +42,16 @@ def test_api_generate_pdf_report_success():
     response = client.post("/api/pdf/generate", json=payload)
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
-    
+
     # Assert headers and attachment naming convention
     assert "Content-Disposition" in response.headers
-    assert "attachment; filename=\"Reporte_de_Convocatorias_2026_report.pdf\"" in response.headers["Content-Disposition"]
-    
+    expected_filename = 'attachment; filename="Reporte_de_Convocatorias_2026_report.pdf"'
+    assert expected_filename in response.headers["Content-Disposition"]
+
     # Validate PDF signature
     content = response.content
     assert content[:4] == b"%PDF"
+
 
 def test_api_generate_pdf_certificate_success():
     """
@@ -67,10 +71,12 @@ def test_api_generate_pdf_certificate_success():
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert "Content-Disposition" in response.headers
-    assert "attachment; filename=\"CERTIFICADO_DE_EXCELENCIA_ACADEMICA_certificate.pdf\"" in response.headers["Content-Disposition"]
-    
+    expected_filename = 'attachment; filename="CERTIFICADO_DE_EXCELENCIA_ACADEMICA_certificate.pdf"'
+    assert expected_filename in response.headers["Content-Disposition"]
+
     content = response.content
     assert content[:4] == b"%PDF"
+
 
 def test_api_generate_pdf_validation_error():
     """

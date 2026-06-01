@@ -16,7 +16,7 @@ if hasattr(sys.stderr, "reconfigure"):
 # Agregar el directorio raíz al path para ejecuciones directas sin instalación
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sgpi_ci.cli import main
+from sgpi_ci.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     main()

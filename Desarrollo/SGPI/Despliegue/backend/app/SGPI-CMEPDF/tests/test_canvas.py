@@ -4,7 +4,8 @@ import sys
 # Ensure app root is in path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.engine import build_pdf_report
+from core.engine import build_pdf_report  # noqa: E402
+
 
 def test_build_pdf_report_creation():
     """
@@ -13,7 +14,7 @@ def test_build_pdf_report_creation():
     # Create temp file path
     fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
     os.close(fd)
-    
+
     try:
         build_pdf_report(
             output_target=tmp_path,
@@ -29,20 +30,21 @@ def test_build_pdf_report_creation():
             ],
             doc_type="report"
         )
-        
+
         # Verify file exists and has size
         assert os.path.exists(tmp_path)
         assert os.path.getsize(tmp_path) > 0
-        
+
         # Verify PDF Signature/Magic Header (%PDF)
         with open(tmp_path, "rb") as f:
             header = f.read(4)
             assert header == b"%PDF"
-            
+
     finally:
         # Clean up temp file
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
 
 def test_build_pdf_certificate_creation():
     """
@@ -50,7 +52,7 @@ def test_build_pdf_certificate_creation():
     """
     fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
     os.close(fd)
-    
+
     try:
         build_pdf_report(
             output_target=tmp_path,
@@ -60,19 +62,22 @@ def test_build_pdf_certificate_creation():
             headers=None,
             data=[
                 "Dra. Maria Elena Quispe Flores, investigadora de la Facultad de Ingeniería de Sistemas e Informática.",
-                "Por haber cumplido satisfactoriamente con la entrega de todos sus informes y entregables de investigación en los plazos previstos.",
+                (
+                    "Por haber cumplido satisfactoriamente con la entrega de todos sus informes "
+                    "y entregables de investigación en los plazos previstos."
+                ),
                 "Dado en la Ciudad Universitaria, a los 27 días del mes de mayo del 2026."
             ],
             doc_type="certificate"
         )
-        
+
         assert os.path.exists(tmp_path)
         assert os.path.getsize(tmp_path) > 0
-        
+
         with open(tmp_path, "rb") as f:
             header = f.read(4)
             assert header == b"%PDF"
-            
+
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

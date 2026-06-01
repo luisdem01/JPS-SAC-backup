@@ -10,8 +10,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type { MiembroProyecto, RolMiembroProyecto, EstadoProyecto } from '../_data/types';
-import { buscarInvestigadores, crearProyecto } from '../_data/service';
-import { GRUPOS_DISPONIBLES, CONVOCATORIAS_DISPONIBLES } from '../_data/mock';
+import { buscarInvestigadores, crearProyecto, getGruposDisponibles, getConvocatorias, getProyectoById } from '../_data/service';
+import type { GrupoInvestigacion } from '../_data/service';
 import type { InvestigatorPadron } from '../../SGPI-CFGI/_data/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ export default function NuevoProyectoPage() {
   const [title,             setTitle]             = useState('');
   const [tipo,              setTipo]              = useState<'Básico' | 'Aplicado'>('Aplicado');
   const [programa,          setPrograma]          = useState('VRIP General');
-  const [convocatoria,      setConvocatoria]      = useState(CONVOCATORIAS_DISPONIBLES[0]);
+  const [convocatoria,      setConvocatoria]      = useState('');
   const [resolucion,        setResolucion]        = useState('');
   const [montoFinanciado,   setMontoFinanciado]   = useState(0);
   const [inicioPlanificado, setInicioPlanificado] = useState(() => new Date().toISOString().split('T')[0]);
@@ -110,10 +110,17 @@ export default function NuevoProyectoPage() {
     return d.toISOString().split('T')[0];
   });
 
+  // Grupos de investigación (cargados del backend)
+  const [grupos,                setGrupos]                = useState<GrupoInvestigacion[]>([]);
+  const [gruposLoading,         setGruposLoading]         = useState(true);
+
   // Form — Equipo y Grupo
-  const [grupoVinculado,        setGrupoVinculado]        = useState(GRUPOS_DISPONIBLES[0]);
+  const [grupoVinculado,        setGrupoVinculado]        = useState('');
   const [responsablePrincipal,  setResponsablePrincipal]  = useState('');
   const [miembros,              setMiembros]              = useState<MiembroProyecto[]>([]);
+
+  const [convocatorias,         setConvocatorias]         = useState<string[]>([]);
+  const [convocatoriasLoading,  setConvocatoriasLoading]  = useState(true);
 
   // Búsqueda de Co-investigadores
   const [busquedaInv,        setBusquedaInv]        = useState('');
@@ -125,6 +132,75 @@ export default function NuevoProyectoPage() {
   const [guardando,    setGuardando]    = useState(false);
   const [errors,       setErrors]       = useState<string[]>([]);
   const [showToast,    setShowToast]    = useState(false);
+
+  // Cargar grupos de investigación y convocatorias reales al montar
+  useEffect(() => {
+    Promise.all([
+      getGruposDisponibles(),
+      getConvocatorias()
+    ]).then(([gruposData, convocatoriasData]) => {
+      setGrupos(gruposData);
+      if (gruposData.length > 0) setGrupoVinculado(gruposData[0].codigo_grupo);
+
+      if (convocatoriasData && convocatoriasData.length > 0) {
+        const list = convocatoriasData.map(c => c.titulo_convocatoria);
+        setConvocatorias(list);
+        setConvocatoria(list[0]);
+      } else {
+        const defaults = [
+          'Convocatoria VRIP 2026',
+          'Convocatoria VRIP 2025',
+          'Convocatoria VRIP 2024',
+          'VRIP General'
+        ];
+        setConvocatorias(defaults);
+        setConvocatoria(defaults[0]);
+      }
+    }).finally(() => {
+      setGruposLoading(false);
+      setConvocatoriasLoading(false);
+    });
+  }, []);
+
+  // Pre-load from importCode query param
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const importCode = searchParams.get('importCode');
+    if (importCode) {
+      setGuardando(true);
+      getProyectoById(importCode)
+        .then((data) => {
+          if (data) {
+            setCode(data.code || '');
+            setTitle(data.title || '');
+            setTipo(data.tipo || 'Aplicado');
+            setPrograma(data.programa || 'VRIP General');
+            setConvocatoria(data.convocatoria || '');
+            setResolucion(data.resolucion || '');
+            setMontoFinanciado(data.montoFinanciado || 0);
+            if (data.inicioPlanificado) setInicioPlanificado(data.inicioPlanificado);
+            if (data.finPlanificado) setFinPlanificado(data.finPlanificado);
+            if (data.grupoVinculado) setGrupoVinculado(data.grupoVinculado);
+            if (data.responsablePrincipal) setResponsablePrincipal(data.responsablePrincipal);
+            
+            if (data.miembros && data.miembros.length > 0) {
+              setMiembros(data.miembros);
+            } else if (data.responsablePrincipal) {
+              setMiembros([
+                {
+                  dni: '00000000',
+                  nombre: data.responsablePrincipal,
+                  rol: 'Responsable Principal',
+                  estado: 'activo'
+                }
+              ]);
+            }
+          }
+        })
+        .catch((err) => console.error('Error loading import project:', err))
+        .finally(() => setGuardando(false));
+    }
+  }, []);
 
   // Búsqueda de investigadores
   useEffect(() => {
@@ -390,9 +466,13 @@ export default function NuevoProyectoPage() {
                     id="convocatoria"
                     value={convocatoria}
                     onChange={(e) => setConvocatoria(e.target.value)}
-                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-[#e2e8f0] rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
+                    disabled={convocatoriasLoading}
+                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-[#e2e8f0] rounded outline-none focus:ring-2 focus:ring-[#a8c8fa] disabled:opacity-60"
                   >
-                    {CONVOCATORIAS_DISPONIBLES.map(c => (
+                    {convocatoriasLoading && (
+                      <option value="">Cargando convocatorias...</option>
+                    )}
+                    {convocatorias.map(c => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -467,10 +547,17 @@ export default function NuevoProyectoPage() {
                     id="grupo-vinculado"
                     value={grupoVinculado}
                     onChange={(e) => setGrupoVinculado(e.target.value)}
-                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-[#e2e8f0] rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
+                    disabled={gruposLoading}
+                    className="w-full px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-[#e2e8f0] rounded outline-none focus:ring-2 focus:ring-[#a8c8fa] disabled:opacity-60"
                   >
-                    {GRUPOS_DISPONIBLES.map(g => (
-                      <option key={g} value={g}>{g}</option>
+                    {gruposLoading && (
+                      <option value="">Cargando grupos...</option>
+                    )}
+                    {!gruposLoading && grupos.length === 0 && (
+                      <option value="">Sin grupos disponibles</option>
+                    )}
+                    {grupos.map(g => (
+                      <option key={g.codigo_grupo} value={g.codigo_grupo}>{g.nombre_grupo}</option>
                     ))}
                   </select>
                 </div>

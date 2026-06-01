@@ -1,7 +1,6 @@
 from sgpi_capirestc.crud.crud_base import CRUDBase
 from app.models.domain import Publicacion
 from sgpi_capirestc.schemas.domain_schemas import PublicacionCreate, PublicacionUpdate
-from sqlalchemy.ext.asyncio import AsyncSession
 
 class CRUDPublicacion(CRUDBase[Publicacion, PublicacionCreate, PublicacionUpdate]):
     pass

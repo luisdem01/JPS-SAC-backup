@@ -12,9 +12,8 @@ from sgpi_ci.config import FISI_KEYWORDS
 # Filtrado por facultad (FISI)
 # ---------------------------------------------------------------------------
 
-def filter_fisi(
-    df: pd.DataFrame, col: str
-) -> Tuple[pd.DataFrame, int]:
+
+def filter_fisi(df: pd.DataFrame, col: str) -> Tuple[pd.DataFrame, int]:
     """
     Filtra el DataFrame conservando solo las filas cuya columna `col`
     contenga al menos una de las palabras clave FISI.
@@ -36,14 +35,17 @@ def filter_fisi(
 # Normalización de texto
 # ---------------------------------------------------------------------------
 
+
 def normalize_text(series: pd.Series) -> pd.Series:
     """Normaliza Unicode (NFC) y elimina caracteres de control."""
+
     def _normalize(s) -> str:
         if not isinstance(s, str):
             return s
         s = unicodedata.normalize("NFC", s)
         s = re.sub(r"[\x00-\x1f\x7f]", "", s)  # control chars
         return s.strip()
+
     return series.apply(_normalize)
 
 
@@ -75,6 +77,7 @@ def to_title_case(series: pd.Series) -> pd.Series:
 # Separación heurística de nombres
 # ---------------------------------------------------------------------------
 
+
 def split_apellidos_nombres(series: pd.Series) -> Tuple[pd.Series, pd.Series]:
     """
     Separa 'Apellidos y Nombres' en dos columnas.
@@ -92,6 +95,7 @@ def split_apellidos_nombres(series: pd.Series) -> Tuple[pd.Series, pd.Series]:
     Returns:
         (apellidos_series, nombres_series)
     """
+
     def _split(s) -> Tuple[str, str]:
         if not isinstance(s, str) or not s.strip():
             return ("", "")
@@ -114,13 +118,14 @@ def split_apellidos_nombres(series: pd.Series) -> Tuple[pd.Series, pd.Series]:
 
     result = series.apply(_split)
     apellidos = result.apply(lambda x: x[0])
-    nombres   = result.apply(lambda x: x[1])
+    nombres = result.apply(lambda x: x[1])
     return apellidos, nombres
 
 
 # ---------------------------------------------------------------------------
 # Parseo de booleanos (columnas de deuda, investigador SM, etc.)
 # ---------------------------------------------------------------------------
+
 
 def parse_boolean_deuda(series: pd.Series) -> pd.Series:
     """
@@ -140,6 +145,7 @@ def parse_boolean_deuda(series: pd.Series) -> pd.Series:
 # ---------------------------------------------------------------------------
 # Parseo de valores numéricos de puntaje
 # ---------------------------------------------------------------------------
+
 
 def parse_decimal_puntaje(series: pd.Series) -> pd.Series:
     """
@@ -178,13 +184,25 @@ def parse_decimal_puntaje(series: pd.Series) -> pd.Series:
 # Nuevos Cleaners para SGPI-CI (Excels no estructurados)
 # ---------------------------------------------------------------------------
 
+
 def clean_prefix_and_title(series: pd.Series) -> pd.Series:
     """
     Limpia prefijos, títulos académicos, palabras basura y signos de puntuación extra.
     """
     # Palabras genéricas que no son nombres reales
-    GARBAGE_WORDS = {"DOCENTE", "MIEMBRO", "RESPONSABLE", "CO RESPONSABLE", "CORRESPONSABLE", "AUTOR", "ASESOR", "CO-RESPONSABLE", "CO-AUTOR", "COORDINADOR"}
-    
+    GARBAGE_WORDS = {
+        "DOCENTE",
+        "MIEMBRO",
+        "RESPONSABLE",
+        "CO RESPONSABLE",
+        "CORRESPONSABLE",
+        "AUTOR",
+        "ASESOR",
+        "CO-RESPONSABLE",
+        "CO-AUTOR",
+        "COORDINADOR",
+    }
+
     # Expresión regular para títulos académicos (al inicio o en cualquier parte, seguido de punto o espacio)
     TITLES_REGEX = r"(?i)\b(Dr|Dra|Mg|Mag|Ing|Lic|MSc|Ph\.?D|Prof)\b\.?"
 
@@ -192,20 +210,20 @@ def clean_prefix_and_title(series: pd.Series) -> pd.Series:
         if not isinstance(s, str) or not s.strip():
             return s
         s = str(s).strip()
-        
+
         # Elimina R_, C_, M_, A_ al inicio
         s = re.sub(r"^[A-Z]_", "", s).strip()
-        
+
         # Elimina títulos académicos
         s = re.sub(TITLES_REGEX, "", s).strip()
-        
+
         # Elimina caracteres extraños al final como el '/'
         s = re.sub(r"[/\\-]+$", "", s).strip()
-        
+
         # Verifica si quedó solo una palabra basura
         if s.upper() in GARBAGE_WORDS:
             return ""
-            
+
         return s
 
     cleaned_series = series.apply(_clean)
@@ -218,9 +236,10 @@ def split_docentes_cell(series: pd.Series) -> pd.Series:
     Convierte una celda con múltiples docentes separados por salto de línea (\n)
     en una lista de docentes. Ideal para ser usado con df.explode().
     """
+
     def _split(s):
         if not isinstance(s, str) or not s.strip():
             return []
-        return [doc.strip() for doc in s.split('\n') if doc.strip()]
+        return [doc.strip() for doc in s.split("\n") if doc.strip()]
 
     return series.apply(_split)

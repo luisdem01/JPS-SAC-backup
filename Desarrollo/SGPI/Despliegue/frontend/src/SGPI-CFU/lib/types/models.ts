@@ -427,11 +427,19 @@ export interface SearchResult {
   /** ID del ítem encontrado */
   id:      string;
   /** Tipo de entidad */
-  type:    'investigator' | 'project' | 'publication' | 'thesis';
+  type:    'investigators' | 'projects' | 'groups' | 'publications' | 'tesis';
   /** Título o nombre del ítem */
   title:   string;
   /** Descripción breve */
   excerpt: string;
   /** Relevancia del resultado (0-1) */
   score?:  number;
+  /** Origen de datos (RENACYT, RAIS, etc.) */
+  source?: string;
+  /** Estado del ítem */
+  status?: string;
+  /** Fecha asociada */
+  date?:   string;
+  /** Detalles específicos de la entidad */
+  details?: Record<string, any>;
 }

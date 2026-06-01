@@ -1,13 +1,9 @@
-import os
-import sys
-import json
-from typing import Optional, Union, List, Any
+from typing import Optional
 from pydantic import BaseModel
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from sgpi_parser.core.models import ResolucionRectoral, Cronograma, ResultadosConcurso
 
 # Colores del manual de identidad visual de SGPI (Slate-Blue & Teal)
 COLOR_TITLE_BG = "1E293B"       # Slate Blue Oscuro (#1E293B)
@@ -184,7 +180,10 @@ def _export_to_excel(model: BaseModel, path: str, quiet: bool):
             row_idx += 1
             
     elif tipo == "resolucion_rectoral":
-        title_text = f"INTEGRANTES Y PROYECTOS APROBADOS POR {model.metadata.numero_resolucion} ({model.metadata.anio_academico})"
+        title_text = (
+            f"INTEGRANTES Y PROYECTOS APROBADOS POR {model.metadata.numero_resolucion} "
+            f"({model.metadata.anio_academico})"
+        )
         headers = [
             "Código Proyecto", "Título del Proyecto", "Presupuesto", "Nombre GI Global",
             "Rol Integrante", "Código Miembro", "Apellidos y Nombres", "Tipo Miembro", 

@@ -5,17 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import router as pdf_router
 
 # Setup basic logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("pdf-service")
 
 # Initialize FastAPI app
 app = FastAPI(
     title="SGPI generic PDF Generator Engine",
     description="Motor microservicio genérico de compilación y streaming de documentos PDF para la FISI-UNMSM.",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # Enable CORS for Next.js frontend integration
@@ -30,6 +27,7 @@ app.add_middleware(
 # Register PDF Engine Routes
 app.include_router(pdf_router)
 
+
 @app.get("/health", tags=["system"])
 def health_check():
     """
@@ -37,11 +35,8 @@ def health_check():
     el cold start del servidor en hosting gratuito (Render/Render free tier).
     """
     logger.debug("Health check hit")
-    return {
-        "status": "healthy",
-        "service": "SGPI-CMEPDF Engine",
-        "engine_version": "1.0.0"
-    }
+    return {"status": "healthy", "service": "SGPI-CMEPDF Engine", "engine_version": "1.0.0"}
+
 
 if __name__ == "__main__":
     logger.info("Starting SGPI-CMEPDF Engine on port 8000...")

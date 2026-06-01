@@ -17,8 +17,8 @@
  * Modal de confirmación antes de registrar.
  */
 
-import React, { useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useCallback, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type { NivelRenacyt } from '../_data/types';
 import { crearDocente, validarDNI } from '../_data/service';
@@ -252,8 +252,14 @@ function ConfirmModal({
 // Niveles mostrados en la grilla (4 visibles en la imagen)
 const NIVELES_GRILLA: NivelRenacyt[] = ['NIVEL VII', 'NIVEL VI', 'NIVEL V', 'NIVEL IV', 'NIVEL III', 'NIVEL II', 'NIVEL I', 'DISTINGUIDO'];
 
-export default function NuevoDocentePage() {
+function NuevoDocentePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const dniParam = searchParams.get('dni') || '';
+  const nombresParam = searchParams.get('nombres') || '';
+  const apellidosParam = searchParams.get('apellidos') || '';
+  const nivelParam = searchParams.get('nivelRenacyt') || '';
 
   // ── Campos ────────────────────────────────────────────────────────────────
   const [dni,             setDni]             = useState('');
@@ -267,6 +273,13 @@ export default function NuevoDocentePage() {
   const [puntajeInicial,  setPuntajeInicial]  = useState('0.00');
   const [publicaciones,   setPublicaciones]   = useState('0');
   const [hIndex,          setHIndex]          = useState('0');
+
+  useEffect(() => {
+    if (dniParam) setDni(dniParam);
+    if (nombresParam) setNombres(nombresParam);
+    if (apellidosParam) setApellidos(apellidosParam);
+    if (nivelParam) setNivelSeleccionado(nivelParam as NivelRenacyt);
+  }, [dniParam, nombresParam, apellidosParam, nivelParam]);
 
   // ── Validación ────────────────────────────────────────────────────────────
   const [fieldErrors,  setFieldErrors]  = useState<string[]>([]);
@@ -596,5 +609,13 @@ export default function NuevoDocentePage() {
       )}
 
     </MainLayout>
+  );
+}
+
+export default function NuevoDocentePage() {
+  return (
+    <React.Suspense fallback={<div className="p-6 text-center text-on-surface-variant font-sans animate-pulse">Cargando...</div>}>
+      <NuevoDocentePageContent />
+    </React.Suspense>
   );
 }

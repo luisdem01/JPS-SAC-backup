@@ -9,6 +9,7 @@ from core.engine import build_pdf_report
 router = APIRouter(prefix="/api/pdf", tags=["pdf-engine"])
 logger = logging.getLogger("pdf-engine")
 
+
 @router.post("/generate")
 def generate_pdf(request: PDFGenerationRequest):
     """
@@ -18,14 +19,14 @@ def generate_pdf(request: PDFGenerationRequest):
     """
     try:
         logger.info(f"Iniciando generación de PDF [{request.doc_type}] solicitado por {request.user_requesting}")
-        
+
         # Validate data if it's a tabular report
         if request.doc_type == "report":
             if not request.columns or not request.data:
                 raise ValueError("Para reportes tabulares, 'columns' y 'data' son campos obligatorios.")
-        
+
         buffer = io.BytesIO()
-        
+
         # Build document flow in memory
         build_pdf_report(
             output_target=buffer,
@@ -36,31 +37,27 @@ def generate_pdf(request: PDFGenerationRequest):
             headers=request.columns,
             data=request.data,
             col_widths=request.col_widths,
-            doc_type=request.doc_type
+            doc_type=request.doc_type,
         )
-        
+
         # Move pointer to the beginning of stream
         buffer.seek(0)
-        
+
         # Generate friendly and safe filename for downloading
-        safe_title = "".join(c for c in request.title if c.isalnum() or c in (' ', '_', '-')).strip()
-        safe_title = safe_title.replace(' ', '_')
+        safe_title = "".join(c for c in request.title if c.isalnum() or c in (" ", "_", "-")).strip()
+        safe_title = safe_title.replace(" ", "_")
         filename = f"{safe_title}_{request.doc_type}.pdf"
-        
+
         headers = {
-            "Content-Disposition": f"attachment; filename=\"{filename}\"",
-            "Access-Control-Expose-Headers": "Content-Disposition"
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
         }
-        
-        return StreamingResponse(
-            buffer, 
-            media_type="application/pdf", 
-            headers=headers
-        )
-        
+
+        return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
+
     except ValueError as val_err:
         logger.warning(f"Error de validación al generar PDF: {str(val_err)}")
         raise HTTPException(status_code=400, detail=str(val_err))
     except Exception as e:
         logger.error(f"Error interno del motor de PDF: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error interno al preparar el archivo PDF. Intente nuevamente.")
+        raise HTTPException(status_code=500, detail="Error interno al preparar el archivo PDF. Intente nuevamente.")

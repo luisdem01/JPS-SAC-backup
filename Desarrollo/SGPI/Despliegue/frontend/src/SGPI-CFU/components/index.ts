@@ -16,3 +16,7 @@ export * from './ui';
 
 // Shared
 export * from './shared';
+
+// Auth
+export * from './auth/AuthGuard';
+export * from './auth/LoginForm';

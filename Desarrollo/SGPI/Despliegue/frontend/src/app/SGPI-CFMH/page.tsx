@@ -422,6 +422,7 @@ export default function DocentesDirectorioPage() {
                     <DocenteRow key={doc.id} doc={doc}
                       onEdit={() => router.push(`/SGPI-CFMH/${doc.id}/editar`)}
                       onView={() => router.push(`/SGPI-CFMH/${doc.id}`)}
+                      onImport={() => router.push(`/SGPI-CFMH/nuevo?dni=${doc.dni}&nombres=${encodeURIComponent(doc.nombres)}&apellidos=${encodeURIComponent(doc.apellidos)}&nivelRenacyt=${encodeURIComponent(doc.nivelRenacyt)}`)}
                     />
                   ))}
                 </tbody>
@@ -492,10 +493,11 @@ export default function DocentesDirectorioPage() {
 // Fila de tabla
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DocenteRow({ doc, onEdit, onView }: {
+function DocenteRow({ doc, onEdit, onView, onImport }: {
   doc: DocenteInvestigador;
   onEdit: () => void;
   onView: () => void;
+  onImport: () => void;
 }) {
   return (
     <tr className={`
@@ -534,11 +536,19 @@ function DocenteRow({ doc, onEdit, onView }: {
 
       {/* Acciones */}
       <td className="px-5 py-4">
-        <button onClick={onView}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded font-sans font-semibold text-[12px] text-on-surface border border-outline-variant hover:bg-surface-container hover:border-[#001631] transition-colors whitespace-nowrap"
-          aria-label={`Ver y editar perfil de ${doc.apellidos}, ${doc.nombres}`}>
-          <EditIcon /> Ver / Editar
-        </button>
+        {doc.isExternal ? (
+          <button onClick={onImport}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded font-sans font-semibold text-[12px] text-white bg-[#16a34a] hover:bg-[#166534] transition-colors whitespace-nowrap"
+            aria-label={`Importar docente ${doc.apellidos}, ${doc.nombres}`}>
+            <PlusIcon /> Importar
+          </button>
+        ) : (
+          <button onClick={onView}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded font-sans font-semibold text-[12px] text-on-surface border border-outline-variant hover:bg-surface-container hover:border-[#001631] transition-colors whitespace-nowrap"
+            aria-label={`Ver y editar perfil de ${doc.apellidos}, ${doc.nombres}`}>
+            <EditIcon /> Ver / Editar
+          </button>
+        )}
       </td>
 
     </tr>

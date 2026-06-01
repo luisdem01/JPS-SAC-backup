@@ -1,11 +1,10 @@
 import re
 from typing import Optional, Dict
 import fitz
-from pydantic import BaseModel
 from sgpi_parser.core.base_parser import BaseParser
 from sgpi_parser.core.models import ResultadosConcurso, MetadataResultados, ProyectoAprobado
 from sgpi_parser.utils.pdf_utils import get_plumber_doc, extract_raw_text_fitz, get_fitz_doc
-from sgpi_parser.utils.string_utils import clean_text, fuzzy_match, extract_number, extract_integer
+from sgpi_parser.utils.string_utils import clean_text, extract_number, extract_integer
 
 class HeuristicResultadosParser(BaseParser):
     """

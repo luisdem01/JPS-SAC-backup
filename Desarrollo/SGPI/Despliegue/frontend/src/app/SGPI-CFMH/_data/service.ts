@@ -26,366 +26,315 @@
 
 import type {
   DocenteInvestigador, FiltrosDocentes, DocentePayload, StatsDocentes,
-  ProyectoHistorial,
+  ProyectoHistorial, NivelRenacyt, EstadoVigencia, RolProyecto, EstadoProyecto,
 } from './types';
-import { MOCK_DOCENTES, MOCK_STATS, getMockHistorial } from './mock';
 
-// Cuando se active Supabase, descomentar esta importación:
-// import { supabase } from '@/lib/supabase';
 
+import { supabase } from '../../../SGPI-CFU/lib/supabase';
+import { apiClient } from '../../../SGPI-CFU/lib/api/client';
+ 
 const PAGE_SIZE = 10;
-
+ 
+function mapToDocente(inv: any): DocenteInvestigador {
+  return {
+    id: inv.dni,
+    dni: inv.dni,
+    nombres: inv.nombres,
+    apellidos: inv.apellidos,
+    email: `${inv.dni}@unmsm.edu.pe`,
+    departamento: inv.departamento_academico,
+    nivelRenacyt: (inv.categoria_renacyt || 'Sin nivel') as NivelRenacyt,
+    condicionSM: inv.investigador_sm ? 'SM' : 'No SM',
+    estado: (inv.estado_vigencia?.toLowerCase() || 'activo') as EstadoVigencia,
+    fechaVigencia: undefined,
+    codigoDocente: inv.codigo_interno_vrip || undefined,
+    puntajeHistorico: (inv.historial_puntaje || []).map((hp: any) => ({
+      anio: hp.anio_evaluacion,
+      articulos: Math.round(Number(hp.puntaje_revistas || 0) + Number(hp.puntaje_libros || 0)),
+      tesis: Math.round(Number(hp.puntaje_tesis || 0)),
+      proyectos: Math.round(Number(hp.puntaje_proyectos || 0)),
+      puntaje: Number(hp.puntaje_total || 0),
+    })),
+    creadoEn: inv.created_at,
+    actualizadoEn: inv.updated_at,
+    isExternal: inv.is_external || false,
+  };
+}
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Listado paginado con filtros
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export interface PaginatedDocentes {
   items:  DocenteInvestigador[];
   total:  number;
   page:   number;
   pages:  number;
 }
-
+ 
 export async function getDocentes(
   filtros: FiltrosDocentes,
   page: number = 1,
 ): Promise<PaginatedDocentes> {
-
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  let query = supabase
-    .from('docentes')
-    .select('*, puntaje_historico(*)', { count: 'exact' })
-    .order('apellidos', { ascending: true })
-    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(PAGE_SIZE),
+  });
 
   if (filtros.buscar.trim()) {
-    // Búsqueda por DNI exacto o apellidos/nombres con ILIKE
-    query = query.or(
-      `dni.eq.${filtros.buscar},apellidos.ilike.%${filtros.buscar}%,nombres.ilike.%${filtros.buscar}%`
-    );
+    params.append('buscar', filtros.buscar.trim());
   }
-  if (filtros.departamento) query = query.eq('departamento', filtros.departamento);
-  if (filtros.nivelRenacyt) query = query.eq('nivel_renacyt', filtros.nivelRenacyt);
-  if (filtros.estado)       query = query.eq('estado', filtros.estado);
+  if (filtros.departamento) {
+    params.append('departamento', filtros.departamento);
+  }
+  if (filtros.nivelRenacyt) {
+    params.append('nivelRenacyt', filtros.nivelRenacyt);
+  }
+  if (filtros.estado) {
+    params.append('estado', filtros.estado);
+  }
 
-  const { data, count, error } = await query;
-  if (error) throw new Error(error.message);
+  // Hacer la petición al backend local (FastAPI) a través de apiClient
+  const data = await apiClient.get<{
+    items: any[];
+    total: number;
+    page: number;
+    pages: number;
+  }>(`/investigators?${params.toString()}`);
 
-  const total = count ?? 0;
   return {
-    items: data as DocenteInvestigador[],
-    total,
-    page,
-    pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    items: (data.items || []).map(mapToDocente),
+    total: data.total,
+    page: data.page,
+    pages: data.pages,
   };
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 350));
-
-  let list = [...MOCK_DOCENTES];
-
-  if (filtros.buscar.trim()) {
-    const q = filtros.buscar.toLowerCase();
-    list = list.filter(
-      (d) =>
-        d.nombres.toLowerCase().includes(q) ||
-        d.apellidos.toLowerCase().includes(q) ||
-        d.dni.includes(q) ||
-        d.email.toLowerCase().includes(q),
-    );
-  }
-  if (filtros.departamento) list = list.filter((d) => d.departamento === filtros.departamento);
-  if (filtros.nivelRenacyt) list = list.filter((d) => d.nivelRenacyt === filtros.nivelRenacyt);
-  if (filtros.estado)       list = list.filter((d) => d.estado === filtros.estado);
-
-  const total = list.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const start = (page - 1) * PAGE_SIZE;
-  return { items: list.slice(start, start + PAGE_SIZE), total, page, pages };
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Obtener perfil completo por ID
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function getDocenteById(id: string): Promise<DocenteInvestigador | null> {
-
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
   const { data, error } = await supabase
-    .from('docentes')
-    .select('*, puntaje_historico(*)')
-    .eq('id', id)
-    .single();
-
-  if (error || !data) return null;
-  return data as DocenteInvestigador;
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 200));
-  return MOCK_DOCENTES.find((d) => d.id === id) ?? null;
+    .from('investigador')
+    .select('*, historial_puntaje(*)')
+    .eq('dni', id)
+    .maybeSingle();
+ 
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return mapToDocente(data);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // Crear docente
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function crearDocente(payload: DocentePayload): Promise<DocenteInvestigador> {
-
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  // 1. Insertar el perfil principal
+  const estadoMapeado = payload.estado === 'activo' ? 'Activo' : payload.estado === 'inactivo' ? 'Inactivo' : 'Por Vencer';
+  
+  // 1. Registrar o actualizar (upsert) el perfil principal en la tabla 'investigador'
   const { data: docente, error: errDoc } = await supabase
-    .from('docentes')
-    .insert([{
-      nombres:        payload.nombres,
-      apellidos:      payload.apellidos,
-      dni:            payload.dni,
-      email:          payload.email,
-      departamento:   payload.departamento,
-      nivel_renacyt:  payload.nivelRenacyt,
-      condicion_sm:   payload.condicionSM,
-      estado:         payload.estado,
-      fecha_vigencia: payload.fechaVigencia ?? null,
-      codigo_docente: payload.codigoDocente ?? null,
-    }])
+    .from('investigador')
+    .upsert({
+      dni:                    payload.dni,
+      nombres:                payload.nombres,
+      apellidos:              payload.apellidos,
+      codigo_interno_vrip:    payload.codigoDocente || null,
+      condicion_laboral:      'Ordinario',
+      departamento_academico: payload.departamento,
+      facultad_dependencia:   'Ingeniería de Sistemas e Informática',
+      grado_academico_max:    'Magíster',
+      codigo_renacyt:         payload.codigoDocente ? `${payload.dni}_ren` : null,
+      orcid:                  null,
+      categoria_renacyt:      payload.nivelRenacyt,
+      estado_renacyt:         payload.estado,
+      url_cti_vitae:          null,
+      investigador_sm:        payload.condicionSM === 'SM',
+      estado_vigencia:        estadoMapeado,
+      tiene_deuda_gi:         false,
+      tiene_deuda_pi:         false,
+      is_external:            false, // Al registrarse formalmente, deja de ser puramente externo
+    }, { onConflict: 'dni' })
     .select()
     .single();
-
+ 
   if (errDoc || !docente) throw new Error(errDoc?.message ?? 'Error al crear docente.');
-
-  // 2. Insertar el historial de puntaje
+ 
+  // 2. Insertar el historial de puntajes en la tabla 'historial_puntaje'
   if (payload.puntajeHistorico.length > 0) {
     const { error: errHist } = await supabase
-      .from('puntaje_historico')
+      .from('historial_puntaje')
       .insert(
         payload.puntajeHistorico.map((p) => ({
-          docente_id: docente.id,
-          anio:       p.anio,
-          puntaje:    p.puntaje,
-          articulos:  p.articulos,
-          tesis:      p.tesis,
-          proyectos:  p.proyectos,
+          dni_investigador: docente.dni,
+          anio_evaluacion:  p.anio,
+          puntaje_total:    p.puntaje,
+          puntaje_revistas: p.articulos,
+          puntaje_tesis:      p.tesis,
+          puntaje_proyectos:  p.proyectos,
+          puntaje_libros:   0,
+          puntaje_patentes: 0,
+          puntaje_otros:    0,
         }))
       );
     if (errHist) throw new Error(errHist.message);
   }
-
-  return docente as DocenteInvestigador;
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 600));
-
-  const nuevo: DocenteInvestigador = {
-    ...payload,
-    id:            `DOC-${Date.now()}`,
-    creadoEn:      new Date().toISOString(),
-    actualizadoEn: new Date().toISOString(),
-  };
-  MOCK_DOCENTES.unshift(nuevo);
-  return nuevo;
+ 
+  return mapToDocente({ ...docente, historial_puntaje: payload.puntajeHistorico });
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Actualizar docente
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function actualizarDocente(
   id: string,
   payload: DocentePayload,
 ): Promise<DocenteInvestigador> {
-
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  // 1. Actualizar el perfil principal
+  const estadoMapeado = payload.estado === 'activo' ? 'Activo' : payload.estado === 'inactivo' ? 'Inactivo' : 'Por Vencer';
+ 
+  // 1. Actualizar el perfil principal en 'investigador'
   const { data: docente, error: errDoc } = await supabase
-    .from('docentes')
+    .from('investigador')
     .update({
-      nombres:        payload.nombres,
-      apellidos:      payload.apellidos,
-      dni:            payload.dni,
-      email:          payload.email,
-      departamento:   payload.departamento,
-      nivel_renacyt:  payload.nivelRenacyt,
-      condicion_sm:   payload.condicionSM,
-      estado:         payload.estado,
-      fecha_vigencia: payload.fechaVigencia ?? null,
-      actualizado_en: new Date().toISOString(),
+      nombres:                payload.nombres,
+      apellidos:              payload.apellidos,
+      dni:                    payload.dni,
+      codigo_interno_vrip:    payload.codigoDocente || null,
+      departamento_academico: payload.departamento,
+      categoria_renacyt:      payload.nivelRenacyt,
+      investigador_sm:        payload.condicionSM === 'SM',
+      estado_vigencia:        estadoMapeado,
+      updated_at:             new Date().toISOString(),
     })
-    .eq('id', id)
+    .eq('dni', id)
     .select()
     .single();
-
+ 
   if (errDoc || !docente) throw new Error(errDoc?.message ?? 'Error al actualizar docente.');
-
-  // 2. Sincronizar historial: upsert por (docente_id, anio)
+ 
+  // 2. Sincronizar historial: eliminar los antiguos e insertar los nuevos
+  const { error: errDelHist } = await supabase
+    .from('historial_puntaje')
+    .delete()
+    .eq('dni_investigador', id);
+ 
+  if (errDelHist) throw new Error(errDelHist.message);
+ 
   if (payload.puntajeHistorico.length > 0) {
     const { error: errHist } = await supabase
-      .from('puntaje_historico')
-      .upsert(
+      .from('historial_puntaje')
+      .insert(
         payload.puntajeHistorico.map((p) => ({
-          docente_id: id,
-          anio:       p.anio,
-          puntaje:    p.puntaje,
-          articulos:  p.articulos,
-          tesis:      p.tesis,
-          proyectos:  p.proyectos,
-        })),
-        { onConflict: 'docente_id,anio' }
+          dni_investigador: id,
+          anio_evaluacion:  p.anio,
+          puntaje_total:    p.puntaje,
+          puntaje_revistas: p.articulos,
+          puntaje_tesis:      p.tesis,
+          puntaje_proyectos:  p.proyectos,
+          puntaje_libros:   0,
+          puntaje_patentes: 0,
+          puntaje_otros:    0,
+        }))
       );
     if (errHist) throw new Error(errHist.message);
   }
-
-  return docente as DocenteInvestigador;
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 600));
-
-  const idx = MOCK_DOCENTES.findIndex((d) => d.id === id);
-  if (idx === -1) throw new Error('Docente no encontrado.');
-
-  const updated: DocenteInvestigador = {
-    ...MOCK_DOCENTES[idx],
-    ...payload,
-    id,
-    actualizadoEn: new Date().toISOString(),
-  };
-  MOCK_DOCENTES[idx] = updated;
-  return updated;
+ 
+  return mapToDocente({ ...docente, historial_puntaje: payload.puntajeHistorico });
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validar unicidad de DNI — EX1
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function validarDNI(
   dni: string,
   excluirId?: string,
 ): Promise<{ duplicado: boolean; existenteId?: string }> {
-
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
   let query = supabase
-    .from('docentes')
-    .select('id')
+    .from('investigador')
+    .select('dni')
     .eq('dni', dni);
-
-  // Excluir el propio registro cuando se edita (evita falso positivo)
-  if (excluirId) query = query.neq('id', excluirId);
-
+ 
+  if (excluirId) query = query.neq('dni', excluirId);
+ 
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
-
-  return { duplicado: !!data, existenteId: data?.id };
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 150));
-  const existente = MOCK_DOCENTES.find(
-    (d) => d.dni === dni && d.id !== excluirId,
-  );
-  return { duplicado: !!existente, existenteId: existente?.id };
+ 
+  return { duplicado: !!data, existenteId: data?.dni };
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // KPIs del tablero
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function getStats(): Promise<StatsDocentes> {
-
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  // Consultas paralelas para construir los KPIs
   const [
     { count: totalDocentes },
     { count: investigadoresRenacyt },
     { count: vigenciasPorVencer },
     { count: proyectosActivos },
   ] = await Promise.all([
-    supabase.from('docentes').select('*', { count: 'exact', head: true }),
-    supabase.from('docentes').select('*', { count: 'exact', head: true })
-      .neq('nivel_renacyt', 'Sin nivel'),
-    supabase.from('docentes').select('*', { count: 'exact', head: true })
-      .eq('estado', 'por_vencer'),
-    supabase.from('proyectos').select('*', { count: 'exact', head: true })
-      .eq('estado', 'activo'),
+    supabase.from('investigador').select('*', { count: 'exact', head: true }),
+    supabase.from('investigador').select('*', { count: 'exact', head: true }).neq('categoria_renacyt', 'No Clasificado'),
+    supabase.from('investigador').select('*', { count: 'exact', head: true }).eq('estado_vigencia', 'Por Vencer'),
+    supabase.from('proyecto').select('*', { count: 'exact', head: true }).eq('estado_proyecto', 'En ejecución'),
   ]);
-
+ 
+  const total = totalDocentes ?? 0;
+  const renacyt = investigadoresRenacyt ?? 0;
+ 
   return {
-    totalDocentes:         totalDocentes         ?? 0,
-    deltaEsteMes:          0,  // calcular con created_at >= inicio_mes
-    investigadoresRenacyt: investigadoresRenacyt ?? 0,
-    porcentajeRenacyt:     totalDocentes
-      ? Math.round(((investigadoresRenacyt ?? 0) / totalDocentes) * 100)
-      : 0,
-    vigenciasPorVencer:    vigenciasPorVencer    ?? 0,
-    proyectosActivos:      proyectosActivos      ?? 0,
-    cicloAcademico:        '2024-I',  // traer de tabla configuracion
+    totalDocentes:         total,
+    deltaEsteMes:          0,
+    investigadoresRenacyt: renacyt,
+    porcentajeRenacyt:     total ? Math.round((renacyt / total) * 100) : 0,
+    vigenciasPorVencer:    vigenciasPorVencer ?? 0,
+    proyectosActivos:      proyectosActivos ?? 0,
+    cicloAcademico:        '2026-I',
   };
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 200));
-  return MOCK_STATS;
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Historial de Proyectos del investigador (Línea de Tiempo)
 // ─────────────────────────────────────────────────────────────────────────────
-
-
-/**
- * Obtiene la lista de proyectos asociados a un docente/investigador.
- *
- * Supabase: tabla `proyecto_investigador`
- *   - docente_id   UUID / string  → FK hacia `docentes`
- *   - codigo       text           → Código del proyecto (ej: "PRJ-2023-684")
- *   - titulo       text
- *   - rol          text           → RolProyecto
- *   - anio_inicio  integer
- *   - anio_fin     integer | null → null = "Presente"
- *   - presupuesto  numeric
- *   - entidad_financiadora text
- *   - estado       text           → EstadoProyecto
- *
- * TODO (real API):
- *   GET /api/v1/docentes/{id}/historial
- *   → array de ProyectoHistorial ordenado por anio_inicio DESC
- */
+ 
 export async function getHistorialProyectos(
   docenteId: string,
 ): Promise<ProyectoHistorial[]> {
-
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
   const { data, error } = await supabase
-    .from('proyecto_investigador')
+    .from('investigador_proyecto')
     .select(`
-      id,
-      codigo,
-      titulo,
-      rol,
-      anio_inicio,
-      anio_fin,
-      presupuesto,
-      entidad_financiadora,
-      estado
+      condicion_rol,
+      proyecto (
+        codigo_proyecto,
+        titulo_proyecto,
+        fecha_inicio,
+        presupuesto_asignado,
+        estado_proyecto
+      )
     `)
-    .eq('docente_id', docenteId)
-    .order('anio_inicio', { ascending: false });
-
+    .eq('dni_investigador', docenteId);
+ 
   if (error) throw new Error(error.message);
-
-  // Mapear snake_case de la BD → camelCase del tipo ProyectoHistorial
-  return (data ?? []).map((row) => ({
-    id:                  String(row.id),
-    codigo:              row.codigo,
-    titulo:              row.titulo,
-    rol:                 row.rol,
-    anioInicio:          row.anio_inicio,
-    anioFin:             row.anio_fin ?? undefined,
-    presupuesto:         Number(row.presupuesto),
-    entidadFinanciadora: row.entidad_financiadora,
-    estado:              row.estado,
-  }));
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 300));
-  return getMockHistorial(docenteId);
+ 
+  return (data || []).map((row: any) => {
+    const p = row.proyecto;
+    const anioInicio = p.fecha_inicio ? new Date(p.fecha_inicio).getFullYear() : new Date().getFullYear();
+    return {
+      id: `${p.codigo_proyecto}-${docenteId}`,
+      codigo: p.codigo_proyecto,
+      titulo: p.titulo_proyecto,
+      rol: row.condicion_rol as RolProyecto,
+      anioInicio,
+      anioFin: undefined,
+      presupuesto: Number(p.presupuesto_asignado || 0),
+      entidadFinanciadora: 'VRIP-UNMSM',
+      estado: (p.estado_proyecto === 'En ejecución' ? 'en_ejecucion' : p.estado_proyecto === 'Concluido' ? 'finalizado' : 'en_evaluacion') as EstadoProyecto,
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

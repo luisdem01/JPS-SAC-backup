@@ -1,6 +1,5 @@
 import pandas as pd
 from typing import Dict, List, Any
-import math
 
 from sgpi_ci.utils.cleaners import clean_prefix_and_title, split_docentes_cell
 
@@ -181,7 +180,7 @@ class GIDocentesParser:
             docente_limpio = clean_prefix_and_title(pd.Series([docente_raw])).iloc[0]
             
             lineas = str(row.get('Líneas de Investigación', '')).split(',')
-            lineas = [l.strip() for l in lineas if l.strip()]
+            lineas = [linea.strip() for linea in lineas if linea.strip()]
             
             miembros_grupo.append({
                 'nombre_grupo': nombre_gi,

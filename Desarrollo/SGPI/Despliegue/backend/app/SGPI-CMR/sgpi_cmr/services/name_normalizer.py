@@ -1,10 +1,10 @@
-from rapidfuzz import fuzz, process
+from rapidfuzz import fuzz
 import unidecode
 import re
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, Dict
 
 class NameNormalizer:
-    def __init__(self, umbral_confianza: float = 85.0):
+    def __init__(self, umbral_confianza: float = 80.0):
         self.umbral_confianza = umbral_confianza
 
     def _clean_text(self, text: str) -> str:

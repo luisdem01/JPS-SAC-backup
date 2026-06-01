@@ -25,197 +25,219 @@ import type {
   StatsGrupos,
   InvestigatorPadron,
   FuenteOrigen,
+  RolMiembro,
+  EstadoGrupo,
 } from './types';
 import { MOCK_GRUPOS, MOCK_PADRON_INVESTIGADORES, getMockStats } from './mock';
-
-// Cuando se active Supabase, descomentar esta importación:
-// import { supabase } from '@/lib/supabase';
-
+import { supabase } from '../../../SGPI-CFU/lib/supabase';
+import { apiClient } from '../../../SGPI-CFU/lib/api/client';
+ 
 const PAGE_SIZE = 10;
+ 
+/** Convierte el valor de estado_grupo de la BD al tipo EstadoGrupo del frontend */
+function mapEstadoGrupo(estadoBD: string | null | undefined): EstadoGrupo {
+  if (!estadoBD) return 'pendiente_validacion';
+  const lower = estadoBD.toLowerCase().trim();
+  if (lower === 'activo') return 'validado_activo';
+  if (lower === 'inactivo') return 'validado_inactivo';
+  if (lower === 'pendiente_validacion') return 'pendiente_validacion';
+  if (lower === 'validado_activo') return 'validado_activo';
+  if (lower === 'validado_inactivo') return 'validado_inactivo';
+  // Por defecto, si existe pero no es ninguno conocido, tratar como pendiente
+  return 'pendiente_validacion';
+}
 
+/** Convierte el tipo EstadoGrupo del frontend al valor de estado_grupo de la BD */
+function mapEstadoGrupoBD(estado: string): string | null {
+  if (estado === 'validado_activo')   return 'Activo';
+  if (estado === 'validado_inactivo') return 'Inactivo';
+  if (estado === 'pendiente_validacion') return null; // No hay equivalente directo en BD
+  return estado; // fallback: pasar tal cual
+}
+
+function mapToGrupo(g: any): GrupoInvestigacion {
+  const coordinatorName = g.coordinador ? `${g.coordinador.nombres} ${g.coordinador.apellidos}` : undefined;
+  
+  return {
+    id: String(g.id_grupo),
+    code: g.codigo_grupo,
+    name: g.nombre_grupo,
+    acronym: g.siglas || undefined,
+    description: g.descripcion || undefined,
+    coordinatorDni: g.dni_coordinador || undefined,
+    coordinatorName,
+    researchLines: g.lineas_investigacion || [],
+    status: mapEstadoGrupo(g.estado_grupo),
+    recognitionDate: g.fecha_reconocimiento || undefined,
+    createdAt: g.created_at,
+    updatedAt: g.created_at,
+    fuente: g.url_vrip ? 'RAIS' : 'Manual',
+    miembros: (g.miembro_grupo || []).map((m: any) => {
+      let rol: RolMiembro = 'Colaborador';
+      if (m.condicion_miembro === 'Coordinador') rol = 'Director';
+      else if (m.condicion_miembro === 'Titular') rol = 'Co-Investigador';
+      else if (m.condicion_miembro === 'Estudiante') rol = 'Tesista';
+      
+      return {
+        dni: m.dni_investigador,
+        nombre: m.investigador ? `${m.investigador.nombres} ${m.investigador.apellidos}` : m.dni_investigador,
+        rol,
+        fechaIncorporacion: m.fecha_incorporacion || '',
+        estado: (m.estado_membresia?.toLowerCase() || 'activo') as 'activo' | 'inactivo',
+      };
+    }),
+    proyectosVinculados: (g.proyecto || []).map((p: any) => {
+      let estado: 'pending' | 'active' | 'completed' | 'cancelled' = 'active';
+      if (p.estado_proyecto === 'Formulación') estado = 'pending';
+      else if (p.estado_proyecto === 'Concluido') estado = 'completed';
+      else if (p.estado_proyecto === 'Cancelado') estado = 'cancelled';
+      
+      return {
+        codigo: p.codigo_proyecto,
+        titulo: p.titulo_proyecto,
+        estado,
+        convocatoria: String(p.anio_convocatoria || ''),
+      };
+    }),
+  };
+}
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// Listado paginado con filtros
+// ─────────────────────────────────────────────────────────────────────────────
+ 
 export interface PaginatedGrupos {
   items: GrupoInvestigacion[];
   total: number;
   page: number;
   pages: number;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Listado paginado con filtros
-// ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function getGrupos(
   filtros: FiltrosGrupos,
   page: number = 1,
 ): Promise<PaginatedGrupos> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
   let query = supabase
     .from('grupo_investigacion')
-    .select('*, grupo_miembro(*), proyecto(*)', { count: 'exact' })
+    .select(`
+      *,
+      coordinador:investigador!grupo_investigacion_dni_coordinador_fkey(nombres, apellidos),
+      miembro_grupo(
+        *,
+        investigador(nombres, apellidos)
+      ),
+      proyecto(*)
+    `, { count: 'exact' })
     .order('created_at', { ascending: false })
     .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-
+ 
   if (filtros.buscar.trim()) {
     query = query.or(
-      `code.ilike.%${filtros.buscar}%,name.ilike.%${filtros.buscar}%,acronym.ilike.%${filtros.buscar}%`
+      `codigo_grupo.ilike.%${filtros.buscar.trim()}%,nombre_grupo.ilike.%${filtros.buscar.trim()}%,siglas.ilike.%${filtros.buscar.trim()}%`
     );
   }
-  if (filtros.estado)       query = query.eq('status', filtros.estado);
-  if (filtros.fuente)       query = query.eq('fuente', filtros.fuente);
-
+  if (filtros.estado) {
+    const estadoBD = mapEstadoGrupoBD(filtros.estado);
+    if (estadoBD) {
+      query = query.eq('estado_grupo', estadoBD);
+    }
+    // Si estadoBD es null (pendiente_validacion), no hay equivalente en BD actual;
+    // se muestra todo (sin filtro) — el mapper ya lo convierte correctamente.
+  }
+  if (filtros.fuente) {
+    if (filtros.fuente === 'RAIS') {
+      query = query.not('url_vrip', 'is', null);
+    } else {
+      query = query.is('url_vrip', null);
+    }
+  }
+ 
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);
-
+ 
   const total = count ?? 0;
   
-  // Transformación de snake_case a camelCase si es necesario
-  const items = (data || []).map((g: any) => ({
-    id: g.code,
-    code: g.code,
-    name: g.name,
-    acronym: g.acronym,
-    description: g.description,
-    coordinatorDni: g.coordinator_dni,
-    coordinatorName: g.coordinator_name,
-    researchLines: g.research_lines || [],
-    status: g.status,
-    recognitionDate: g.recognition_date,
-    createdAt: g.created_at,
-    updatedAt: g.updated_at,
-    fuente: g.fuente,
-    miembros: (g.grupo_miembro || []).map((m: any) => ({
-      dni: m.docente_dni,
-      nombre: m.nombre,
-      rol: m.rol,
-      fechaIncorporacion: m.fecha_incorporacion,
-      estado: m.estado,
-    })),
-    proyectosVinculados: (g.proyecto || []).map((p: any) => ({
-      codigo: p.codigo,
-      titulo: p.titulo,
-      estado: p.estado,
-      convocatoria: p.convocatoria,
-    })),
-  }));
-
   return {
-    items,
+    items: (data || []).map(mapToGrupo),
     total,
     page,
     pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
   };
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 350));
-
-  let list = [...MOCK_GRUPOS];
-
-  if (filtros.buscar.trim()) {
-    const q = filtros.buscar.toLowerCase();
-    list = list.filter(
-      (g) =>
-        g.code.toLowerCase().includes(q) ||
-        g.name.toLowerCase().includes(q) ||
-        (g.acronym && g.acronym.toLowerCase().includes(q)),
-    );
-  }
-  if (filtros.estado) {
-    list = list.filter((g) => g.status === filtros.estado);
-  }
-  if (filtros.fuente) {
-    list = list.filter((g) => g.fuente === filtros.fuente);
-  }
-
-  const total = list.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const start = (page - 1) * PAGE_SIZE;
-
-  return {
-    items: list.slice(start, start + PAGE_SIZE),
-    total,
-    page,
-    pages,
-  };
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Obtener grupo por ID
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function getGrupoById(id: string): Promise<GrupoInvestigacion | null> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  const { data: g, error } = await supabase
+  const query = supabase
     .from('grupo_investigacion')
-    .select('*, grupo_miembro(*), proyecto(*)')
-    .eq('code', id)
-    .single();
+    .select(`
+      *,
+      coordinador:investigador!grupo_investigacion_dni_coordinador_fkey(nombres, apellidos),
+      miembro_grupo(
+        *,
+        investigador(nombres, apellidos)
+      ),
+      proyecto(*)
+    `)
+    .or(`codigo_grupo.eq.${id},id_grupo.eq.${isNaN(Number(id)) ? -1 : Number(id)}`)
+    .maybeSingle();
+ 
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+ 
+  const grupo = mapToGrupo(data);
 
-  if (error || !g) return null;
+  // 1. Contar publicaciones indexadas en Scopus vinculadas al grupo
+  const { count: scopusCount, error: pubError } = await supabase
+    .from('publicacion')
+    .select('*', { count: 'exact', head: true })
+    .eq('id_grupo', data.id_grupo)
+    .ilike('indexacion', 'scopus');
 
-  return {
-    id: g.code,
-    code: g.code,
-    name: g.name,
-    acronym: g.acronym,
-    description: g.description,
-    coordinatorDni: g.coordinator_dni,
-    coordinatorName: g.coordinator_name,
-    researchLines: g.research_lines || [],
-    status: g.status,
-    recognitionDate: g.recognition_date,
-    createdAt: g.created_at,
-    updatedAt: g.updated_at,
-    fuente: g.fuente,
-    miembros: (g.grupo_miembro || []).map((m: any) => ({
-      dni: m.docente_dni,
-      nombre: m.nombre,
-      rol: m.rol,
-      fechaIncorporacion: m.fecha_incorporacion,
-      estado: m.estado,
-    })),
-    proyectosVinculados: (g.proyecto || []).map((p: any) => ({
-      codigo: p.codigo,
-      titulo: p.titulo,
-      estado: p.estado,
-      convocatoria: p.convocatoria,
-    })),
-  };
-  ──────────────────────────────────────────────────────────────────────────── */
+  grupo.articulosScopus = !pubError ? (scopusCount ?? 0) : 0;
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 200));
-  return MOCK_GRUPOS.find((g) => g.id === id || g.code === id) ?? null;
+  // 2. Contar tesis asesoradas por miembros del grupo
+  const memberDnis = grupo.miembros.map((m) => m.dni);
+  if (memberDnis.length > 0) {
+    const { count: thesesCount, error: thesisError } = await supabase
+      .from('tesis')
+      .select('*', { count: 'exact', head: true })
+      .in('dni_asesor', memberDnis);
+    
+    grupo.tesisEnCurso = !thesisError ? (thesesCount ?? 0) : 0;
+  } else {
+    grupo.tesisEnCurso = 0;
+  }
+
+  return grupo;
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Obtener estadísticas globales del módulo
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function getStats(): Promise<StatsGrupos> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
   const { data, error } = await supabase
     .from('grupo_investigacion')
-    .select('status');
-
+    .select('estado_grupo');
+ 
   if (error) throw new Error(error.message);
-
+ 
   const total = data.length;
-  const pending = data.filter((g: any) => g.status === 'pendiente_validacion').length;
-  const active = data.filter((g: any) => g.status === 'validado_activo').length;
-  const inactive = data.filter((g: any) => g.status === 'validado_inactivo').length;
-
+  const mapped = (data || []).map((g: any) => mapEstadoGrupo(g.estado_grupo));
+  const pending  = mapped.filter((s) => s === 'pendiente_validacion').length;
+  const active   = mapped.filter((s) => s === 'validado_activo').length;
+  const inactive = mapped.filter((s) => s === 'validado_inactivo').length;
+ 
   return {
     totalGrupos: total,
     pendientesValidar: pending,
     validadosActivos: active,
     validadosInactivos: inactive,
   };
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 100));
-  return getMockStats();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,265 +245,277 @@ export async function getStats(): Promise<StatsGrupos> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function buscarInvestigadores(buscar: string): Promise<InvestigatorPadron[]> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  const { data, error } = await supabase
-    .from('docentes')
-    .select('dni, nombres, apellidos, email, facultad, departamento')
-    .or(`dni.eq.${buscar},nombres.ilike.%${buscar}%,apellidos.ilike.%${buscar}%`)
-    .limit(10);
+  const params = new URLSearchParams({
+    buscar: buscar.trim(),
+    limit: '10'
+  });
 
-  if (error) throw new Error(error.message);
+  try {
+    const data = await apiClient.get<{
+      items: any[];
+      total: number;
+    }>(`/investigators?${params.toString()}`);
 
-  return (data || []).map((d: any) => ({
-    dni: d.dni,
-    nombre: `${d.nombres} ${d.apellidos}`,
-    email: d.email,
-    facultad: d.facultad || '',
-    departamento: d.departamento || '',
-  }));
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 150));
-  if (!buscar.trim()) return [];
-  const q = buscar.toLowerCase();
-  return MOCK_PADRON_INVESTIGADORES.filter(
-    (inv) =>
-      inv.nombre.toLowerCase().includes(q) ||
-      inv.dni.includes(q) ||
-      inv.email.toLowerCase().includes(q),
-  );
+    return (data.items || []).map((d: any) => ({
+      dni: d.dni,
+      nombre: `${d.nombres} ${d.apellidos}`,
+      nombres: d.nombres,
+      apellidos: d.apellidos,
+      email: `${d.dni}@unmsm.edu.pe`,
+      facultad: d.facultad_dependencia || '',
+      departamento: d.departamento_academico || '',
+      isExternal: d.is_external || false,
+      nivelRenacyt: d.categoria_renacyt || 'Sin nivel'
+    }));
+  } catch (err) {
+    console.error("Error fetching investigators from API, falling back to local Supabase query", err);
+    const { data, error } = await supabase
+      .from('investigador')
+      .select('dni, nombres, apellidos, departamento_academico, facultad_dependencia, categoria_renacyt')
+      .or(`dni.eq.${buscar.trim()},nombres.ilike.%${buscar.trim()}%,apellidos.ilike.%${buscar.trim()}%`)
+      .limit(10);
+ 
+    if (error) throw new Error(error.message);
+ 
+    return (data || []).map((d: any) => ({
+      dni: d.dni,
+      nombre: `${d.nombres} ${d.apellidos}`,
+      nombres: d.nombres,
+      apellidos: d.apellidos,
+      email: `${d.dni}@unmsm.edu.pe`,
+      facultad: d.facultad_dependencia || '',
+      departamento: d.departamento_academico || '',
+      isExternal: false,
+      nivelRenacyt: d.categoria_renacyt || 'Sin nivel'
+    }));
+  }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Guardar y Validar Grupo (Curación de Datos)
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function validarGrupo(
   id: string,
   payload: GrupoPayload,
 ): Promise<GrupoInvestigacion> {
-  // Encontrar el Director en el payload
   const director = payload.miembros.find((m) => m.rol === 'Director' && m.estado === 'activo');
-  const coordinatorDni = director?.dni || '';
-  const coordinatorName = director?.nombre || '';
+  const coordinatorDni = director?.dni || null;
+ 
+  const idGrupoNum = Number(id);
 
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
+  // Inserción automática de investigadores externos en el padrón local para evitar FK errors
+  for (const m of payload.miembros) {
+    if (m.isExternal) {
+      const { error: errUpsert } = await supabase
+        .from('investigador')
+        .upsert({
+          dni: m.dni,
+          nombres: m.nombres || m.nombre.split(' ').slice(1).join(' ') || 'Externo',
+          apellidos: m.apellidos || m.nombre.split(' ')[0] || 'RENACYT',
+          departamento_academico: m.departamento || 'Externo (RENACYT)',
+          facultad_dependencia: m.facultad || 'Ingeniería de Sistemas e Informática',
+          categoria_renacyt: m.nivelRenacyt || 'Sin nivel',
+          estado_vigencia: 'Activo',
+          investigador_sm: false,
+          tiene_deuda_gi: false,
+          tiene_deuda_pi: false,
+          is_external: true,
+        }, { onConflict: 'dni' });
+      if (errUpsert) {
+        console.error(`Error auto-importing external researcher ${m.dni}:`, errUpsert);
+      }
+    }
+  }
+ 
   // 1. Actualizar el grupo principal
   const { data: g, error: errGrupo } = await supabase
     .from('grupo_investigacion')
     .update({
-      name: payload.name,
-      acronym: payload.acronym || null,
-      research_lines: payload.researchLines,
-      status: payload.status,
-      recognition_date: payload.recognitionDate || new Date().toISOString().split('T')[0],
-      coordinator_dni: coordinatorDni,
-      coordinator_name: coordinatorName,
-      updated_at: new Date().toISOString(),
+      nombre_grupo: payload.name,
+      siglas: payload.acronym || null,
+      lineas_investigacion: payload.researchLines,
+      estado_grupo: mapEstadoGrupoBD(payload.status) || 'Activo',
+      fecha_reconocimiento: payload.recognitionDate || new Date().toISOString().split('T')[0],
+      dni_coordinador: coordinatorDni,
+      correo_coordinador: coordinatorDni ? `${coordinatorDni}@unmsm.edu.pe` : null,
     })
-    .eq('code', id)
+    .eq('id_grupo', idGrupoNum)
     .select()
     .single();
-
+ 
   if (errGrupo || !g) throw new Error(errGrupo?.message || 'Error al actualizar el grupo.');
-
+ 
   // 2. Sincronizar miembros: eliminar los antiguos e insertar los nuevos
-  // (O realizar un upsert / diff)
   const { error: errDelMiembros } = await supabase
-    .from('grupo_miembro')
+    .from('miembro_grupo')
     .delete()
-    .eq('grupo_code', id);
-
+    .eq('id_grupo', idGrupoNum);
+ 
   if (errDelMiembros) throw new Error(errDelMiembros.message);
-
+ 
   if (payload.miembros.length > 0) {
     const { error: errInsMiembros } = await supabase
-      .from('grupo_miembro')
+      .from('miembro_grupo')
       .insert(
-        payload.miembros.map((m) => ({
-          grupo_code: id,
-          docente_dni: m.dni,
-          nombre: m.nombre,
-          rol: m.rol,
-          fecha_incorporacion: m.fechaIncorporacion || new Date().toISOString().split('T')[0],
-          estado: m.estado,
-        }))
+        payload.miembros.map((m) => {
+          let condicion = 'Adherente';
+          if (m.rol === 'Director') condicion = 'Coordinador';
+          else if (m.rol === 'Co-Investigador') condicion = 'Titular';
+          else if (m.rol === 'Tesista') condicion = 'Estudiante';
+ 
+          return {
+            id_grupo: idGrupoNum,
+            dni_investigador: m.dni,
+            condicion_miembro: condicion,
+            estado_membresia: m.estado === 'activo' ? 'Activo' : 'Inactivo',
+            fecha_incorporacion: m.fechaIncorporacion || new Date().toISOString().split('T')[0],
+          };
+        })
       );
     if (errInsMiembros) throw new Error(errInsMiembros.message);
   }
-
-  // Devolver el grupo actualizado completo
+ 
   const gActualizado = await getGrupoById(id);
   if (!gActualizado) throw new Error('Error al recuperar el grupo actualizado.');
   return gActualizado;
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 600));
-
-  const idx = MOCK_GRUPOS.findIndex((g) => g.id === id || g.code === id);
-  if (idx === -1) throw new Error('Grupo no encontrado.');
-
-  const original = MOCK_GRUPOS[idx];
-
-  // Regla EX1: Validar que no se desactive o quite el Director si hay proyectos activos
-  // (La UI ya lo valida, pero aquí reforzamos)
-  const hasActiveProjects = original.proyectosVinculados.some((p) => p.estado === 'active');
-  if (hasActiveProjects) {
-    // Si el estado es de desactivación
-    if (payload.status === 'validado_inactivo') {
-      throw new Error('Regla de Negocio (EX1): No se puede desactivar un grupo con proyectos activos.');
-    }
-    // Si no hay director
-    if (!director) {
-      throw new Error('Regla de Negocio (EX1): No se puede remover el Director mientras existan proyectos activos.');
-    }
-  }
-
-  const updated: GrupoInvestigacion = {
-    ...original,
-    name: payload.name,
-    acronym: payload.acronym,
-    researchLines: payload.researchLines,
-    status: payload.status,
-    recognitionDate: payload.recognitionDate || original.recognitionDate || new Date().toISOString().split('T')[0],
-    coordinatorDni,
-    coordinatorName,
-    miembros: payload.miembros,
-    updatedAt: new Date().toISOString(),
-  };
-
-  MOCK_GRUPOS[idx] = updated;
-  return updated;
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validar unicidad del código (EX2)
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function validarCodigoGrupo(codigo: string, excluirId?: string): Promise<boolean> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
   let query = supabase
     .from('grupo_investigacion')
-    .select('code')
-    .eq('code', codigo);
-
+    .select('id_grupo')
+    .eq('codigo_grupo', codigo.trim().toUpperCase());
+ 
   if (excluirId) {
-    query = query.ne('code', excluirId);
+    query = query.neq('id_grupo', Number(excluirId));
   }
-
+ 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-
-  return data.length === 0;
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 100));
-  const normalizado = codigo.trim().toUpperCase();
-  const existe = MOCK_GRUPOS.some(
-    (g) => g.code.toUpperCase() === normalizado && g.id !== excluirId,
-  );
-  return !existe;
+ 
+  return (data || []).length === 0;
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exportar Ficha (Simulación de descarga)
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function exportarFicha(
   id: string,
   formato: 'pdf' | 'excel',
 ): Promise<Blob> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
   // En producción, esto haría una llamada al endpoint del backend que genera el reporte
-  // Ej: fetch(`/api/grupos/${id}/exportar?formato=${formato}`)
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 1000));
-  const dummyContent = `Ficha del Grupo ${id} en formato ${formato.toUpperCase()} - Generado a las ${new Date().toISOString()}`;
-  return new Blob([dummyContent], { type: formato === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/reports/ficha?grupo_id=${id}&format=${formato}`);
+  if (!response.ok) {
+    throw new Error('Error al generar la ficha.');
+  }
+  return response.blob();
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Crear Nuevo Grupo (Ingreso Manual)
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 export async function crearGrupo(
   payload: GrupoPayload & { code: string; fuente: FuenteOrigen },
 ): Promise<GrupoInvestigacion> {
-  // Encontrar el Director en el payload
   const director = payload.miembros.find((m) => m.rol === 'Director' && m.estado === 'activo');
-  const coordinatorDni = director?.dni || '';
-  const coordinatorName = director?.nombre || '';
+  const coordinatorDni = director?.dni || null;
 
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  // En producción real:
-  // const { data: g, error: errGrupo } = await supabase
-  //   .from('grupo_investigacion')
-  //   .insert({
-  //     code: payload.code,
-  //     name: payload.name,
-  //     acronym: payload.acronym || null,
-  //     research_lines: payload.researchLines,
-  //     status: payload.status,
-  //     recognition_date: payload.recognitionDate || new Date().toISOString().split('T')[0],
-  //     coordinator_dni: coordinatorDni,
-  //     coordinator_name: coordinatorName,
-  //     fuente: payload.fuente,
-  //     created_at: new Date().toISOString(),
-  //     updated_at: new Date().toISOString(),
-  //   })
-  //   .select()
-  //   .single();
-  // if (errGrupo || !g) throw new Error(errGrupo?.message || 'Error al crear el grupo.');
-  
-  // if (payload.miembros.length > 0) {
-  //   const { error: errMiembros } = await supabase
-  //     .from('grupo_miembro')
-  //     .insert(
-  //       payload.miembros.map((m) => ({
-  //         grupo_code: payload.code,
-  //         docente_dni: m.dni,
-  //         nombre: m.nombre,
-  //         rol: m.rol,
-  //         fecha_incorporacion: m.fechaIncorporacion || new Date().toISOString().split('T')[0],
-  //         estado: m.estado,
-  //       }))
-  //     );
-  //   if (errMiembros) throw new Error(errMiembros.message);
-  // }
-  // return getGrupoById(payload.code);
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  await new Promise((r) => setTimeout(r, 600));
-
-  const existe = MOCK_GRUPOS.some(
-    (g) => g.code.toUpperCase() === payload.code.trim().toUpperCase(),
-  );
-  if (existe) {
-    throw new Error('El código de grupo ya existe.');
+  // Inserción automática de investigadores externos en el padrón local para evitar FK errors
+  for (const m of payload.miembros) {
+    if (m.isExternal) {
+      const { error: errUpsert } = await supabase
+        .from('investigador')
+        .upsert({
+          dni: m.dni,
+          nombres: m.nombres || m.nombre.split(' ').slice(1).join(' ') || 'Externo',
+          apellidos: m.apellidos || m.nombre.split(' ')[0] || 'RENACYT',
+          departamento_academico: m.departamento || 'Externo (RENACYT)',
+          facultad_dependencia: m.facultad || 'Ingeniería de Sistemas e Informática',
+          categoria_renacyt: m.nivelRenacyt || 'Sin nivel',
+          estado_vigencia: 'Activo',
+          investigador_sm: false,
+          tiene_deuda_gi: false,
+          tiene_deuda_pi: false,
+          is_external: true,
+        }, { onConflict: 'dni' });
+      if (errUpsert) {
+        console.error(`Error auto-importing external researcher ${m.dni}:`, errUpsert);
+      }
+    }
   }
+ 
+  const { data: g, error: errGrupo } = await supabase
+    .from('grupo_investigacion')
+    .insert({
+      codigo_grupo: payload.code.trim().toUpperCase(),
+      nombre_grupo: payload.name,
+      siglas: payload.acronym || null,
+      lineas_investigacion: payload.researchLines,
+      estado_grupo: mapEstadoGrupoBD(payload.status) || 'Activo',
+      fecha_reconocimiento: payload.recognitionDate || new Date().toISOString().split('T')[0],
+      dni_coordinador: coordinatorDni,
+      correo_coordinador: coordinatorDni ? `${coordinatorDni}@unmsm.edu.pe` : null,
+      url_vrip: payload.fuente === 'RAIS' ? 'https://vrip.unmsm.edu.pe' : null,
+    })
+    .select()
+    .single();
+ 
+  if (errGrupo || !g) throw new Error(errGrupo?.message || 'Error al crear el grupo.');
+ 
+  if (payload.miembros.length > 0) {
+    const { error: errMiembros } = await supabase
+      .from('miembro_grupo')
+      .insert(
+        payload.miembros.map((m) => {
+          let condicion = 'Adherente';
+          if (m.rol === 'Director') condicion = 'Coordinador';
+          else if (m.rol === 'Co-Investigador') condicion = 'Titular';
+          else if (m.rol === 'Tesista') condicion = 'Estudiante';
+ 
+          return {
+            id_grupo: g.id_grupo,
+            dni_investigador: m.dni,
+            condicion_miembro: condicion,
+            estado_membresia: m.estado === 'activo' ? 'Activo' : 'Inactivo',
+            fecha_incorporacion: m.fechaIncorporacion || new Date().toISOString().split('T')[0],
+          };
+        })
+      );
+    if (errMiembros) throw new Error(errMiembros.message);
+  }
+ 
+  const gCreado = await getGrupoById(String(g.id_grupo));
+  if (!gCreado) throw new Error('Error al recuperar el grupo recién creado.');
+  return gCreado;
+}
 
-  const nuevo: GrupoInvestigacion = {
-    id: payload.code,
-    code: payload.code,
-    name: payload.name,
-    acronym: payload.acronym || '',
-    coordinatorDni,
-    coordinatorName,
-    researchLines: payload.researchLines,
-    status: payload.status,
-    recognitionDate: payload.recognitionDate || new Date().toISOString().split('T')[0],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    fuente: payload.fuente,
-    miembros: payload.miembros,
-    proyectosVinculados: [],
-  };
+// ─────────────────────────────────────────────────────────────────────────────
+// Integración con Cybertesis (GET /external, POST /theses)
+// ─────────────────────────────────────────────────────────────────────────────
 
-  MOCK_GRUPOS.push(nuevo);
-  return nuevo;
+export async function buscarTesisExternas(query: string): Promise<any[]> {
+  try {
+    const data = await apiClient.get<any[]>(`/theses/external?q=${encodeURIComponent(query)}`);
+    return data || [];
+  } catch (err) {
+    console.error("Error consultando tesis externas en backend:", err);
+    throw err;
+  }
+}
+
+export async function vincularTesis(tesisPayload: any): Promise<any> {
+  try {
+    const data = await apiClient.post<any>('/theses', tesisPayload);
+    return data;
+  } catch (err) {
+    console.error("Error al vincular tesis en backend:", err);
+    throw err;
+  }
 }

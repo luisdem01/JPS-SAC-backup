@@ -12,93 +12,30 @@
  * Permisos: Solo rol admin.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import { PageHeader }  from '@/SGPI-CFU/components/shared';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tipos
-// ─────────────────────────────────────────────────────────────────────────────
-
-type EventoTipo =
-  | 'SESION_LOGIN'
-  | 'SESION_LOGOUT'
-  | 'SYNC_VRIP'
-  | 'IMPORT_DATA'
-  | 'CONFIG_CHANGE'
-  | 'USER_CREATE'
-  | 'USER_UPDATE';
+import { capiacService, LogEntry } from '../_data/capiacService';
 
 type EstadoLog = 'EXITO' | 'FALLO' | 'ADVERTENCIA';
 
-interface LogEntry {
-  id:          string;
-  fechaHora:   string; // ISO 8601
-  evento:      EventoTipo;
-  usuario:     string;
-  estado:      EstadoLog;
-  /** Detalle JSON que se muestra en el modal */
-  detail:      object;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Datos mock — incluye 2 nuevos registros de muestra recientes
-// ─────────────────────────────────────────────────────────────────────────────
-
-const MOCK_LOGS: LogEntry[] = [
-  {
-    id: '8', fechaHora: '2026-05-07T14:02:00', evento: 'SESION_LOGIN', usuario: 'adm_acueva', estado: 'EXITO',
-    detail: {
-      timestamp:  '2026-05-07T14:02:00.000Z',
-      event_type: 'SESION_LOGIN',
-      actor:      'adm_acueva',
-      ip_address: '192.168.1.45',
-      user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-      status:     'SUCCESS',
-      session_id: 'sess_8f3a2b1c9d4e',
-    },
-  },
-  {
-    id: '9', fechaHora: '2026-05-07T10:15:00', evento: 'SYNC_VRIP', usuario: 'SISTEMA', estado: 'FALLO',
-    detail: {
-      timestamp:    '2026-05-07T10:15:22.451Z',
-      event_type:   'SYNC_VRIP',
-      actor:        'CRON_JOB_AUTOMATED',
-      source_url:   'https://vrip.unmsm.edu.pe/conv...',
-      status:       'FAILED',
-      error_trace: {
-        code:    'ECONNRESET',
-        message: 'Read timeout after 30s',
-        stack:   'Error: socket hang up at conn...',
-      },
-      records_processed: 0,
-    },
-  },
-  { id: '1', fechaHora: '2024-05-07T14:42:00', evento: 'SESION_LOGIN',  usuario: 'adm_acueva',  estado: 'EXITO',
-    detail: { timestamp: '2024-05-07T14:42:00.000Z', event_type: 'SESION_LOGIN',  actor: 'adm_acueva',  status: 'SUCCESS', ip_address: '10.0.0.12' } },
-  { id: '2', fechaHora: '2024-05-07T10:15:00', evento: 'SYNC_VRIP',     usuario: 'SISTEMA',      estado: 'FALLO',
-    detail: { timestamp: '2024-05-07T10:15:00.000Z', event_type: 'SYNC_VRIP',     actor: 'SISTEMA',      status: 'FAILED',  records_processed: 0 } },
-  { id: '3', fechaHora: '2024-05-06T17:33:00', evento: 'CONFIG_CHANGE', usuario: 'adm_acueva',  estado: 'EXITO',
-    detail: { timestamp: '2024-05-06T17:33:00.000Z', event_type: 'CONFIG_CHANGE', actor: 'adm_acueva',  status: 'SUCCESS', changed_fields: ['frecuencia_sync', 'alerta_roja'] } },
-  { id: '4', fechaHora: '2024-05-06T09:05:00', evento: 'IMPORT_DATA',   usuario: 'sec_mlopez',  estado: 'EXITO',
-    detail: { timestamp: '2024-05-06T09:05:00.000Z', event_type: 'IMPORT_DATA',   actor: 'sec_mlopez',  status: 'SUCCESS', records_imported: 142 } },
-  { id: '5', fechaHora: '2024-05-05T16:20:00', evento: 'USER_CREATE',   usuario: 'adm_acueva',  estado: 'EXITO',
-    detail: { timestamp: '2024-05-05T16:20:00.000Z', event_type: 'USER_CREATE',   actor: 'adm_acueva',  status: 'SUCCESS', new_user: 'inv_rdiaz' } },
-  { id: '6', fechaHora: '2024-05-05T11:48:00', evento: 'SESION_LOGIN',  usuario: 'sec_mlopez',  estado: 'ADVERTENCIA',
-    detail: { timestamp: '2024-05-05T11:48:00.000Z', event_type: 'SESION_LOGIN',  actor: 'sec_mlopez',  status: 'WARNING', reason: 'Unusual IP location' } },
-  { id: '7', fechaHora: '2024-05-04T08:00:00', evento: 'SYNC_VRIP',     usuario: 'SISTEMA',      estado: 'EXITO',
-    detail: { timestamp: '2024-05-04T08:00:00.000Z', event_type: 'SYNC_VRIP',     actor: 'SISTEMA',      status: 'SUCCESS', records_processed: 38 } },
-];
-
 const TIPO_EVENTO_OPTIONS = [
-  { label: 'Todos los eventos',       value: '' },
-  { label: 'Sincronización VRIP',     value: 'SYNC_VRIP' },
-  { label: 'Inicio de sesión',        value: 'SESION_LOGIN' },
-  { label: 'Cierre de sesión',        value: 'SESION_LOGOUT' },
-  { label: 'Importación de datos',    value: 'IMPORT_DATA' },
-  { label: 'Cambio de configuración', value: 'CONFIG_CHANGE' },
-  { label: 'Creación de usuario',     value: 'USER_CREATE' },
-  { label: 'Edición de usuario',      value: 'USER_UPDATE' },
+  { label: 'Todos los eventos',               value: '' },
+  { label: 'Creación de Registro (INSERT)',   value: 'INSERT' },
+  { label: 'Modificación de Registro (UPDATE)',value: 'UPDATE' },
+  { label: 'Eliminación de Registro (DELETE)',value: 'DELETE' },
+  { label: 'Inicio de sesión',                value: 'LOGIN' },
+  { label: 'Cierre de sesión',                value: 'LOGOUT' },
+  { label: 'Importación Excel (General)',     value: 'IMPORT_EXCEL' },
+  { label: 'Importación Excel (CI)',          value: 'IMPORT_EXCEL_CI' },
+  { label: 'Sincronización RENACYT',          value: 'SYNC_RENACYT' },
+  { label: 'Sincronización Cybertesis',       value: 'SYNC_CYBERTESIS' },
+  { label: 'Sincronización VRIP',             value: 'SYNC_VRIP' },
+  { label: 'Exportación de Reporte',          value: 'EXPORT_REPORT' },
+  { label: 'Snapshot Generado',               value: 'SNAPSHOT_GENERADO' },
+  { label: 'Cambio de Configuración',         value: 'CONFIG_CHANGE' },
+  { label: 'Usuario Creado',                  value: 'USER_CREATED' },
+  { label: 'Usuario Desactivado',             value: 'USER_DEACTIVATED' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,22 +239,27 @@ export default function AuditoriaDeLogsPage() {
     setAppliedFilters({ desde: fechaDesde, hasta: fechaHasta, evento: tipoEvento });
   };
 
-  // ── Logs filtrados ────────────────────────────────────────────────────────
-  const filteredLogs = useMemo(() => {
-    const desde = inputDateToDate(appliedFilters.desde);
-    const hasta = inputDateToDate(appliedFilters.hasta);
+  const [filteredLogs, setFilteredLogs] = useState<LogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-    return MOCK_LOGS.filter((log) => {
-      if (appliedFilters.evento && log.evento !== appliedFilters.evento) return false;
-      const logDate = new Date(log.fechaHora);
-      if (desde && logDate < desde) return false;
-      if (hasta) {
-        const hastaFin = new Date(hasta);
-        hastaFin.setHours(23, 59, 59, 999);
-        if (logDate > hastaFin) return false;
+  useEffect(() => {
+    const fetchLogs = async () => {
+      setIsLoading(true);
+      try {
+        const data = await capiacService.getLogsAuditoria({
+          fecha_inicio: appliedFilters.desde || undefined,
+          fecha_fin: appliedFilters.hasta || undefined,
+          tipo_evento: appliedFilters.evento || undefined,
+          limit: 100
+        });
+        setFilteredLogs(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
       }
-      return true;
-    });
+    };
+    fetchLogs();
   }, [appliedFilters]);
 
   return (
@@ -412,7 +354,11 @@ export default function AuditoriaDeLogsPage() {
         </div>
 
         {/* Filas — clicables */}
-        {filteredLogs.length === 0 ? (
+        {isLoading ? (
+          <div className="px-5 py-10 text-center font-sans text-[13px] text-[#64748b]">
+            Cargando registros...
+          </div>
+        ) : filteredLogs.length === 0 ? (
           <div className="px-5 py-10 text-center font-sans text-[13px] text-[#64748b]">
             No se encontraron registros con los filtros aplicados.
           </div>

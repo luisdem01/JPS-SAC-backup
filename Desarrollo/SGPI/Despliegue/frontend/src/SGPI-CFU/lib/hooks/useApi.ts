@@ -67,7 +67,7 @@ export function useApi<T = unknown>() {
     if (error instanceof ApiClientError) {
       // 401 → sesión expirada o token inválido → redirigir al login
       if (error.httpStatus === 401) {
-        router.push('/login');
+        router.push('/auth/login');
         return;
       }
 

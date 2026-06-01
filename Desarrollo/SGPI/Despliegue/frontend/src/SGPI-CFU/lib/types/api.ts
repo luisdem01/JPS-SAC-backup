@@ -95,6 +95,14 @@ export interface SearchParams extends PaginationParams {
   q:      string;
   /** Tipo de entidad a buscar */
   type?:  SearchType;
+  /** Fuentes de datos a filtrar */
+  source?: string[];
+  /** Estados a filtrar */
+  status?: string[];
+  /** Año inicial del rango */
+  anio_inicio?: number;
+  /** Año final del rango */
+  anio_fin?: number;
 }
 
 /**
@@ -103,6 +111,7 @@ export interface SearchParams extends PaginationParams {
 export type SearchType =
   | 'investigators'
   | 'projects'
+  | 'groups'
   | 'publications'
   | 'tesis';
 
@@ -124,6 +133,12 @@ export interface JobStarted {
  */
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
+export interface JobLogEntry {
+  timestamp: string;
+  message: string;
+  progress: number;
+}
+
 /**
  * Estado de un job de importación de Excel.
  */
@@ -136,6 +151,8 @@ export interface ImportJobStatus {
   processed: number;
   /** Errores encontrados durante el procesamiento */
   errors:    number;
+  /** Listado de registros o eventos de progreso detallado (amigables) */
+  logs?:     JobLogEntry[];
 }
 
 /**
@@ -210,13 +227,17 @@ export interface UseApiState<T = unknown> {
 export interface RequestConfig {
   /**
    * Timeout de la petición en milisegundos.
-   * Por defecto: 5000ms. Para importaciones/sync: 600000ms (10 min).
+   * Por defecto: 15000ms. Para importaciones/sync: 600000ms (10 min).
    */
   timeout?:      number;
   /** Headers adicionales a incluir en la petición */
   headers?:      Record<string, string>;
   /** Si se debe mostrar el error al usuario (true por defecto) */
   showError?:    boolean;
+  /** Si se debe omitir la caché en memoria del cliente */
+  skipCache?:    boolean;
+  /** Tiempo de vida de la caché en milisegundos */
+  ttl?:          number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

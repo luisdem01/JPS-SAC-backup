@@ -1,8 +1,13 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Dict
+from typing import List, Optional
+from datetime import date
+
 
 class BaseReconciliationPayload(BaseModel):
-    fuente_origen: str = Field(..., description="La fuente desde donde provienen los datos: RAIS, RENACYT, Cybertesis, VRIP")
+    fuente_origen: str = Field(
+        ..., description="La fuente desde donde provienen los datos: RAIS, RENACYT, Cybertesis, VRIP"
+    )
+
 
 class InvestigadorInput(BaseModel):
     dni: str
@@ -22,8 +27,10 @@ class InvestigadorInput(BaseModel):
     investigador_sm: Optional[bool] = None
     estado_vigencia: Optional[str] = None
 
+
 class BulkInvestigadorPayload(BaseReconciliationPayload):
     registros: List[InvestigadorInput]
+
 
 class ProyectoInput(BaseModel):
     codigo_proyecto: str
@@ -36,11 +43,13 @@ class ProyectoInput(BaseModel):
     codigo_grupo: Optional[str] = None
     area_academica: Optional[str] = None
     anio_convocatoria: Optional[int] = None
-    fecha_inicio: Optional[str] = None # YYYY-MM-DD
+    fecha_inicio: Optional[date] = None  # YYYY-MM-DD
     estado_proyecto: Optional[str] = None
+
 
 class BulkProyectoPayload(BaseReconciliationPayload):
     registros: List[ProyectoInput]
+
 
 class PublicacionInput(BaseModel):
     doi_codigo: Optional[str] = None
@@ -54,15 +63,18 @@ class PublicacionInput(BaseModel):
     indexacion: Optional[str] = None
     fecha_publicacion: Optional[str] = None
 
+
 class BulkPublicacionPayload(BaseReconciliationPayload):
     registros: List[PublicacionInput]
+
 
 class AsesorTesisInput(BaseModel):
     asesor_texto: str
     url_cybertesis: str
     titulo_tesis: str
-    dni_asesor: Optional[str] = None # Sometimes they extract it, sometimes they don't
+    dni_asesor: Optional[str] = None  # Sometimes they extract it, sometimes they don't
     autor_estudiante_texto: Optional[str] = None
+
 
 class BulkAsesorTesisPayload(BaseReconciliationPayload):
     registros: List[AsesorTesisInput]

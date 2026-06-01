@@ -8,7 +8,7 @@
  * Paso 1–6 del Flujo Básico:
  *  - Lista de convocatorias con semaforización visual
  *  - Filtros: búsqueda de texto, estado, ordenamiento
- *  - EX1: panel vacío si no hay convocatorias activas
+ *  - EX1: panel vacío si no hay convocatorias abiertas
  * Paso 9–12 / EX2:
  *  - Modal "Gestionar Evidencia" con drag-and-drop y validación
  */
@@ -155,11 +155,11 @@ interface AlertaCardProps {
 
 function AlertaCard({ convocatoria: c, onVerDetalles, onGestionarEvidencia }: AlertaCardProps) {
   const dias      = diasRestantes(c.fechaCierre);
-  const nivel     = c.estado === 'Activa' || c.estado === 'Por Vencer'
+  const nivel     = c.estado === 'Abierta' || c.estado === 'Por Vencer'
     ? nivelAlerta(dias)
     : 'verde';
   const semaforo  = SEMAFORO[nivel];
-  const badgeLabel = c.estado === 'Activa' || c.estado === 'Por Vencer'
+  const badgeLabel = c.estado === 'Abierta' || c.estado === 'Por Vencer'
     ? semaforo.label(dias)
     : c.estado.toUpperCase();
 
@@ -659,7 +659,7 @@ export default function AlertasConvocatoriasPage() {
             label="Filtrar por estado"
             options={[
               { value: 'Todos',      label: 'Todos' },
-              { value: 'Activa',     label: 'Activa' },
+              { value: 'Abierta',    label: 'Abierta' },
               { value: 'Por Vencer', label: 'Por Vencer' },
               { value: 'Cerrada',    label: 'Cerrada' },
               { value: 'Suspendida', label: 'Suspendida' },

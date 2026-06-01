@@ -1,7 +1,8 @@
 import os
-import re
 from typing import Optional, List
 from cybertesis_connector.core.normalizer import strip_accents
+from cybertesis_connector.core.models import QueryResultsModel
+
 
 def format_clean_filename(query: str) -> str:
     """Transforma una cadena de consulta en un nombre de archivo seguro y limpio (slug)."""
@@ -13,14 +14,16 @@ def format_clean_filename(query: str) -> str:
     slug = "".join(c for c in slug if c.isalnum() or c == "_")
     return slug
 
+
 def ensure_dir(path: str):
     """Asegura la existencia de un directorio de destino."""
     directory = os.path.dirname(os.path.abspath(path))
     if directory:
         os.makedirs(directory, exist_ok=True)
 
+
 def filter_and_sort_results(
-    results: 'QueryResultsModel',
+    results: "QueryResultsModel",
     degree: Optional[str] = None,
     year: Optional[int] = None,
     year_start: Optional[int] = None,
@@ -29,8 +32,8 @@ def filter_and_sort_results(
     keyword: Optional[str] = None,
     sort_by: Optional[str] = "anio",
     sort_order: str = "desc",
-    query_term: Optional[str] = None
-) -> 'QueryResultsModel':
+    query_term: Optional[str] = None,
+) -> "QueryResultsModel":
     """
     Filtra y ordena dinámicamente un objeto QueryResultsModel según criterios avanzados.
     - degree: Filtra por grado académico ('pregrado', 'maestria', 'doctorado').
@@ -47,10 +50,7 @@ def filter_and_sort_results(
     # 1. Filtro por Grado Académico (Caso insensitivo, substring)
     if degree:
         deg_lower = strip_accents(degree.lower())
-        filtered_list = [
-            t for t in filtered_list 
-            if deg_lower in strip_accents(t.grado_academico.lower())
-        ]
+        filtered_list = [t for t in filtered_list if deg_lower in strip_accents(t.grado_academico.lower())]
 
     # 2. Filtro por Año Exacto
     if year is not None:
@@ -66,7 +66,7 @@ def filter_and_sort_results(
     if role and query_term:
         role_norm = role.lower().strip()
         term_norm = strip_accents(query_term.lower().strip())
-        
+
         def name_matches(names: List[str]) -> bool:
             for n in names:
                 if term_norm in strip_accents(n.lower()):
@@ -82,31 +82,27 @@ def filter_and_sort_results(
     if keyword:
         kw_norm = strip_accents(keyword.lower().strip())
         filtered_list = [
-            t for t in filtered_list 
-            if any(kw_norm in strip_accents(kw.lower()) for kw in t.palabras_clave)
+            t for t in filtered_list if any(kw_norm in strip_accents(kw.lower()) for kw in t.palabras_clave)
         ]
 
     # 6. Ordenamiento de Resultados
-    reverse_sort = (sort_order.lower() == "desc")
-    
+    reverse_sort = sort_order.lower() == "desc"
+
     if sort_by == "anio":
         filtered_list.sort(key=lambda t: t.anio_publicacion, reverse=reverse_sort)
     elif sort_by == "titulo":
         filtered_list.sort(key=lambda t: t.titulo.lower(), reverse=reverse_sort)
     elif sort_by == "autor":
-        filtered_list.sort(
-            key=lambda t: t.autores[0].lower() if t.autores else "", 
-            reverse=reverse_sort
-        )
+        filtered_list.sort(key=lambda t: t.autores[0].lower() if t.autores else "", reverse=reverse_sort)
 
     # Crear una nueva instancia de QueryResultsModel con los datos filtrados
     # Para evitar importación circular en tiempo de carga, importamos aquí
     from cybertesis_connector.core.models import QueryResultsModel
-    
+
     return QueryResultsModel(
         tipo_documento=results.tipo_documento,
         query=results.query,
         total_encontrados=len(filtered_list),
         paginas_procesadas=results.paginas_procesadas,
-        resultados=filtered_list
+        resultados=filtered_list,
     )

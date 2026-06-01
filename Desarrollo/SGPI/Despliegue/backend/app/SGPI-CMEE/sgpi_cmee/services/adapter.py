@@ -99,4 +99,76 @@ def adapt_report_to_generic_excel(report_model: BaseModel, tipo_reporte: str, us
             data=data_renacyt
         ))
         
+    elif tipo_reporte == "Ficha Grupo":
+        # Hoja 1: Resumen de Grupo
+        estado_str = getattr(report_model, 'estado_grupo', 'Activo')
+        if estado_str == "Activo":
+            estado_str = "Validado / Activo"
+        elif estado_str == "Inactivo":
+            estado_str = "Validado / Inactivo"
+        elif estado_str == "Pendiente":
+            estado_str = "Pendiente Validar"
+            
+        metrics_data = [
+            ("Código del Grupo", getattr(report_model, 'codigo_grupo', '')),
+            ("Nombre del Grupo", getattr(report_model, 'nombre_grupo', '')),
+            ("Siglas", getattr(report_model, 'siglas', 'N/A') or 'N/A'),
+            ("Estado", estado_str),
+            ("Fecha de Registro", getattr(report_model, 'fecha_reconocimiento', 'N/A') or 'N/A'),
+            ("Coordinador DNI", getattr(report_model, 'coordinador_dni', 'N/A') or 'N/A'),
+            ("Coordinador Nombre", getattr(report_model, 'coordinador_nombre', 'N/A') or 'N/A'),
+            ("Líneas de Investigación", ", ".join(getattr(report_model, 'lineas_investigacion', []))),
+            ("Total Integrantes", len(getattr(report_model, 'miembros', []))),
+            ("Proyectos Activos", len([p for p in getattr(report_model, 'proyectos', []) if p.estado == 'active'])),
+            ("Artículos (Scopus)", getattr(report_model, 'articulos_scopus', 0)),
+            ("Tesis en Curso", getattr(report_model, 'tesis_en_curso', 0)),
+        ]
+        
+        sheets.append(ExcelSheetDef(
+            sheet_name="Resumen de Grupo",
+            title=f"FICHA CONSOLIDADA DE GRUPO: {getattr(report_model, 'codigo_grupo', '')}",
+            metrics=metrics_data,
+            metrics_title="Concepto",
+            metrics_value_title="Detalle"
+        ))
+        
+        # Hoja 2: Integrantes
+        headers_miembros = ["DNI", "Apellidos y Nombres", "Rol en el Grupo", "Fecha de Incorporación", "Estado"]
+        data_miembros = []
+        for m in getattr(report_model, 'miembros', []):
+            estado_m = "Activo" if m.estado == "activo" else "Inactivo"
+            data_miembros.append([
+                m.dni, m.nombre, m.rol, m.fecha_incorporacion or "N/A", estado_m
+            ])
+            
+        sheets.append(ExcelSheetDef(
+            sheet_name="Integrantes",
+            title="INTEGRANTES DE GRUPO DE INVESTIGACIÓN",
+            headers=headers_miembros,
+            data=data_miembros
+        ))
+        
+        # Hoja 3: Proyectos Vinculados
+        headers_proy = ["Código del Proyecto", "Título del Proyecto", "Convocatoria", "Estado"]
+        data_proy = []
+        for p in getattr(report_model, 'proyectos', []):
+            est_p = "En ejecución"
+            if p.estado == "pending":
+                est_p = "Formulación"
+            elif p.estado == "completed":
+                est_p = "Concluido"
+            elif p.estado == "cancelled":
+                est_p = "Cancelado"
+                
+            data_proy.append([
+                p.codigo, p.titulo, p.convocatoria or "N/A", est_p
+            ])
+            
+        sheets.append(ExcelSheetDef(
+            sheet_name="Proyectos Vinculados",
+            title="PROYECTOS DE INVESTIGACIÓN VINCULADOS",
+            headers=headers_proy,
+            data=data_proy
+        ))
+        
     return ExcelGenerationRequest(sheets=sheets, usuario_generador=usuario_generador)

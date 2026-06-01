@@ -30,32 +30,64 @@ const LOCK_UNTIL_KEY = 'sgpi_lock_until';
 // Token de acceso
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Helper functions to manage cookies from the client side
+function setCookie(name: string, value: string, days?: number) {
+  if (typeof document === 'undefined') return;
+  let expires = "";
+  if (days) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    expires = "; expires=" + date.toUTCString();
+  }
+  document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Strict";
+}
+
+function eraseCookie(name: string) {
+  if (typeof document === 'undefined') return;
+  document.cookie = name + '=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=Strict';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token de acceso
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Obtiene el token de acceso JWT almacenado en localStorage.
+ * Obtiene el token de acceso JWT almacenado en localStorage o sessionStorage.
  *
  * @returns El token de acceso, o null si no existe
  */
 export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null; // SSR guard
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return localStorage.getItem(ACCESS_TOKEN_KEY) || sessionStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
 /**
- * Almacena el token de acceso JWT en localStorage.
+ * Almacena el token de acceso JWT en localStorage o sessionStorage.
  *
  * @param token - Token de acceso JWT
+ * @param remember - Si se debe recordar el dispositivo
  */
-export function setAccessToken(token: string): void {
+export function setAccessToken(token: string, remember = false): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(ACCESS_TOKEN_KEY, token);
+  if (remember) {
+    localStorage.setItem(ACCESS_TOKEN_KEY, token);
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    setCookie(ACCESS_TOKEN_KEY, token, 1);
+  } else {
+    sessionStorage.setItem(ACCESS_TOKEN_KEY, token);
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    setCookie(ACCESS_TOKEN_KEY, token);
+  }
 }
 
 /**
- * Elimina el token de acceso de localStorage.
+ * Elimina el token de acceso de localStorage, sessionStorage y cookies.
  */
 export function removeAccessToken(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(ACCESS_TOKEN_KEY);
+  sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+  eraseCookie(ACCESS_TOKEN_KEY);
 }
 
 // Alias semántico para compatibilidad
@@ -71,31 +103,42 @@ export const removeToken = removeAccessToken;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Obtiene el token de refresco almacenado en localStorage.
+ * Obtiene el token de refresco almacenado en localStorage o sessionStorage.
  *
  * @returns El token de refresco, o null si no existe
  */
 export function getRefreshToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  return localStorage.getItem(REFRESH_TOKEN_KEY) || sessionStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 /**
- * Almacena el token de refresco en localStorage.
+ * Almacena el token de refresco en localStorage o sessionStorage.
  *
  * @param token - Token de refresco
+ * @param remember - Si se debe recordar el dispositivo
  */
-export function setRefreshToken(token: string): void {
+export function setRefreshToken(token: string, remember = false): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(REFRESH_TOKEN_KEY, token);
+  if (remember) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, token);
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+    setCookie(REFRESH_TOKEN_KEY, token, 30);
+  } else {
+    sessionStorage.setItem(REFRESH_TOKEN_KEY, token);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    setCookie(REFRESH_TOKEN_KEY, token);
+  }
 }
 
 /**
- * Elimina el token de refresco de localStorage.
+ * Elimina el token de refresco de localStorage, sessionStorage y cookies.
  */
 export function removeRefreshToken(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+  eraseCookie(REFRESH_TOKEN_KEY);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,12 +242,6 @@ export function getLockUntil(): number | null {
  * @returns true si el bloqueo sigue vigente, false en caso contrario
  */
 export function isAccountLocked(): boolean {
-  // DEV OVERRIDE: Desactivar bloqueo en desarrollo para facilitar pruebas
-  if (process.env.NODE_ENV === 'development') {
-    clearLock();
-    return false;
-  }
-
   const lockUntil = getLockUntil();
   if (!lockUntil) return false;
 

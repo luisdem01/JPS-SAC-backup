@@ -1,37 +1,56 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update, insert, delete
+from sqlalchemy import update, insert
 from sqlalchemy.sql import func
 from typing import Dict, Any, List
 from app.models.domain import ReconciliacionPendiente, LogAuditoria, Investigador, Proyecto, Publicacion, Tesis
 
 class ReconciliationPersister:
-    async def persist_quarantine(self, db: AsyncSession, entidad: str, llave_sugerida: str, 
+    async def persist_quarantine(self, db: AsyncSession, entidad: str, llave_sugerida: str,
                                 fuentes: List[str], conflicto: Dict[str, Any], motivo: str) -> None:
         """
         Guarda el registro en cuarentena.
         """
+        estado_final = 'Rechazado' if motivo and motivo.startswith('Rechazado') else 'Pendiente'
         pendiente = ReconciliacionPendiente(
             entidad_afectada=entidad,
             llave_primaria_sugerida=llave_sugerida,
             fuentes_involucradas=fuentes,
             datos_conflicto=conflicto,
             motivo_cuarentena=motivo,
-            estado='Pendiente'
+            estado=estado_final
         )
         db.add(pendiente)
-        
+
+        # Mapear tipo_evento a un valor permitido por el CHECK constraint de log_auditoria
+        _fuente_map = {
+            'RENACYT':    'SYNC_RENACYT',
+            'Cybertesis': 'SYNC_CYBERTESIS',
+            'VRIP':       'SYNC_VRIP',
+        }
+        primera_fuente = fuentes[0] if fuentes else ''
+        tipo_evento_log = _fuente_map.get(primera_fuente, 'INSERT')
+
+        # Serializar datetimes antes de guardar en columna JSON
+        import datetime
+        conflicto_serializable = {
+            k: v.isoformat() if isinstance(v, (datetime.datetime, datetime.date)) else v
+            for k, v in conflicto.items()
+        }
+
         # Auditoría de envío a cuarentena
         log = LogAuditoria(
-            tipo_evento='RECONCILIATION_QUARANTINE',
+            tipo_evento=tipo_evento_log,
             entidad_afectada='reconciliacion_pendientes',
-            valor_nuevo=conflicto,
+            pk_entidad=llave_sugerida,
+            valor_nuevo=conflicto_serializable,
             resultado='Exito',
             detalle_error=motivo
         )
         db.add(log)
-        
+
         await db.commit()
+
 
     async def persist_resolved(self, db: AsyncSession, entidad: str, llave_pk: str, 
                              merged_data: Dict[str, Any], fuente_ganadora: str) -> None:
@@ -40,6 +59,7 @@ class ReconciliationPersister:
         """
         try:
             is_update = False
+            merged_data.pop('updated_at', None)
             
             if entidad == "investigador":
                 result = await db.execute(select(Investigador).where(Investigador.dni == llave_pk))
@@ -85,11 +105,59 @@ class ReconciliationPersister:
                 existing = result.scalars().first()
                 # Cybertesis API devuelve texto que adaptamos a columnas de tesis
                 # Este payload de Tesis tiene dni_asesor_reconciliado
+                dni_asesor = merged_data.get("dni_asesor_reconciliado", None)
+                
+                # Para evitar violaciones de llave foránea (FK), persistimos al investigador si no existe
+                if dni_asesor:
+                    res_inv = await db.execute(select(Investigador).where(Investigador.dni == dni_asesor))
+                    if not res_inv.scalars().first():
+                        datos_r = merged_data.get("datos_renacyt")
+                        if datos_r:
+                            apellidos = f"{datos_r.get('apellido_paterno', '')} {datos_r.get('apellido_materno', '')}".strip()
+                            nuevo_inv = {
+                                "dni": dni_asesor,
+                                "nombres": str(datos_r.get("nombres", "")).title(),
+                                "apellidos": str(apellidos).title(),
+                                "condicion_laboral": "No Especificado",
+                                "departamento_academico": "Externo (RENACYT)",
+                                "grado_academico_max": None,
+                                "codigo_renacyt": datos_r.get("codigo_registro"),
+                                "categoria_renacyt": datos_r.get("nivel", "No Clasificado"),
+                                "estado_renacyt": datos_r.get("condicion"),
+                                "url_cti_vitae": datos_r.get("cti_vitae"),
+                                "orcid": datos_r.get("orcid"),
+                                "institucion_principal": datos_r.get("institucion_laboral_principal"),
+                                "investigador_sm": True,
+                                "estado_vigencia": "Activo",
+                                "is_external": True
+                            }
+                            await db.execute(insert(Investigador).values(**nuevo_inv))
+                        else:
+                            # Fallback si no hay datos completos pero tenemos DNI y nombre
+                            apellidos = ""
+                            nombres = merged_data.get("asesor_texto", "Externo")
+                            if " " in nombres:
+                                parts = nombres.split()
+                                nombres = " ".join(parts[:2])
+                                apellidos = " ".join(parts[2:])
+                            nuevo_inv = {
+                                "dni": dni_asesor,
+                                "nombres": nombres,
+                                "apellidos": apellidos or "Externo",
+                                "condicion_laboral": "No Especificado",
+                                "departamento_academico": "Externo (RENACYT)",
+                                "grado_academico_max": None,
+                                "investigador_sm": True,
+                                "estado_vigencia": "Activo",
+                                "is_external": True
+                            }
+                            await db.execute(insert(Investigador).values(**nuevo_inv))
+                
                 tesis_data = {
                     "url_cybertesis": merged_data.get("url_cybertesis", llave_pk),
                     "titulo_tesis": merged_data.get("titulo_tesis", "Sin Título"),
                     "asesor_texto": merged_data.get("asesor_texto", ""),
-                    "dni_asesor": merged_data.get("dni_asesor_reconciliado", None),
+                    "dni_asesor": dni_asesor,
                     "autor_estudiante_texto": merged_data.get("autor_estudiante_texto")
                 }
                 
@@ -100,11 +168,22 @@ class ReconciliationPersister:
                     await db.execute(insert(Tesis).values(**tesis_data))
             
             # Generar Auditoría (Misma transacción)
+            import datetime
+            from decimal import Decimal
+            serializable_data = {}
+            for k, v in merged_data.items():
+                if isinstance(v, (datetime.datetime, datetime.date)):
+                    serializable_data[k] = v.isoformat()
+                elif isinstance(v, Decimal):
+                    serializable_data[k] = float(v)
+                else:
+                    serializable_data[k] = v
+
             log = LogAuditoria(
                 tipo_evento='UPDATE' if is_update else 'INSERT',
                 entidad_afectada=entidad,
                 pk_entidad=llave_pk,
-                valor_nuevo=merged_data,
+                valor_nuevo=serializable_data,
                 resultado='Exito',
                 detalle_error=f"Reconciliado vía MRN. Fuente principal: {fuente_ganadora}"
             )
@@ -137,6 +216,7 @@ class ReconciliationPersister:
         elif action == 'rechazar':
             item.estado = 'Rechazado'
             
+        item.fecha_revision = func.now()
         db.add(item)
         await db.commit()
 

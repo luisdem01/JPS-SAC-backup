@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+
 class ConvocatoriaModel(BaseModel):
     titulo: str = Field(..., description="Nombre del programa de financiamiento o concurso")
     entidad_promotora: str = Field("Vicerrectorado de Investigación y Posgrado (VRIP) - UNMSM")
@@ -9,6 +10,7 @@ class ConvocatoriaModel(BaseModel):
     plazo_cierre_original: str = Field(..., description="Texto original de la fecha de cierre obtenido de la web")
     enlace: str = Field(..., description="Link de descarga directa de directivas/bases o convocatoria")
     dias_restantes: Optional[int] = Field(None, description="Días hasta el cierre respecto a la fecha actual")
+
 
 class ProyectoModel(BaseModel):
     codigo_proyecto: Optional[str] = Field(None, description="Código único de proyecto (ej. F2601XX)")
@@ -19,10 +21,13 @@ class ProyectoModel(BaseModel):
     facultad: str = Field("FISI", description="Facultad a la que pertenece el proyecto")
     monto_financiado: Optional[float] = Field(None, description="Presupuesto aprobado")
     numero_resolucion: Optional[str] = Field(None, description="Número de Resolución Rectoral (ej. 014353-2025-R)")
-    fecha_aprobacion: Optional[str] = Field(None, description="Fecha de emisión/aprobación de la Resolución (YYYY-MM-DD)")
+    fecha_aprobacion: Optional[str] = Field(
+        None, description="Fecha de emisión/aprobación de la Resolución (YYYY-MM-DD)"
+    )
     anio_academico: int = Field(..., description="Año académico del proyecto")
     enlace_vrip: str = Field(..., description="Enlace al post oficial en el VRIP")
     resumen_post: Optional[str] = Field(None, description="Resumen breve o extracto del contenido del post")
+
 
 class TesisModel(BaseModel):
     titulo: str = Field(..., description="Título oficial de la tesis de pregrado/posgrado")

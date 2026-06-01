@@ -12,5 +12,5 @@ __all__ = [
     "VripConvocatoriasExtractor",
     "VripProyectosExtractor",
     "CyberthesisExtractor",
-    "export_data"
+    "export_data",
 ]

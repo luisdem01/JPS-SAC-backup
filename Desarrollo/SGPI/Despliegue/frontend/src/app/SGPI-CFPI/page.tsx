@@ -10,7 +10,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type { FiltrosProyectos, EstadoProyecto } from './_data/types';
-import { getProyectos, getStats, type PaginatedProyectos } from './_data/service';
+import { getProyectos, getStats, getConvocatorias, type PaginatedProyectos } from './_data/service';
 import type { StatsProyectos } from './_data/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,6 +217,35 @@ export default function ProyectosBandejaPage() {
   const [stats,     setStats]     = useState<StatsProyectos | null>(null);
   const [cargando,  setCargando]  = useState(true);
   const [pagina,    setPagina]    = useState(1);
+  const [convocatorias, setConvocatorias] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function cargarConvocatorias() {
+      try {
+        const data = await getConvocatorias();
+        if (data && data.length > 0) {
+          setConvocatorias(data.map(c => c.titulo_convocatoria));
+        } else {
+          setConvocatorias([
+            'Convocatoria VRIP 2026',
+            'Convocatoria VRIP 2025',
+            'Convocatoria VRIP 2024',
+            'VRIP General'
+          ]);
+        }
+      } catch (err) {
+        console.error('Error cargando convocatorias:', err);
+        setConvocatorias([
+          'Convocatoria VRIP 2026',
+          'Convocatoria VRIP 2025',
+          'Convocatoria VRIP 2024',
+          'VRIP General'
+        ]);
+      }
+    }
+    cargarConvocatorias();
+  }, []);
+
 
   const cargarDatos = useCallback(async () => {
     setCargando(true);
@@ -334,11 +363,8 @@ export default function ProyectosBandejaPage() {
               onChange={setTempConvocatoria}
               label="Filtrar por Convocatoria"
               options={[
-                { value: '',                      label: 'Todas' },
-                { value: 'Convocatoria VRIP 2026', label: 'Convocatoria VRIP 2026' },
-                { value: 'Convocatoria VRIP 2025', label: 'Convocatoria VRIP 2025' },
-                { value: 'Convocatoria VRIP 2024', label: 'Convocatoria VRIP 2024' },
-                { value: 'VRIP General',          label: 'VRIP General' },
+                { value: '', label: 'Todas' },
+                ...convocatorias.map(c => ({ value: c, label: c }))
               ]}
             />
           </div>
@@ -420,19 +446,31 @@ export default function ProyectosBandejaPage() {
                   resultado.items.map((proy) => {
                     const isPendiente = proy.status === 'pendiente_validar';
 
-                    // Config de Alertas específicas
+                    // Config de Alertas específicas dinámicas
                     let alertaElement = null;
-                    if (proy.code === 'PRJ-26-045') {
+                    const tieneHitoVencido = proy.hitos?.some((hito) => {
+                      if (hito.estado !== 'pendiente' || !hito.fechaVencimiento) return false;
+                      const limite = new Date(hito.fechaVencimiento);
+                      return !isNaN(limite.getTime()) && limite < new Date();
+                    });
+
+                    if (proy.fuente === 'Externo (VRIP)') {
+                      alertaElement = (
+                        <span className="inline-flex mt-1 text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded bg-[#e0f2fe] text-[#0369a1] uppercase tracking-wider">
+                          Externo (VRIP)
+                        </span>
+                      );
+                    } else if (proy.fuente && (proy.fuente.toLowerCase().includes('ocr') || proy.fuente.toLowerCase().includes('extrac'))) {
                       alertaElement = (
                         <span className="inline-flex mt-1 text-[10px] font-sans font-medium px-1.5 py-0.5 rounded bg-[#f3e8ff] text-[#6b21a8] uppercase tracking-wider">
                           Extracción OCR (RR)
                         </span>
                       );
-                    } else if (proy.code === 'PRJ-25-182') {
+                    } else if (tieneHitoVencido) {
                       alertaElement = (
                         <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded bg-[#fee2e2] text-[#b91c1c] uppercase tracking-wider">
                           <WarningIcon />
-                          Hito 12m Vencido
+                          Hito Vencido
                         </span>
                       );
                     }
@@ -456,7 +494,15 @@ export default function ProyectosBandejaPage() {
                           {alertaElement}
                         </td>
                         <td className="px-5 py-3.5 text-right">
-                          {isPendiente ? (
+                          {proy.fuente === 'Externo (VRIP)' ? (
+                            <button
+                              onClick={() => router.push(`/SGPI-CFPI/nuevo?importCode=${proy.code}`)}
+                              className="inline-flex items-center gap-1 border border-[#16a34a] text-[#16a34a] hover:bg-[#16a34a] hover:text-white font-sans font-bold text-[12px] px-3 py-1 rounded transition-colors cursor-pointer"
+                            >
+                              <PlusIcon />
+                              Importar
+                            </button>
+                          ) : isPendiente ? (
                             <button
                               onClick={() => router.push(`/SGPI-CFPI/${proy.code}/validar`)}
                               className="inline-flex items-center gap-1 border border-[#001631] text-[#001631] hover:bg-[#001631] hover:text-white font-sans font-bold text-[12px] px-3 py-1 rounded transition-colors cursor-pointer"

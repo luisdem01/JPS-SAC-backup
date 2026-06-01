@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type EstadoConvocatoria =
-  | 'Activa'
+  | 'Abierta'
   | 'Por Vencer'
   | 'Cerrada'
   | 'Suspendida';

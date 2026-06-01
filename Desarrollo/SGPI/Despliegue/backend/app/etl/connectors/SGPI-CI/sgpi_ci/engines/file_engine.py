@@ -6,7 +6,6 @@ import pandas as pd
 
 class InvalidFormatError(Exception):
     """[EX1] El archivo no tiene una extensión válida (.csv o .xlsx)."""
-    pass
 
 
 class FileEngine:

@@ -6,25 +6,24 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
+
 def main():
     """
     Punto de entrada de línea de comandos (CLI) idóneo para schedulers externos
     como Render Cron o Tareas Programadas de Windows.
     """
-    parser = argparse.ArgumentParser(
-        description="CLI Cron Runner para el Job de Semaforización de Alertas VRIP."
-    )
+    parser = argparse.ArgumentParser(description="CLI Cron Runner para el Job de Semaforización de Alertas VRIP.")
     parser.add_argument(
         "--user-id",
         type=str,
         default=None,
-        help="UUID del Administrador que ejecuta el proceso. Por defecto es None (ejecución automática)."
+        help="UUID del Administrador que ejecuta el proceso. Por defecto es None (ejecución automática).",
     )
     parser.add_argument(
         "--year",
         type=int,
         default=None,
-        help="Año académico a sincronizar (ej. 2026). Por defecto sincroniza el año actual."
+        help="Año académico a sincronizar (ej. 2026). Por defecto sincroniza el año actual.",
     )
     args = parser.parse_args()
 
@@ -32,6 +31,7 @@ def main():
     if args.user_id:
         try:
             import uuid
+
             uuid.UUID(args.user_id)
         except ValueError:
             print(f"{Fore.RED}Error: El parámetro --user-id debe tener un formato UUID válido.{Style.RESET_ALL}")
@@ -51,7 +51,7 @@ def main():
         # Instanciar y ejecutar el Job
         job = AlertsJob(db=db, ejecutado_por_id=args.user_id)
         result = job.execute(year=args.year)
-        
+
         if result.get("resultado") == "Error":
             print(f"{Fore.RED}El Job finalizó con errores. Verifique los logs.{Style.RESET_ALL}")
             sys.exit(2)
@@ -64,6 +64,7 @@ def main():
         sys.exit(3)
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     main()

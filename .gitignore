@@ -1,0 +1,11 @@
+.codegraph/
+
+# Archivos de prueba específicos
+Desarrollo/SGPI/Despliegue/backend/test_db_counts.py
+Desarrollo/SGPI/Despliegue/backend/test_db_schema.py
+Desarrollo/SGPI/Despliegue/backend/test_fks.py
+Desarrollo/SGPI/Despliegue/backend/test_select_groups.py
+Desarrollo/SGPI/Despliegue/backend/app/etl/processors/SGPI-CPPDF/sgpi_parser/validation/test_benchmark.py
+Desarrollo/SGPI/Despliegue/backend/app/SGPI-CMEPDF/tests/test_canvas.py
+Desarrollo/SGPI/Despliegue/backend/app/SGPI-CMEPDF/tests/test_performance.py
+Desarrollo/SGPI/Despliegue/backend/app/SGPI-CMEPDF/tests/test_security.py

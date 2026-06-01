@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Any
 from datetime import date, datetime
 from uuid import UUID
 
+
 class ReportParams(BaseModel):
     fecha_inicio_desde: Optional[date] = None
     fecha_fin_hasta: Optional[date] = None
@@ -10,7 +11,8 @@ class ReportParams(BaseModel):
     grupo_investigacion: Optional[str] = None
     periodo_corte: Optional[str] = None
     anio_corte: Optional[int] = None
-    tipo_reporte: str # ej: 'Carga No Lectiva', 'Proyectos Activos', 'Produccion Cientifica', 'Resumen General'
+    tipo_reporte: str  # ej: 'Carga No Lectiva', 'Proyectos Activos', 'Produccion Cientifica', 'Resumen General'
+
 
 class SnapshotPOICreate(BaseModel):
     periodo_corte: str
@@ -18,6 +20,7 @@ class SnapshotPOICreate(BaseModel):
     id_usuario_emisor: Optional[UUID] = None
     parametros_aplicados: Optional[Dict[str, Any]] = None
     datos_serializados: Dict[str, Any]
+
 
 class SnapshotPOISummary(BaseModel):
     id_snapshot: int
@@ -30,8 +33,10 @@ class SnapshotPOISummary(BaseModel):
     class Config:
         from_attributes = True
 
+
 class SnapshotPOIResponse(SnapshotPOISummary):
     datos_serializados: Dict[str, Any]
+
 
 # --- 1. Carga No Lectiva ---
 class WorkloadDetail(BaseModel):
@@ -46,10 +51,12 @@ class WorkloadDetail(BaseModel):
     detalle_proyectos: List[Dict[str, Any]]
     detalle_tesis: List[Dict[str, Any]]
 
+
 class WorkloadReportResponse(BaseModel):
     parametros: ReportParams
     total_investigadores: int
     investigadores: List[WorkloadDetail]
+
 
 # --- 2. Proyectos Activos ---
 class ActiveProjectMember(BaseModel):
@@ -57,6 +64,7 @@ class ActiveProjectMember(BaseModel):
     nombres: str
     apellidos: str
     rol: str
+
 
 class ActiveProjectDetail(BaseModel):
     codigo_proyecto: str
@@ -68,11 +76,13 @@ class ActiveProjectDetail(BaseModel):
     estado: str
     integrantes: List[ActiveProjectMember]
 
+
 class ActiveProjectsResponse(BaseModel):
     parametros: ReportParams
     total_proyectos: int
     presupuesto_total: float
     proyectos: List[ActiveProjectDetail]
+
 
 # --- 3. Producción Científica ---
 class ScientificAuthor(BaseModel):
@@ -80,6 +90,7 @@ class ScientificAuthor(BaseModel):
     nombres: str
     apellidos: str
     filiacion_unmsm: bool
+
 
 class ScientificProductionDetail(BaseModel):
     id_publicacion: int
@@ -92,6 +103,7 @@ class ScientificProductionDetail(BaseModel):
     fecha_publicacion: Optional[date]
     autores: List[ScientificAuthor]
 
+
 class ScientificTesisDetail(BaseModel):
     url_cybertesis: str
     titulo: str
@@ -100,12 +112,14 @@ class ScientificTesisDetail(BaseModel):
     nivel_grado: Optional[str]
     anio_publicacion: Optional[int]
 
+
 class ScientificProductionResponse(BaseModel):
     parametros: ReportParams
     total_publicaciones: int
     total_tesis: int
     publicaciones: List[ScientificProductionDetail]
     tesis: List[ScientificTesisDetail]
+
 
 # --- 4. Resumen General ---
 class GeneralSummaryResponse(BaseModel):
@@ -124,3 +138,33 @@ class GeneralSummaryResponse(BaseModel):
     convocatorias_vencimiento_critico: int
     investigadores_con_deuda_pi: int
     investigadores_con_deuda_gi: int
+
+# --- 5. Ficha Grupo ---
+class FichaGrupoMemberDetail(BaseModel):
+    dni: str
+    nombre: str
+    rol: str
+    fecha_incorporacion: str
+    estado: str
+
+class FichaGrupoProyectoDetail(BaseModel):
+    codigo: str
+    titulo: str
+    convocatoria: str
+    estado: str
+
+class FichaGrupoReportResponse(BaseModel):
+    parametros: ReportParams
+    id_grupo: int
+    codigo_grupo: str
+    nombre_grupo: str
+    siglas: Optional[str] = None
+    estado_grupo: str
+    fecha_reconocimiento: Optional[str] = None
+    lineas_investigacion: List[str] = []
+    coordinador_dni: Optional[str] = None
+    coordinador_nombre: Optional[str] = None
+    articulos_scopus: int
+    tesis_en_curso: int
+    miembros: List[FichaGrupoMemberDetail] = []
+    proyectos: List[FichaGrupoProyectoDetail] = []

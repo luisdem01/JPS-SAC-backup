@@ -380,3 +380,40 @@ export function truncate(text: string | null | undefined, maxLen: number = 80): 
   if (text.length <= maxLen) return text;
   return `${text.slice(0, maxLen - 3).trimEnd()}...`;
 }
+
+/**
+ * Valida si un correo electrónico institucional es de tipo DNI (ej: "12345678@unmsm.edu.pe").
+ *
+ * @param email - Correo a evaluar
+ * @returns true si el usuario es puramente numérico
+ */
+export function isDniEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const username = email.split('@')[0];
+  return /^\d+$/.test(username);
+}
+
+/**
+ * Filtra correos de docentes basados en DNI para evitar que se muestren en el frontend.
+ *
+ * @param email - Correo original
+ * @returns El correo original si es nominal, o cadena vacía si es basado en DNI
+ */
+export function formatEmail(email: string | null | undefined): string {
+  if (!email) return '';
+  if (isDniEmail(email)) return '';
+  return email;
+}
+
+/**
+ * Normaliza un texto para que sea insensible a acentos/tildes y mayúsculas.
+ *
+ * @param str - Cadena de texto a normalizar
+ * @returns Cadena normalizada sin tildes en minúsculas, o vacía si es nulo
+ */
+export function removeAccents(str: string | null | undefined): string {
+  if (!str) return '';
+  return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+

@@ -16,7 +16,7 @@ if hasattr(sys.stderr, "reconfigure"):
 # Agregar el directorio raíz al path para permitir ejecuciones locales directas sin instalación previa
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cybertesis_connector.cli import main
+from cybertesis_connector.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     main()

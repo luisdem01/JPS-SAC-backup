@@ -3,6 +3,7 @@ from sqlalchemy import Column, String, Boolean, Integer, DateTime, Text, Foreign
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime, timezone
+import uuid
 
 Base = declarative_base()
 
@@ -12,6 +13,7 @@ class Usuario(Base):
     correo_institucional = Column(String(255), nullable=False, unique=True)
     rol_sistema = Column(String(50), nullable=False)
     estado_cuenta = Column(Boolean, default=True)
+    nombre_completo = Column(String(255), default='')
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class Investigador(Base):
@@ -34,8 +36,11 @@ class Investigador(Base):
     estado_vigencia = Column(String(20), nullable=False, default='Activo')
     tiene_deuda_gi = Column(Boolean, default=False)
     tiene_deuda_pi = Column(Boolean, default=False)
+    correo = Column(String(255))
+    is_external = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    historial_puntaje = relationship("HistorialPuntaje", backref="investigador", cascade="all, delete-orphan", lazy="selectin")
 
 class GrupoInvestigacion(Base):
     __tablename__ = 'grupo_investigacion'
@@ -52,6 +57,10 @@ class GrupoInvestigacion(Base):
     url_vrip = Column(String(255))
     estado_grupo = Column(String(50), default='Activo')
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    
+    coordinador = relationship("Investigador", foreign_keys=[dni_coordinador], lazy="selectin")
+    miembro_grupo = relationship("MiembroGrupo", cascade="all, delete-orphan", lazy="selectin")
+    proyecto = relationship("Proyecto", lazy="selectin")
 
 class MiembroGrupo(Base):
     __tablename__ = 'miembro_grupo'
@@ -64,6 +73,8 @@ class MiembroGrupo(Base):
     fecha_salida = Column(Date)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    investigador = relationship("Investigador", foreign_keys=[dni_investigador], lazy="selectin")
 
 class Proyecto(Base):
     __tablename__ = 'proyecto'
@@ -100,7 +111,7 @@ class Entregable(Base):
 
 class LogAuditoria(Base):
     __tablename__ = 'log_auditoria'
-    id_log = Column(UUID(as_uuid=True), primary_key=True)
+    id_log = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tipo_evento = Column(String(50), nullable=False)
     entidad_afectada = Column(String(100))
     pk_entidad = Column(String(100))
@@ -135,6 +146,8 @@ class Convocatoria(Base):
     estado_convocatoria = Column(String(50), default='Abierta')
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    evidencias = relationship("EvidenciaDifusion", backref="convocatoria", cascade="all, delete-orphan", lazy="selectin")
+
 class Publicacion(Base):
     __tablename__ = 'publicacion'
     id_publicacion = Column(Integer, primary_key=True, autoincrement=True)
@@ -150,6 +163,8 @@ class Publicacion(Base):
     fecha_publicacion = Column(Date)
     url_documento = Column(String(255))
     id_grupo = Column(Integer, ForeignKey('grupo_investigacion.id_grupo', ondelete='SET NULL'))
+    estado_validacion = Column(String(50), default='Pendiente')
+    fuente_origen = Column(String(50), default='MANUAL')
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class InvestigadorPublicacion(Base):
@@ -187,6 +202,8 @@ class Tesis(Base):
     pais_publicacion = Column(String(10))
     palabras_clave = Column(JSON)
     jurados_evaluadores = Column(JSON)
+    estado_validacion = Column(String(50), default='Pendiente')
+    fuente_origen = Column(String(50), default='CYBERTESIS')
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class ProyectoEstadoHistorial(Base):
@@ -237,4 +254,33 @@ class ConfiguracionGlobal(Base):
     clave = Column(String(100), primary_key=True)
     valor = Column(JSON, nullable=False)
     descripcion = Column(Text)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+class DepartamentoAcademico(Base):
+    __tablename__ = 'departamento_academico'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre = Column(String(100), unique=True, nullable=False)
+    estado = Column(String(30), nullable=False, default="Aprobado")
+
+class LineaInvestigacion(Base):
+    __tablename__ = 'linea_investigacion'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre = Column(String(100), unique=True, nullable=False)
+    estado = Column(String(30), nullable=False, default="Aprobado")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+class HistorialPuntaje(Base):
+    __tablename__ = 'historial_puntaje'
+    id_historial = Column(Integer, primary_key=True, autoincrement=True)
+    dni_investigador = Column(String(15), ForeignKey('investigador.dni', ondelete='CASCADE'))
+    anio_evaluacion = Column(Integer, nullable=False)
+    puntaje_total = Column(Numeric(10, 2), default=0.0)
+    puntaje_revistas = Column(Numeric(10, 2), default=0.0)
+    puntaje_libros = Column(Numeric(10, 2), default=0.0)
+    puntaje_proyectos = Column(Numeric(10, 2), default=0.0)
+    puntaje_patentes = Column(Numeric(10, 2), default=0.0)
+    puntaje_tesis = Column(Numeric(10, 2), default=0.0)
+    puntaje_otros = Column(Numeric(10, 2), default=0.0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

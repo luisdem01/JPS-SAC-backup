@@ -25,6 +25,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Base para definir los modelos ORM
 Base = declarative_base()
 
+
 def get_db():
     """
     Generador de contexto para obtener sesiones de base de datos de forma segura.

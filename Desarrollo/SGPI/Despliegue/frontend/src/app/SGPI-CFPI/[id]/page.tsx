@@ -10,7 +10,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type { Proyecto } from '../_data/types';
-import { getProyectoById, completarHito } from '../_data/service';
+import { getProyectoById, completarHito, verificarHitoConCybertesis } from '../_data/service';
 import { ExportButton } from '@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +36,14 @@ const DocumentIcon = () => (
     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
     <polyline points="14 2 14 8 20 8"/>
+  </svg>
+);
+
+const ScannerIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
+    <line x1="7" y1="12" x2="17" y2="12"/>
   </svg>
 );
 
@@ -72,6 +80,90 @@ export default function ExpedienteDigitalPage() {
   const [proyecto, setProyecto] = useState<Proyecto | null>(null);
   const [cargando, setCargando] = useState(true);
   const [completandoId, setCompletandoId] = useState<string | null>(null);
+
+  // Estados del modal de Cybertesis
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedHito, setSelectedHito] = useState<any | null>(null);
+  const [modalSearchQuery, setModalSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const handleOpenVerificationModal = (hito: any) => {
+    setSelectedHito(hito);
+    setSearchResults([]);
+    setSearchError(null);
+    
+    let defaultQuery = '';
+    const tesista = proyecto?.miembros?.find(m => m.rol === 'Tesista vinculado' || m.rol === 'Tesista');
+    if (tesista) {
+      defaultQuery = tesista.nombre;
+    } else {
+      defaultQuery = proyecto?.title || '';
+    }
+    setModalSearchQuery(defaultQuery);
+    setIsModalOpen(true);
+    
+    if (defaultQuery.trim()) {
+      setSearching(true);
+      import('@/SGPI-CFU/lib/api/client').then(async ({ apiClient }) => {
+        try {
+          const results = await apiClient.get<any[]>(`/theses/external?q=${encodeURIComponent(defaultQuery.trim())}`);
+          setSearchResults(results || []);
+          if (!results || results.length === 0) {
+            setSearchError('No se encontró coincidencia automática en Cybertesis. Intente buscar manualmente.');
+          }
+        } catch (err: any) {
+          console.error(err);
+          setSearchError('Error al buscar coincidencia automática en Cybertesis.');
+        } finally {
+          setSearching(false);
+        }
+      });
+    }
+  };
+
+  const handleSearchCybertesis = async () => {
+    if (!modalSearchQuery.trim()) return;
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const { apiClient } = await import('@/SGPI-CFU/lib/api/client');
+      const results = await apiClient.get<any[]>(`/theses/external?q=${encodeURIComponent(modalSearchQuery.trim())}`);
+      setSearchResults(results || []);
+      if (!results || results.length === 0) {
+        setSearchError('No se encontraron tesis para el término especificado.');
+      }
+    } catch (err: any) {
+      console.error('Error buscando en Cybertesis:', err);
+      setSearchError(err.message || 'Error al conectar con el servidor de Cybertesis.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleConfirmVerify = async (thesis: any) => {
+    if (!proyecto || !selectedHito) return;
+    setIsModalOpen(false);
+    setCompletandoId(selectedHito.id);
+    try {
+      const payload = {
+        thesis_url: thesis.url_cybertesis,
+        titulo_tesis: thesis.titulo_tesis,
+        autor_texto: thesis.autor_estudiante_texto,
+        anio_publicacion: thesis.anio_publicacion,
+        resumen: thesis.resumen_abstract
+      };
+      const proyActualizado = await verificarHitoConCybertesis(proyecto.id, selectedHito.id, payload);
+      setProyecto(proyActualizado);
+      alert('✓ Hito verificado y completado exitosamente.');
+    } catch (err: any) {
+      console.error('Error al verificar hito con Cybertesis:', err);
+      alert(err.message || 'Ocurrió un error al verificar el hito.');
+    } finally {
+      setCompletandoId(null);
+    }
+  };
 
   useEffect(() => {
     async function cargar() {
@@ -177,10 +269,6 @@ export default function ExpedienteDigitalPage() {
               <BackIcon />
               Volver a la Bandeja
             </button>
-            <ExportButton
-              context="proyectos_expediente"
-              label="Exportar Ficha"
-            />
           </div>
         </div>
 
@@ -354,18 +442,28 @@ export default function ExpedienteDigitalPage() {
                         />
                       </div>
 
-                      {/* Acción del Hito */}
-                      {isPendienteHito && (
-                        <button
-                          type="button"
-                          disabled={completandoId === hito.id}
-                          onClick={() => handleRegistrarRecepcion(hito.id)}
-                          className="flex items-center justify-center gap-1.5 w-full border border-[#001631] text-[#001631] hover:bg-[#001631] hover:text-white font-sans font-bold text-[12px] py-1.5 rounded transition-all cursor-pointer disabled:opacity-40"
-                        >
-                          <ReceiptIcon />
-                          {completandoId === hito.id ? 'Registrando...' : 'Registrar Recepción'}
-                        </button>
-                      )}
+                       {/* Acción del Hito */}
+                       {isPendienteHito && (
+                         <div className="flex flex-col gap-2">
+                           <button
+                             type="button"
+                             disabled={completandoId === hito.id}
+                             onClick={() => handleRegistrarRecepcion(hito.id)}
+                             className="flex items-center justify-center gap-1.5 w-full border border-[#001631] text-[#001631] hover:bg-[#001631] hover:text-white font-sans font-bold text-[12px] py-1.5 rounded transition-all cursor-pointer disabled:opacity-40"
+                           >
+                             <ReceiptIcon />
+                             {completandoId === hito.id ? 'Registrando...' : 'Registrar Recepción'}
+                           </button>
+                           <button
+                             type="button"
+                             onClick={() => handleOpenVerificationModal(hito)}
+                             className="flex items-center justify-center gap-1.5 w-full border border-primary text-primary hover:bg-[#001631] hover:text-white font-sans font-bold text-[12px] py-1.5 rounded transition-all cursor-pointer"
+                           >
+                             <ScannerIcon />
+                             Autoverificar con Cybertesis
+                           </button>
+                         </div>
+                       )}
 
                       {/* Texto si está bloqueado */}
                       {isBloqueadoHito && (
@@ -398,6 +496,150 @@ export default function ExpedienteDigitalPage() {
         </div>
 
       </div>
+
+      {/* Modal de Verificación con Cybertesis */}
+      {isModalOpen && selectedHito && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            
+            {/* Header */}
+            <div className="px-6 py-4 bg-[#001631] text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <ScannerIcon />
+                <h2 id="modal-title" className="font-heading font-semibold text-[16px] tracking-wide uppercase">
+                  Verificar con Cybertesis
+                </h2>
+              </div>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="text-white/80 hover:text-white text-[20px] font-bold cursor-pointer"
+                aria-label="Cerrar modal"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 flex-1 overflow-y-auto flex flex-col gap-4">
+              <div className="bg-slate-50 border border-slate-100 rounded-lg p-3.5">
+                <span className="block font-sans font-bold text-[9px] text-[#64748b] tracking-wider uppercase mb-0.5">
+                  HITO A VERIFICAR
+                </span>
+                <span className="font-sans font-bold text-[14px] text-on-surface">
+                  {selectedHito.nombre}
+                </span>
+                {selectedHito.fechaVencimiento && (
+                  <span className="block font-sans text-[11px] text-[#64748b] mt-0.5">
+                    Vence: {new Date(selectedHito.fechaVencimiento).toLocaleDateString('es-PE')}
+                  </span>
+                )}
+              </div>
+
+              {/* Search controls */}
+              <div className="flex flex-col gap-2">
+                <label htmlFor="cybertesis-search" className="block font-sans font-bold text-[10px] text-on-surface-variant uppercase tracking-widest">
+                  TÉRMINO DE BÚSQUEDA (AUTOR, ASESOR O TÍTULO)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="cybertesis-search"
+                    type="text"
+                    value={modalSearchQuery}
+                    onChange={(e) => setModalSearchQuery(e.target.value)}
+                    placeholder="Nombre del tesista, asesor o título del proyecto..."
+                    className="flex-1 px-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSearchCybertesis}
+                    disabled={searching}
+                    className="bg-[#001631] text-white hover:bg-[#002b54] font-sans font-bold text-[13px] px-4 py-2 rounded transition-colors disabled:opacity-40 cursor-pointer whitespace-nowrap"
+                  >
+                    {searching ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Error Message */}
+              {searchError && (
+                <div className="bg-red-50 text-red-800 border border-red-100 rounded-lg p-3 text-[12px] font-sans flex gap-2">
+                  <span className="text-red-500 font-bold">⚠️</span>
+                  <p>{searchError}</p>
+                </div>
+              )}
+
+              {/* Search Results */}
+              <div className="flex-1 flex flex-col gap-3">
+                <span className="block font-sans font-bold text-[10px] text-on-surface-variant uppercase tracking-widest">
+                  {searching ? 'BUSCANDO REGISTROS...' : searchResults.length > 0 ? `TESIS ENCONTRADAS (${searchResults.length})` : 'SIN RESULTADOS'}
+                </span>
+
+                {searching ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <div className="w-8 h-8 border-4 border-slate-200 border-t-[#001631] rounded-full animate-spin" />
+                    <span className="font-sans text-[12px] text-[#64748b] font-medium">
+                      Consultando repositorio DSpace 7 de Cybertesis...
+                    </span>
+                  </div>
+                ) : searchResults.length > 0 ? (
+                  <div className="flex flex-col gap-3 max-h-[250px] overflow-y-auto border border-outline-variant rounded divide-y divide-outline-variant">
+                    {searchResults.map((thesis) => (
+                      <div key={thesis.url_cybertesis} className="p-4 flex flex-col gap-2 hover:bg-slate-50 transition-colors">
+                        <div className="flex justify-between items-start gap-2">
+                          <h4 className="font-sans font-bold text-[13px] text-on-surface leading-tight">
+                            {thesis.titulo_tesis}
+                          </h4>
+                          <span className="px-1.5 py-0.5 rounded font-sans font-bold text-[9px] uppercase tracking-wider bg-[#dcfce7] text-[#166534] whitespace-nowrap">
+                            {thesis.nivel_grado}
+                          </span>
+                        </div>
+                        <div className="font-sans text-[11px] text-[#475569]">
+                          <strong>Autor:</strong> {thesis.autor_estudiante_texto} | <strong>Año:</strong> {thesis.anio_publicacion}
+                        </div>
+                        <div className="flex justify-between items-center mt-1">
+                          <a 
+                            href={thesis.url_cybertesis} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-[11px] text-[#0066cc] hover:underline font-semibold"
+                          >
+                            Ver Repositorio &rarr;
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmVerify(thesis)}
+                            className="bg-[#16a34a] hover:bg-[#15803d] text-white font-sans font-bold text-[11px] px-3 py-1.5 rounded shadow transition-colors cursor-pointer"
+                          >
+                            Vincular y Completar Hito
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-10 border border-dashed border-slate-300 rounded text-center p-4">
+                    <span className="text-[24px]">📂</span>
+                    <p className="font-sans text-[12px] text-[#64748b] mt-1.5 max-w-[300px]">
+                      Realice una búsqueda escribiendo el nombre del estudiante/asesor o palabras clave de la tesis para verificar.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="border border-[#e2e8f0] font-sans text-[13px] text-[#475569] px-4 py-2 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 }

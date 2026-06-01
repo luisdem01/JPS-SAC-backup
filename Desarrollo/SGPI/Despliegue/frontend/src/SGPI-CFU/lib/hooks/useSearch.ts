@@ -16,7 +16,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { SearchResult, SearchType, PaginatedData } from '../types/api';
+import type { SearchResult, SearchType, PaginatedData } from '../types';
 import { apiClient }                                    from '../api/client';
 import { ApiClientError }                               from '../api/client';
 
@@ -28,7 +28,7 @@ import { ApiClientError }                               from '../api/client';
 const DEBOUNCE_MS = 400;
 
 /** Longitud mínima del término de búsqueda para disparar la petición */
-const MIN_QUERY_LENGTH = 2;
+const MIN_QUERY_LENGTH = 3;
 
 /** Número de resultados por página */
 const DEFAULT_LIMIT = 20;
@@ -75,30 +75,28 @@ export interface SearchState {
 
 /**
  * Hook de búsqueda global del SGPI.
- *
- * @example
- * const { query, setQuery, results, isLoading, error, pagination, nextPage, type, setType } = useSearch();
- *
- * return (
- *   <>
- *     <input value={query} onChange={(e) => setQuery(e.target.value)} />
- *     {results.map(r => <SearchResultItem key={r.id} result={r} />)}
- *     <button onClick={pagination.hasPrev ? prevPage : undefined}>Anterior</button>
- *     <button onClick={pagination.hasNext ? nextPage : undefined}>Siguiente</button>
- *   </>
- * );
  */
 export function useSearch() {
   // ──────────────────────────────────────────────────────────────────────────
   // Estado
   // ──────────────────────────────────────────────────────────────────────────
 
-  const [query,     setQueryState] = useState<string>('');
-  const [type,      setTypeState]  = useState<SearchType | undefined>(undefined);
-  const [page,      setPage]       = useState<number>(1);
-  const [results,   setResults]    = useState<SearchResult[]>([]);
-  const [isLoading, setIsLoading]  = useState<boolean>(false);
-  const [error,     setError]      = useState<string | null>(null);
+  const [query,      setQueryState]    = useState<string>('');
+  const [types,      setTypesState]    = useState<SearchType[]>([]);
+  const [page,       setPage]          = useState<number>(1);
+  const [results,    setResults]       = useState<SearchResult[]>([]);
+  const [counts,     setCounts]        = useState<Record<string, number> | undefined>(undefined);
+  const [isLoading,  setIsLoading]     = useState<boolean>(false);
+  const [error,      setError]         = useState<string | null>(null);
+
+  // Filtros avanzados
+  const [sources,    setSourcesState]  = useState<string[]>([]);
+  const [statuses,   setStatusesState] = useState<string[]>([]);
+  const [yearStart,  setYearStartState] = useState<number | undefined>(undefined);
+  const [yearEnd,    setYearEndState]   = useState<number | undefined>(undefined);
+  const [liveRenacyt, setLiveRenacyt]   = useState<boolean>(false);
+  const [liveCybertesis, setLiveCybertesis] = useState<boolean>(false);
+
   const [pagination, setPagination] = useState<SearchPagination>({
     page:    1,
     total:   0,
@@ -112,6 +110,8 @@ export function useSearch() {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Ref para el AbortController de la petición en curso
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Ref para saltar el debounce en búsquedas explícitas (enter/submit)
+  const skipNextDebounceRef = useRef<boolean>(false);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Función de búsqueda
@@ -119,12 +119,19 @@ export function useSearch() {
 
   const performSearch = useCallback(async (
     searchQuery: string,
-    searchType:  SearchType | undefined,
-    searchPage:  number
+    searchTypes: SearchType[],
+    searchPage:  number,
+    searchSources: string[],
+    searchStatuses: string[],
+    searchYearStart: number | undefined,
+    searchYearEnd: number | undefined,
+    searchLiveRenacyt: boolean,
+    searchLiveCybertesis?: boolean
   ) => {
     // Validar longitud mínima
     if (searchQuery.trim().length < MIN_QUERY_LENGTH) {
       setResults([]);
+      setCounts(undefined);
       setIsLoading(false);
       setPagination({
         page: 1, total: 0, pages: 1, limit: DEFAULT_LIMIT,
@@ -148,14 +155,39 @@ export function useSearch() {
       page:  String(searchPage),
       limit: String(DEFAULT_LIMIT),
     });
-    if (searchType) params.append('type', searchType);
+    
+    if (searchTypes && searchTypes.length > 0) {
+      searchTypes.forEach(t => params.append('type', t));
+    }
+    
+    // Filtros avanzados
+    if (searchSources && searchSources.length > 0) {
+      searchSources.forEach(src => params.append('source', src));
+    }
+    if (searchStatuses && searchStatuses.length > 0) {
+      searchStatuses.forEach(st => params.append('status', st));
+    }
+    if (searchYearStart !== undefined) {
+      params.append('anio_inicio', String(searchYearStart));
+    }
+    if (searchYearEnd !== undefined) {
+      params.append('anio_fin', String(searchYearEnd));
+    }
+    if (searchLiveRenacyt) {
+      params.append('live_renacyt', 'true');
+    }
+    if (searchLiveCybertesis) {
+      params.append('live_cybertesis', 'true');
+    }
 
     try {
-      const data = await apiClient.get<PaginatedData<SearchResult>>(
-        `/search?${params.toString()}`
+      const data = await apiClient.get<PaginatedData<SearchResult> & { counts?: Record<string, number> }>(
+        `/search?${params.toString()}`,
+        { timeout: 30000 }
       );
 
       setResults(data.items);
+      setCounts(data.counts);
       setPagination({
         page:    data.page,
         total:   data.total,
@@ -177,6 +209,7 @@ export function useSearch() {
 
       setError(message);
       setResults([]);
+      setCounts(undefined);
     } finally {
       setIsLoading(false);
     }
@@ -195,26 +228,39 @@ export function useSearch() {
     // Si el query está vacío, limpiar resultados inmediatamente
     if (!query.trim() || query.trim().length < MIN_QUERY_LENGTH) {
       setResults([]);
+      setCounts(undefined);
       setIsLoading(false);
       setError(null);
       setPagination({
         page: 1, total: 0, pages: 1, limit: DEFAULT_LIMIT,
         hasNext: false, hasPrev: false,
       });
+      setLiveRenacyt(false);
+      setLiveCybertesis(false);
       return;
     }
 
-    // Programar la búsqueda con debounce
-    debounceTimerRef.current = setTimeout(() => {
-      performSearch(query, type, page);
-    }, DEBOUNCE_MS);
+    // Si se solicitó saltar el debounce (búsqueda explícita)
+    if (skipNextDebounceRef.current) {
+      skipNextDebounceRef.current = false;
+      setLiveRenacyt(false);
+      setLiveCybertesis(false);
+      performSearch(query, types, page, sources, statuses, yearStart, yearEnd, false, false);
+    } else {
+      // Programar la búsqueda con debounce
+      debounceTimerRef.current = setTimeout(() => {
+        setLiveRenacyt(false);
+        setLiveCybertesis(false);
+        performSearch(query, types, page, sources, statuses, yearStart, yearEnd, false, false);
+      }, DEBOUNCE_MS);
+    }
 
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [query, type, page, performSearch]);
+  }, [query, types, page, sources, statuses, yearStart, yearEnd, performSearch]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Setters con reset de página
@@ -224,16 +270,79 @@ export function useSearch() {
    * Actualiza el término de búsqueda y resetea a la página 1.
    */
   const setQuery = useCallback((newQuery: string) => {
+    skipNextDebounceRef.current = true;
     setQueryState(newQuery);
-    setPage(1); // Resetear a la primera página al cambiar el query
+    setPage(1);
+    if (newQuery.trim().length >= MIN_QUERY_LENGTH) {
+      setResults([]);
+      setIsLoading(true);
+      setError(null);
+    }
   }, []);
 
   /**
    * Actualiza el filtro de tipo de entidad y resetea a la página 1.
    */
+  const setTypes = useCallback((newTypes: SearchType[]) => {
+    setTypesState(newTypes);
+    setPage(1);
+    setResults([]);
+    setIsLoading(true);
+    setError(null);
+  }, []);
+
+  // Backwards compatibility for single type
+  const type = types[0] || undefined;
   const setType = useCallback((newType: SearchType | undefined) => {
-    setTypeState(newType);
-    setPage(1); // Resetear a la primera página al cambiar el filtro
+    setTypesState(newType ? [newType] : []);
+    setPage(1);
+    setResults([]);
+    setIsLoading(true);
+    setError(null);
+  }, []);
+
+  /**
+   * Actualiza las fuentes y resetea a la página 1.
+   */
+  const setSources = useCallback((newSources: string[]) => {
+    setSourcesState(newSources);
+    setPage(1);
+    setResults([]);
+    setIsLoading(true);
+    setError(null);
+  }, []);
+
+  /**
+   * Actualiza los estados y resetea a la página 1.
+   */
+  const setStatuses = useCallback((newStatuses: string[]) => {
+    setStatusesState(newStatuses);
+    setPage(1);
+    setResults([]);
+    setIsLoading(true);
+    setError(null);
+  }, []);
+
+  /**
+   * Actualiza el año inicial y resetea a la página 1.
+   */
+  const setYearStart = useCallback((newYearStart: number | undefined) => {
+    setYearStartState(newYearStart);
+    setPage(1);
+    setResults([]);
+    setIsLoading(true);
+    setError(null);
+  }, []);
+
+  /**
+   * Actualiza el año final y resetea a la página 1.
+   */
+  const setYearEnd = useCallback((newYearEnd: number | undefined) => {
+    setYearEndState(newYearEnd);
+    setPage(1);
+    setResults([]);
+    setIsLoading(true);
+    setError(null);
   }, []);
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -242,20 +351,55 @@ export function useSearch() {
 
   /** Avanza a la siguiente página de resultados */
   const nextPage = useCallback(() => {
-    if (pagination.hasNext) setPage((p) => p + 1);
+    if (pagination.hasNext) {
+      setResults([]);
+      setIsLoading(true);
+      setError(null);
+      setPage((p) => p + 1);
+    }
   }, [pagination.hasNext]);
 
   /** Retrocede a la página anterior de resultados */
   const prevPage = useCallback(() => {
-    if (pagination.hasPrev) setPage((p) => p - 1);
+    if (pagination.hasPrev) {
+      setResults([]);
+      setIsLoading(true);
+      setError(null);
+      setPage((p) => p - 1);
+    }
   }, [pagination.hasPrev]);
 
   /** Navega a una página específica */
   const goToPage = useCallback((targetPage: number) => {
     if (targetPage >= 1 && targetPage <= pagination.pages) {
+      setResults([]);
+      setIsLoading(true);
+      setError(null);
       setPage(targetPage);
     }
   }, [pagination.pages]);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Buscar en RENACYT (en vivo)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const triggerLiveRenacyt = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    setLiveRenacyt(true);
+    setLiveCybertesis(false);
+    performSearch(query, types, page, sources, statuses, yearStart, yearEnd, true, false);
+  }, [query, types, page, sources, statuses, yearStart, yearEnd, performSearch]);
+
+  const triggerLiveCybertesis = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    setLiveCybertesis(true);
+    setLiveRenacyt(false);
+    performSearch(query, types, page, sources, statuses, yearStart, yearEnd, false, true);
+  }, [query, types, page, sources, statuses, yearStart, yearEnd, performSearch]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Limpiar búsqueda
@@ -267,9 +411,16 @@ export function useSearch() {
     if (abortControllerRef.current)  abortControllerRef.current.abort();
 
     setQueryState('');
-    setTypeState(undefined);
+    setTypesState([]);
+    setSourcesState([]);
+    setStatusesState([]);
+    setYearStartState(undefined);
+    setYearEndState(undefined);
+    setLiveRenacyt(false);
+    setLiveCybertesis(false);
     setPage(1);
     setResults([]);
+    setCounts(undefined);
     setIsLoading(false);
     setError(null);
     setPagination({
@@ -292,21 +443,38 @@ export function useSearch() {
     // Estado
     query,
     type,
+    types,
     results,
+    counts,
     isLoading,
     error,
     pagination,
     isEmpty,
     isBlank,
+    liveRenacyt,
+    liveCybertesis,
+
+    // Filtros
+    sources,
+    statuses,
+    yearStart,
+    yearEnd,
 
     // Setters
     setQuery,
     setType,
+    setTypes,
+    setSources,
+    setStatuses,
+    setYearStart,
+    setYearEnd,
 
     // Navegación
     nextPage,
     prevPage,
     goToPage,
     clearSearch,
+    triggerLiveRenacyt,
+    triggerLiveCybertesis,
   };
 }

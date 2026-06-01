@@ -9,18 +9,21 @@ from vrip_connector.engines.base import BaseExtractor
 from vrip_connector.core.models import ProyectoModel
 from vrip_connector.utils.date_parser import parse_spanish_date
 
+
 class VripProyectosExtractor(BaseExtractor):
     def __init__(self):
         super().__init__("vrip_proyectos")
 
-    def extract(self, year: Optional[int] = None, program: Optional[str] = None, query: Optional[str] = None, **kwargs) -> List[ProyectoModel]:
+    def extract(
+        self, year: Optional[int] = None, program: Optional[str] = None, query: Optional[str] = None, **kwargs
+    ) -> List[ProyectoModel]:
         """
         Queries the VRIP WordPress REST API to retrieve official posts and resolutions (RR)
         of approved research projects. Extracts objective details (resolutions, budget, names)
         directly from the API response and page contents.
         """
         wp_api_url = self.source_config.get("wp_api_url", "https://vrip.unmsm.edu.pe/wp-json/wp/v2/posts")
-        
+
         # Determine terms to search for based on parameters or defaults
         search_terms = ["proyecto", "PCONFIGI", "PMULTI", "resolucion"]
         if program:
@@ -28,18 +31,14 @@ class VripProyectosExtractor(BaseExtractor):
             search_terms = [program]
         if query:
             search_terms.append(query)
-            
+
         collected_posts = {}  # id -> post dict to deduplicate
-        
+
         print(f"{Fore.GREEN}[Proyectos VRIP]{Style.RESET_ALL} Consultando WordPress REST API del VRIP...")
 
         for term in search_terms:
             try:
-                params = {
-                    "per_page": 20,
-                    "search": term,
-                    "_fields": "id,title,date,link,excerpt,content"
-                }
+                params = {"per_page": 20, "search": term, "_fields": "id,title,date,link,excerpt,content"}
                 response = self.client.get(wp_api_url, params=params)
                 if not response or response.status_code != 200:
                     continue
@@ -69,21 +68,21 @@ class VripProyectosExtractor(BaseExtractor):
                 parsed_post_date = parse_spanish_date(post_date_str)
 
                 link = post.get("link", "")
-                
+
                 # Retrieve content and excerpt
                 content_raw = post.get("content", {}).get("rendered", "")
                 excerpt_raw = post.get("excerpt", {}).get("rendered", "")
-                
+
                 content_soup = BeautifulSoup(content_raw, "html.parser")
                 excerpt_soup = BeautifulSoup(excerpt_raw, "html.parser")
-                
+
                 full_text = content_soup.get_text(" ", strip=True)
                 excerpt_text = excerpt_soup.get_text(" ", strip=True)
 
                 # 1. Infer/Extract academic year
                 # Look for year in title first (e.g. "PCONFIGI 2025" or "Año 2026")
                 academic_year = None
-                year_match = re.search(r'\b(202\d|201\d)\b', title)
+                year_match = re.search(r"\b(202\d|201\d)\b", title)
                 if year_match:
                     academic_year = int(year_match.group(1))
                 elif parsed_post_date:
@@ -103,19 +102,25 @@ class VripProyectosExtractor(BaseExtractor):
                 # 3. Extract Resolution details (Number and Date)
                 # Look for R.R. N° 014353-2025-R or similar
                 resolution_num = None
-                res_match = re.search(r'R\.?R\.?\s*(?:N°|No|Nro\.?)?\s*(\d{5,6}-\d{4}-R|\d{5,6}\s*-\s*\d{4}\s*-\s*R)', full_text, re.IGNORECASE)
+                res_match = re.search(
+                    r"R\.?R\.?\s*(?:N°|No|Nro\.?)?\s*(\d{5,6}-\d{4}-R|\d{5,6}\s*-\s*\d{4}\s*-\s*R)",
+                    full_text,
+                    re.IGNORECASE,
+                )
                 if res_match:
                     resolution_num = res_match.group(1).replace(" ", "")
                 else:
                     # Try short code in title or post date
-                    res_title_match = re.search(r'(?:RR|R\.R\.)\s*(?:N°|No)?\s*(\d{5,6}-\d{4}-R)', title, re.IGNORECASE)
+                    res_title_match = re.search(r"(?:RR|R\.R\.)\s*(?:N°|No)?\s*(\d{5,6}-\d{4}-R)", title, re.IGNORECASE)
                     if res_title_match:
                         resolution_num = res_title_match.group(1)
 
                 # Extract explicit budget/monto if present
                 budget = None
                 # S/. 15,000 or S/ 12000
-                budget_match = re.search(r'(?:S/\.?|soles|presupuesto de)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', full_text, re.IGNORECASE)
+                budget_match = re.search(
+                    r"(?:S/\.?|soles|presupuesto de)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", full_text, re.IGNORECASE
+                )
                 if budget_match:
                     try:
                         budget_str = budget_match.group(1).replace(",", "")
@@ -126,12 +131,15 @@ class VripProyectosExtractor(BaseExtractor):
                 # Try to parse the table if projects are in the post content!
                 tables = content_soup.find_all("table")
                 if tables:
-                    print(f"[Proyectos VRIP] Se encontró una tabla en el post {post_id}. Extrayendo proyectos estructurados...")
+                    print(
+                        f"[Proyectos VRIP] Se encontró una tabla en el post {post_id}. "
+                        "Extrayendo proyectos estructurados..."
+                    )
                     for table in tables:
                         rows = table.find_all("tr")
                         # Analyze headers
                         headers = [cell.get_text(strip=True).lower() for cell in rows[0].find_all(["td", "th"])]
-                        
+
                         # Find column indices
                         code_idx, title_idx, resp_idx, budget_idx = -1, -1, -1, -1
                         for idx, h in enumerate(headers):
@@ -141,7 +149,9 @@ class VripProyectosExtractor(BaseExtractor):
                                 title_idx = idx
                             elif any(k in h for k in ["responsable", "docente", "investigador", "autor", "director"]):
                                 resp_idx = idx
-                            elif any(k in h for k in ["monto", "presupuesto", "financiamiento", "subvencion", "subvención"]):
+                            elif any(
+                                k in h for k in ["monto", "presupuesto", "financiamiento", "subvencion", "subvención"]
+                            ):
                                 budget_idx = idx
 
                         # Extract from rows
@@ -152,65 +162,79 @@ class VripProyectosExtractor(BaseExtractor):
                             try:
                                 proj_code = cells[code_idx].get_text(strip=True) if code_idx != -1 else None
                                 proj_title = cells[title_idx].get_text(strip=True) if title_idx != -1 else None
-                                proj_resp = cells[resp_idx].get_text(strip=True) if resp_idx != -1 else "No especificado"
-                                
+                                proj_resp = (
+                                    cells[resp_idx].get_text(strip=True) if resp_idx != -1 else "No especificado"
+                                )
+
                                 proj_budget = None
                                 if budget_idx != -1:
                                     raw_b = cells[budget_idx].get_text(strip=True)
-                                    b_match = re.search(r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', raw_b)
+                                    b_match = re.search(r"(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", raw_b)
                                     if b_match:
                                         proj_budget = float(b_match.group(1).replace(",", ""))
 
                                 if proj_title:
                                     # Apply search query filter if applicable
-                                    if query and query.lower() not in proj_title.lower() and query.lower() not in proj_resp.lower():
+                                    if (
+                                        query
+                                        and query.lower() not in proj_title.lower()
+                                        and query.lower() not in proj_resp.lower()
+                                    ):
                                         continue
 
-                                    projects.append(ProyectoModel(
-                                        codigo_proyecto=proj_code,
-                                        codigo_programa=program_code,
-                                        titulo=proj_title,
-                                        responsable=proj_resp,
-                                        coinvestigadores=[],
-                                        facultad="FISI",
-                                        monto_financiado=proj_budget or budget,
-                                        numero_resolucion=resolution_num,
-                                        fecha_aprobacion=post_date_str,
-                                        anio_academico=academic_year,
-                                        enlace_vrip=link,
-                                        resumen_post=excerpt_text[:200]
-                                    ))
-                            except Exception as e:
+                                    projects.append(
+                                        ProyectoModel(
+                                            codigo_proyecto=proj_code,
+                                            codigo_programa=program_code,
+                                            titulo=proj_title,
+                                            responsable=proj_resp,
+                                            coinvestigadores=[],
+                                            facultad="FISI",
+                                            monto_financiado=proj_budget or budget,
+                                            numero_resolucion=resolution_num,
+                                            fecha_aprobacion=post_date_str,
+                                            anio_academico=academic_year,
+                                            enlace_vrip=link,
+                                            resumen_post=excerpt_text[:200],
+                                        )
+                                    )
+                            except Exception:
                                 continue
                 else:
                     # If there's no table, extract details from text / post fields
                     # Try to extract responsible name from excerpt or content
                     responsible = "Unidad de Investigación de la FISI"
-                    
+
                     # Regex to find name patterns: e.g. "docente responsable: Dr. Juan Perez"
-                    resp_match = re.search(r'(?:responsable|investigador principal|director|dr\.|dra\.)\s*:?\s*([a-zA-Z\s]{10,40})', full_text, re.IGNORECASE)
+                    resp_match = re.search(
+                        r"(?:responsable|investigador principal|director|dr\.|dra\.)\s*:?\s*([a-zA-Z\s]{10,40})",
+                        full_text,
+                        re.IGNORECASE,
+                    )
                     if resp_match:
                         responsible = resp_match.group(1).strip()
-                    
+
                     # Apply search query filter if applicable
                     if query and query.lower() not in title.lower() and query.lower() not in full_text.lower():
                         continue
 
                     # Fallback single project entry for this resolution post
-                    projects.append(ProyectoModel(
-                        codigo_proyecto=None,
-                        codigo_programa=program_code,
-                        titulo=title,
-                        responsable=responsible,
-                        coinvestigadores=[],
-                        facultad="FISI",
-                        monto_financiado=budget,
-                        numero_resolucion=resolution_num,
-                        fecha_aprobacion=post_date_str,
-                        anio_academico=academic_year,
-                        enlace_vrip=link,
-                        resumen_post=excerpt_text[:200]
-                    ))
+                    projects.append(
+                        ProyectoModel(
+                            codigo_proyecto=None,
+                            codigo_programa=program_code,
+                            titulo=title,
+                            responsable=responsible,
+                            coinvestigadores=[],
+                            facultad="FISI",
+                            monto_financiado=budget,
+                            numero_resolucion=resolution_num,
+                            fecha_aprobacion=post_date_str,
+                            anio_academico=academic_year,
+                            enlace_vrip=link,
+                            resumen_post=excerpt_text[:200],
+                        )
+                    )
 
             except Exception as e:
                 print(f"{Fore.YELLOW}[Proyectos VRIP] Error procesando post {post_id}: {e}{Style.RESET_ALL}")

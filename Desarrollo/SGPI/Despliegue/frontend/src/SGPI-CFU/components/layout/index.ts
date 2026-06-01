@@ -5,6 +5,7 @@
 export { Sidebar }    from './Sidebar';
 export { TopBar }     from './TopBar';
 export { MainLayout } from './MainLayout';
+export { SessionTimer } from './SessionTimer';
 
 export type { TopBarProps }    from './TopBar';
 export type { MainLayoutProps } from './MainLayout';

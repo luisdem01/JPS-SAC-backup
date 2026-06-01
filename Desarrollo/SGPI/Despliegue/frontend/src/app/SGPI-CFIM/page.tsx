@@ -1,25 +1,32 @@
 'use client';
 
 /**
- * @file page.tsx
- * @route /SGPI-CFIM
- * @description Pantalla principal del módulo de Importación de Datos (RAIS).
+ * @file SGPI-CFIM/page.tsx
+ * @route /SGPI-CFIM  →  alias: /import
+ * @description Pantalla de carga del archivo de importación.
+ *
+ * Flujo real:
+ *  1. Usuario selecciona entidad + archivo (.xlsx/.csv)
+ *  2. Click "Validar" → POST /api/v1/import/excel → job_id
+ *  3. Se guarda {entity, fileName, fileSize, jobId} en sessionStorage
+ *  4. Navega a /SGPI-CFIM/preview para seguimiento del progreso
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import { Button } from '@/SGPI-CFU/components/ui';
+import { importEndpoints } from '@/SGPI-CFU/lib/api/endpoints';
 import type { UserRole } from '@/SGPI-CFU/lib/types/auth';
 
 // ── Mock temporal de useAuth ──────────────────────────────────────────────────
 function useMockAuth() {
   return {
     user: {
-      id: 'mock-1',
-      name: 'Ana Mendoza',
+      id:    'mock-1',
+      name:  'Ana Mendoza',
       email: 'amendoza@unmsm.edu.pe',
-      role: 'secretary' as UserRole,
+      role:  'secretary' as UserRole,
     },
   };
 }
@@ -28,20 +35,12 @@ function useMockAuth() {
 // Constantes
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ImportEntity = 'proyectos' | 'docentes' | 'publicaciones';
-
-const ENTITY_OPTIONS: { value: ImportEntity; label: string }[] = [
-  { value: 'proyectos', label: 'Proyectos de Investigación' },
-  { value: 'docentes', label: 'Docentes / Investigadores' },
-  { value: 'publicaciones', label: 'Publicaciones / Tesis' },
-];
-
-const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_MB    = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-const ALLOWED_EXTENSIONS = ['.csv', '.xlsx'];
+const ALLOWED_EXTENSIONS  = ['.csv', '.xlsx'];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Íconos
+// Íconos SVG inline
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CloudUploadIcon({ className = '' }: { className?: string }) {
@@ -115,17 +114,17 @@ function isValidFile(file: File): { valid: boolean; error?: string } {
 
 export default function ImportacionDeDatosPage() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { user } = useMockAuth();
-  const router = useRouter();
+  const { user }  = useMockAuth();
+  const router    = useRouter();
 
-  const [selectedEntity, setSelectedEntity] = useState<ImportEntity>('proyectos');
-  const [isDragging, setIsDragging] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
+  const [isDragging,     setIsDragging]     = useState(false);
+  const [selectedFile,   setSelectedFile]   = useState<File | null>(null);
+  const [fileError,      setFileError]      = useState<string | null>(null);
+  const [isUploading,    setIsUploading]    = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-cerrar banner de error a los 6 s
   useEffect(() => {
     if (!fileError) return;
     const t = setTimeout(() => setFileError(null), 6000);
@@ -168,25 +167,37 @@ export default function ImportacionDeDatosPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
-  // ── Validar y navegar a previsualización ──────────────────────────────────
+  // ── Upload real al backend ────────────────────────────────────────────────
 
-  const handleValidate = useCallback(async () => {
+  const handleUpload = useCallback(async () => {
     if (!selectedFile) return;
-    setIsValidating(true);
+    setIsUploading(true);
+    setFileError(null);
 
-    // Guardar metadatos en localStorage para la pantalla de previsualización
-    localStorage.setItem('import_meta', JSON.stringify({
-      entity: selectedEntity,
-      fileName: selectedFile.name,
-      fileSize: selectedFile.size,
-    }));
+    try {
+      // Llamada real: POST /api/v1/import/excel → { job_id }
+      const { job_id } = await importEndpoints.uploadExcel(selectedFile);
 
-    // Simular validación (reemplazar por llamada real al endpoint)
-    await new Promise((r) => setTimeout(r, 1200));
-    setIsValidating(false);
+      // Persistir metadatos en sessionStorage para las pantallas siguientes
+      sessionStorage.setItem('import_meta', JSON.stringify({
+        entity:   'general',
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+        jobId:    job_id,
+      }));
 
-    router.push('/SGPI-CFIM/preview');
-  }, [selectedFile, selectedEntity, router]);
+      // Ir a la pantalla de progreso / preview
+      router.push('/SGPI-CFIM/preview');
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error
+        ? err.message
+        : 'No se pudo subir el archivo. Verifique su conexión e intente nuevamente.';
+      setFileError(msg);
+    } finally {
+      setIsUploading(false);
+    }
+  }, [selectedFile, router]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
@@ -216,41 +227,14 @@ export default function ImportacionDeDatosPage() {
           p-6 flex flex-col gap-5
         ">
 
-          {/* ── 1. Selector de entidad ──────────────────────────────────────── */}
+          {/* ── 1. Información ──────────────────────────────────────── */}
           <div>
-            <label
-              htmlFor="select-entidad"
-              className="block font-sans font-bold text-[13px] text-on-surface mb-2"
-            >
-              1. Seleccione la entidad a importar:
+            <label className="block font-sans font-bold text-[13px] text-on-surface mb-2">
+              1. Seleccione el archivo a importar:
             </label>
-
-            <div className="relative w-[260px]">
-              <select
-                id="select-entidad"
-                value={selectedEntity}
-                onChange={(e) => setSelectedEntity(e.target.value as ImportEntity)}
-                className="
-                  w-full appearance-none
-                  px-3 py-2 pr-9
-                  font-sans text-[13px] text-on-surface
-                  bg-surface-container-lowest
-                  border border-outline-variant rounded
-                  outline-none
-                  focus:ring-2 focus:ring-[#a8c8fa] focus:border-primary
-                  transition-all duration-100
-                  cursor-pointer
-                "
-                aria-label="Seleccionar entidad a importar"
-              >
-                {ENTITY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant">
-                <ChevronDownIcon />
-              </span>
-            </div>
+            <p className="font-sans text-[12px] text-on-surface-variant mb-4">
+              El sistema identificará automáticamente si el archivo contiene datos de Docentes, Proyectos, Publicaciones, Tesis o Grupos de Investigación.
+            </p>
           </div>
 
           {/* ── 2. Zona Drag & Drop ─────────────────────────────────────────── */}
@@ -261,9 +245,9 @@ export default function ImportacionDeDatosPage() {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onClick={() => !selectedFile && fileInputRef.current?.click()}
+            onClick={() => !selectedFile && !isUploading && fileInputRef.current?.click()}
             onKeyDown={(e) => {
-              if ((e.key === 'Enter' || e.key === ' ') && !selectedFile)
+              if ((e.key === 'Enter' || e.key === ' ') && !selectedFile && !isUploading)
                 fileInputRef.current?.click();
             }}
             className={`
@@ -279,6 +263,7 @@ export default function ImportacionDeDatosPage() {
                   ? 'border-outline-variant bg-surface-container-low cursor-default'
                   : 'border-outline-variant bg-surface-container-low hover:border-primary hover:bg-[#f4f6ff] cursor-pointer'
               }
+              ${isUploading ? 'opacity-60 pointer-events-none' : ''}
             `}
           >
             <input
@@ -314,6 +299,7 @@ export default function ImportacionDeDatosPage() {
                     transition-colors duration-100
                   "
                   aria-label="Quitar archivo seleccionado"
+                  disabled={isUploading}
                 >
                   <XIcon />
                   Quitar archivo
@@ -354,18 +340,18 @@ export default function ImportacionDeDatosPage() {
             </div>
           )}
 
-          {/* ── Botón Validar ────────────────────────────────────────────────── */}
+          {/* ── Botón Subir ──────────────────────────────────────────────────── */}
           <div className="flex justify-center">
             <Button
-              id="btn-validar-archivo"
+              id="btn-subir-archivo"
               variant="primary"
               size="md"
-              disabled={!selectedFile}
-              loading={isValidating}
-              onClick={handleValidate}
-              aria-label="Validar y previsualizar el archivo cargado"
+              disabled={!selectedFile || isUploading}
+              loading={isUploading}
+              onClick={handleUpload}
+              aria-label="Subir archivo e iniciar importación en background"
             >
-              Validar y Previsualizar Archivo
+              {isUploading ? 'Subiendo archivo...' : 'Subir e Iniciar Importación'}
             </Button>
           </div>
 

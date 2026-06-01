@@ -298,17 +298,26 @@ CREATE TRIGGER trg_exclusividad_grupo
 -- Función para la tabla investigador (PK: dni)
 CREATE OR REPLACE FUNCTION public.auditar_investigador()
 RETURNS TRIGGER AS $$
+DECLARE
+    v_user_id UUID;
 BEGIN
+    BEGIN
+        v_user_id := NULLIF(current_setting('app.current_user_id', true), '')::UUID;
+    EXCEPTION WHEN OTHERS THEN
+        v_user_id := NULL;
+    END;
+    
     INSERT INTO log_auditoria (
         tipo_evento, entidad_afectada, pk_entidad,
-        valor_anterior, valor_nuevo, resultado
+        valor_anterior, valor_nuevo, resultado, id_usuario
     ) VALUES (
         TG_OP,
         TG_TABLE_NAME,
         COALESCE(NEW.dni, OLD.dni),
         CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE row_to_json(OLD)::JSONB END,
         CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE row_to_json(NEW)::JSONB END,
-        'Exito'
+        'Exito',
+        COALESCE(auth.uid(), v_user_id)
     );
     -- AFTER trigger: retornar NEW en INSERT/UPDATE, OLD en DELETE
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
@@ -322,17 +331,26 @@ CREATE TRIGGER trg_auditoria_investigador
 -- Función para la tabla proyecto (PK: codigo_proyecto)
 CREATE OR REPLACE FUNCTION public.auditar_proyecto()
 RETURNS TRIGGER AS $$
+DECLARE
+    v_user_id UUID;
 BEGIN
+    BEGIN
+        v_user_id := NULLIF(current_setting('app.current_user_id', true), '')::UUID;
+    EXCEPTION WHEN OTHERS THEN
+        v_user_id := NULL;
+    END;
+    
     INSERT INTO log_auditoria (
         tipo_evento, entidad_afectada, pk_entidad,
-        valor_anterior, valor_nuevo, resultado
+        valor_anterior, valor_nuevo, resultado, id_usuario
     ) VALUES (
         TG_OP,
         TG_TABLE_NAME,
         COALESCE(NEW.codigo_proyecto, OLD.codigo_proyecto),
         CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE row_to_json(OLD)::JSONB END,
         CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE row_to_json(NEW)::JSONB END,
-        'Exito'
+        'Exito',
+        COALESCE(auth.uid(), v_user_id)
     );
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END;
@@ -350,16 +368,20 @@ CREATE TRIGGER trg_auditoria_proyecto
 -- Esto complementa al T3: T3 cubre el cierre automático del sistema,
 -- T8 cubre todos los cambios manuales realizados por usuarios.
 --
--- NOTA: id_usuario_responsable queda NULL porque en un trigger AFTER UPDATE
--- no hay forma de conocer el usuario de sesión desde SQL puro en Supabase.
--- El backend debe insertar en proyecto_estado_historial desde la capa de
--- aplicación cuando el cambio proviene de un usuario autenticado, donde
--- sí tiene acceso al JWT y puede registrar el id_usuario correctamente.
--- Este trigger actúa como red de seguridad para cambios directos a la BD.
+-- NOTA: id_usuario_responsable ahora lee de auth.uid() o app.current_user_id.
+-- El trigger actúa como red de seguridad para cambios directos a la BD.
 -- ------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.registrar_cambio_estado_proyecto()
 RETURNS TRIGGER AS $$
+DECLARE
+    v_user_id UUID;
 BEGIN
+    BEGIN
+        v_user_id := NULLIF(current_setting('app.current_user_id', true), '')::UUID;
+    EXCEPTION WHEN OTHERS THEN
+        v_user_id := NULL;
+    END;
+
     -- Solo actuar si el estado realmente cambió
     IF OLD.estado_proyecto IS DISTINCT FROM NEW.estado_proyecto THEN
         INSERT INTO proyecto_estado_historial (
@@ -373,7 +395,7 @@ BEGIN
             OLD.estado_proyecto,
             NEW.estado_proyecto,
             'Cambio registrado automáticamente por el sistema (origen: BD directa).',
-            NULL  -- El backend debe registrar el usuario desde la capa de aplicación
+            COALESCE(auth.uid(), v_user_id)
         );
     END IF;
     RETURN NEW;

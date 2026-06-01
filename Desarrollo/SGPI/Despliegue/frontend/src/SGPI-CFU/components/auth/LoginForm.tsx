@@ -1,17 +1,27 @@
 'use client';
-
+ 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
+import { useAuth } from '../../lib/hooks/useAuth';
+ 
 export function LoginForm() {
   const router = useRouter();
+  const { login, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const [rememberDevice, setRememberDevice] = useState(false);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
+ 
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    router.replace('/SGPI-CFB');
+    setErrorBanner(null);
+    try {
+      await login({ email, password, rememberDevice });
+      router.replace('/busqueda');
+    } catch (err: any) {
+      setErrorBanner(err.message || 'Error al iniciar sesión. Intente nuevamente.');
+    }
   };
 
   return (
@@ -51,7 +61,8 @@ export function LoginForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="investigador.fisi@unmsm.edu.pe"
-              className="w-full pl-9 pr-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded outline-none placeholder:text-slate-300 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition-colors"
+              disabled={isLoading}
+              className="w-full pl-9 pr-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded outline-none placeholder:text-slate-300 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -74,12 +85,14 @@ export function LoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full pl-9 pr-10 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded outline-none placeholder:text-slate-300 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition-colors"
+              disabled={isLoading}
+              className="w-full pl-9 pr-10 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded outline-none placeholder:text-slate-300 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             />
             <button
               type="button"
               onClick={() => setShowPassword((s) => !s)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              disabled={isLoading}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-60"
               aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
             >
               {showPassword ? (
@@ -100,7 +113,14 @@ export function LoginForm() {
         {/* Recordar dispositivo + ¿Olvidó su contraseña? */}
         <div className="flex items-center justify-between mt-0.5">
           <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input id="remember-device" type="checkbox" className="w-3.5 h-3.5 rounded border-slate-300 accent-[#0f172a] cursor-pointer" />
+            <input
+              id="remember-device"
+              type="checkbox"
+              checked={rememberDevice}
+              onChange={(e) => setRememberDevice(e.target.checked)}
+              disabled={isLoading}
+              className="w-3.5 h-3.5 rounded border-slate-300 accent-[#0f172a] cursor-pointer disabled:opacity-60"
+            />
             <span className="text-xs text-slate-600">Recordar dispositivo</span>
           </label>
           <a href="#" className="text-xs font-semibold text-[#1e3a6e] hover:underline">
@@ -108,12 +128,20 @@ export function LoginForm() {
           </a>
         </div>
 
+        {/* Banner de error */}
+        {errorBanner && (
+          <div className="p-3 text-xs font-semibold text-red-600 bg-red-50 rounded-lg border border-red-200">
+            {errorBanner}
+          </div>
+        )}
+
         {/* Botón */}
         <button
           type="submit"
-          className="w-full mt-1 py-2.5 rounded-lg bg-[#0f172a] hover:bg-[#1e293b] text-white text-sm font-semibold transition-colors"
+          disabled={isLoading}
+          className={`w-full mt-1 py-2.5 rounded-lg bg-[#0f172a] hover:bg-[#1e293b] text-white text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed`}
         >
-          Iniciar Sesión
+          {isLoading ? 'Iniciando Sesión...' : 'Iniciar Sesión'}
         </button>
       </form>
 

@@ -1,6 +1,20 @@
 from typing import Dict, Any, Tuple, Optional
 from sgpi_cmr.schemas.incoming import InvestigadorInput, ProyectoInput, PublicacionInput, AsesorTesisInput
 from sgpi_cmr.services.name_normalizer import normalizer
+from app.core.faculty_config import EXTENDED_FISI_KEYWORDS
+import os
+import sys
+import re
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+csapiren_path = os.path.abspath(os.path.join(current_dir, '..', '..', '..', 'etl', 'connectors', 'SGPI-CSAPIREN'))
+if csapiren_path not in sys.path:
+    sys.path.insert(0, csapiren_path)
+
+try:
+    from renacyt_connector.api import RenacytConnector
+except ImportError:
+    RenacytConnector = None
 
 class ReconciliationRulesEngine:
     """
@@ -47,7 +61,7 @@ class ReconciliationRulesEngine:
             else:
                 if fuente == 'RAIS' and current.get(field):
                     pass # RAIS nunca pisa datos que ya existen (Regla de oro simplificada)
-                elif not current.get(field) or self._is_manual_override(current, field) == True:
+                elif not current.get(field) or self._is_manual_override(current, field):
                     merged[field] = value
                     
         return merged, requires_quarantine, reason
@@ -87,22 +101,73 @@ class ReconciliationRulesEngine:
         # Si no hay DOI ni título muy similar, esto debería marcarse en la API para ir a cuarentena.
         return merged, False, ""
 
-    def reconcile_asesor_tesis(self, padron_investigadores: Dict[str, str], incoming: AsesorTesisInput) -> Tuple[Dict[str, Any], bool, str]:
+    async def reconcile_asesor_tesis(self, padron_investigadores: Dict[str, str], incoming: AsesorTesisInput, renacyt_client: Optional[Any] = None) -> Tuple[Dict[str, Any], bool, str]:
         incoming_dict = incoming.model_dump(exclude_unset=True, exclude_none=True)
         
-        # Regla: Cybertesis solo trae texto libre de asesor ("Perez, Juan"). 
-        # Intentar cruzar por DNI si viene, o usar Fuzzy Matching contra el padrón.
+        # Palabras clave de la FISI para filtrado centralizado
+        fisi_keywords = EXTENDED_FISI_KEYWORDS
+        
+        titulo_tesis = incoming_dict.get("titulo_tesis", "").lower()
+        # Verificar si la tesis es de la FISI por el título
+        es_tesis_fisi = any(kw in titulo_tesis for kw in fisi_keywords)
+
         dni_encontrado = incoming_dict.get("dni_asesor")
+        datos_renacyt = None
         
         if not dni_encontrado:
             match = normalizer.find_best_match(incoming_dict["asesor_texto"], padron_investigadores)
             if match:
                 dni_encontrado, score = match
-        
+
+        if not dni_encontrado:
+            # Intentar resolver vía RENACYT
+            client_to_use = renacyt_client
+            if not client_to_use and RenacytConnector:
+                try:
+                    client_to_use = RenacytConnector(verify_ssl=False)
+                    client_to_use.rate_limit_delay = 0.1
+                except Exception:
+                    pass
+            
+            if client_to_use:
+                asesor_clean = re.sub(r'^(Dr\.|Mg\.|Mag\.|Ing\.|Lic\.)\s*', '', incoming_dict["asesor_texto"], flags=re.IGNORECASE).strip()
+                try:
+                    res = await client_to_use.search_by_fullname(asesor_clean, page_size=10)
+                    if res and res.get('total', 0) > 0 and res.get('data'):
+                        best_score = 0.0
+                        best_match = None
+                        for r in res['data']:
+                            c_full = f"{r.get('nombres', '')} {r.get('apellido_paterno', '')} {r.get('apellido_materno', '')}"
+                            score = normalizer.calculate_similarity(asesor_clean, c_full)
+                            if score > best_score:
+                                best_score = score
+                                best_match = r
+                        
+                        if best_score >= 80.0 and best_match:
+                            dni_encontrado = best_match.get("numero_documento")
+                            datos_renacyt = best_match
+                except Exception:
+                    pass
+
         if dni_encontrado:
-            incoming_dict["dni_asesor_reconciliado"] = dni_encontrado
-            return incoming_dict, False, ""
+            es_asesor_fisi = False
+            if datos_renacyt:
+                inst_principal = (datos_renacyt.get("institucion_laboral_principal") or "").lower()
+                es_san_marcos = "san marcos" in inst_principal or "unmsm" in inst_principal
+                es_asesor_fisi = es_san_marcos and any(kw in inst_principal for kw in fisi_keywords)
+            else:
+                # Si estaba en el padrón local, ya es de la FISI
+                es_asesor_fisi = True
+
+            # Filtro FISI estricto: la tesis debe ser de la FISI o el asesor de la FISI
+            if es_tesis_fisi or es_asesor_fisi:
+                incoming_dict["dni_asesor_reconciliado"] = dni_encontrado
+                if datos_renacyt:
+                    incoming_dict["datos_renacyt"] = datos_renacyt
+                return incoming_dict, False, ""
+            else:
+                return incoming_dict, True, "Rechazado automáticamente: Esta investigación o su asesor corresponden a otra especialidad o facultad (no pertenecen a ninguna de las carreras de la FISI)."
         else:
-            return incoming_dict, True, "No se pudo hacer match del asesor de tesis por nombre con la confianza requerida."
+            return incoming_dict, True, "No se pudo identificar al asesor automáticamente en el padrón local de la FISI ni en RENACYT. Por favor, ingrese el DNI del asesor para aprobar este registro."
 
 rules_engine = ReconciliationRulesEngine()

@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
-from datetime import date
 
 class InvestigadorModel(BaseModel):
     dni: str = Field(..., min_length=8, max_length=15)

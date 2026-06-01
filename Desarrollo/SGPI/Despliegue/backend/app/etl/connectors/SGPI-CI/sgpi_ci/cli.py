@@ -1,6 +1,5 @@
 import json
 import sys
-from typing import Optional
 
 import typer
 
@@ -59,8 +58,9 @@ def import_cmd(
 
     try:
         from sgpi_ci.core.processor import EtlProcessor
+        import asyncio
         processor = EtlProcessor(file_path=file)
-        res = processor.process(upload_to_db=True)
+        res = asyncio.run(processor.process(upload_to_db=True))
         if quiet:
             print(json.dumps(res))
         else:
@@ -105,8 +105,9 @@ def preview_cmd(
 
     try:
         from sgpi_ci.core.processor import EtlProcessor
+        import asyncio
         processor = EtlProcessor(file_path=file)
-        res = processor.process(upload_to_db=False)
+        res = asyncio.run(processor.process(upload_to_db=False))
         if quiet:
             print(json.dumps(res))
         else:

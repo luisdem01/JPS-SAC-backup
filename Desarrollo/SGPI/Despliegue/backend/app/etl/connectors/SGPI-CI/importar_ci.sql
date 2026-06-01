@@ -5,7 +5,7 @@
 -- ====================================================================================
 
 -- ── RPC 1: SINCRONIZACIÓN DE INVESTIGADORES ──────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.importar_ci_investigadores(payload JSONB)
+CREATE OR REPLACE FUNCTION public.importar_ci_investigadores(payload JSONB, id_usuario UUID DEFAULT NULL)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -63,8 +63,8 @@ BEGIN
         END;
     END LOOP;
 
-    INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado)
-    VALUES ('IMPORT_EXCEL_CI', 'investigador', jsonb_build_object('procesados', cnt_updated, 'fallidos', cnt_fallidos), 'Exito');
+    INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
+    VALUES ('IMPORT_EXCEL_CI', 'investigador', jsonb_build_object('procesados', cnt_updated, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
 
     RETURN jsonb_build_object('procesados', cnt_updated, 'fallidos', cnt_fallidos);
 END;
@@ -72,7 +72,7 @@ $$;
 
 
 -- ── RPC 2: SINCRONIZACIÓN DE GRUPOS DE INVESTIGACIÓN ─────────────────────────────────
-CREATE OR REPLACE FUNCTION public.importar_ci_grupos(payload JSONB)
+CREATE OR REPLACE FUNCTION public.importar_ci_grupos(payload JSONB, id_usuario UUID DEFAULT NULL)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -134,13 +134,16 @@ BEGIN
         END;
     END LOOP;
 
+    INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
+    VALUES ('IMPORT_EXCEL_CI', 'grupo_investigacion', jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
+
     RETURN jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos);
 END;
 $$;
 
 
 -- ── RPC 3: SINCRONIZACIÓN DE PROYECTOS ───────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.importar_ci_proyectos(payload JSONB)
+CREATE OR REPLACE FUNCTION public.importar_ci_proyectos(payload JSONB, id_usuario UUID DEFAULT NULL)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -195,13 +198,16 @@ BEGIN
         END;
     END LOOP;
 
+    INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
+    VALUES ('IMPORT_EXCEL_CI', 'proyecto', jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
+
     RETURN jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos);
 END;
 $$;
 
 
 -- ── RPC 4: SINCRONIZACIÓN DE PUBLICACIONES ───────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.importar_ci_publicaciones(payload JSONB)
+CREATE OR REPLACE FUNCTION public.importar_ci_publicaciones(payload JSONB, id_usuario UUID DEFAULT NULL)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -224,15 +230,7 @@ BEGIN
                 (elem->>'tipo_publicacion')::VARCHAR,
                 (elem->>'nombre_evento')::VARCHAR,
                 (elem->>'id_grupo')::INT
-            )
-            -- Como id_publicacion es SERIAL, podemos hacer conflicto por DOI si no es nulo,
-            -- pero en nuestro DDL actual solo tenemos id_publicacion. Asumiremos inserción pura 
-            -- a menos que agreguemos ON CONFLICT (doi_codigo).
-            -- (Se eliminó ON CONFLICT para evitar error de constraint faltante)
-
-            -- Intersección con Investigador (tabla investigador_publicacion)
-            -- No implementada en el payload actual porque no tenemos la PK id_publicacion de antemano.
-            -- Dejaremos esto como "best effort" o lo asociaremos por nombre si existiera la tabla.
+            );
 
             cnt_procesados := cnt_procesados + 1;
         EXCEPTION WHEN OTHERS THEN
@@ -240,13 +238,16 @@ BEGIN
         END;
     END LOOP;
 
+    INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
+    VALUES ('IMPORT_EXCEL_CI', 'publicacion', jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
+
     RETURN jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos);
 END;
 $$;
 
 
 -- ── RPC 5: SINCRONIZACIÓN DE TESIS ───────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.importar_ci_tesis(payload JSONB)
+CREATE OR REPLACE FUNCTION public.importar_ci_tesis(payload JSONB, id_usuario UUID DEFAULT NULL)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -281,6 +282,9 @@ BEGIN
             cnt_fallidos := cnt_fallidos + 1;
         END;
     END LOOP;
+
+    INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
+    VALUES ('IMPORT_EXCEL_CI', 'tesis', jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
 
     RETURN jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos);
 END;

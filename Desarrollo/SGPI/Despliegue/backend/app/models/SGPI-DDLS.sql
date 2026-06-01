@@ -20,6 +20,7 @@ CREATE TABLE usuario (
                              'Consulta'        -- Solo lectura (rol por defecto en Trigger #2)
                          )),
     estado_cuenta        BOOLEAN      DEFAULT TRUE,
+    nombre_completo      VARCHAR(255) DEFAULT '',
     created_at           TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -426,3 +427,54 @@ INSERT INTO configuracion_global (clave, valor, descripcion) VALUES
 ('alertas.semaforo_amarillo_dias', '10', 'Margen de días para alerta amarilla antes del cierre'),
 ('carga_no_lectiva.maximo_horas_semanales', '16', 'Límite máximo de horas semanales permitidas (Regla institucional FISI)'),
 ('reportes.limite_filas_export', '500', 'Límite de seguridad de filas para exportaciones grandes de datos');
+
+-- ------------------------------------------------------------------------------------
+-- SECCIÓN 8: DEPARTAMENTOS ACADÉMICOS Y LÍNEAS DE INVESTIGACIÓN
+-- ------------------------------------------------------------------------------------
+
+CREATE TABLE departamento_academico (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) UNIQUE NOT NULL,
+    estado VARCHAR(30) NOT NULL DEFAULT 'Aprobado'
+);
+
+COMMENT ON TABLE departamento_academico IS 'Almacena la lista oficial de departamentos académicos.';
+
+-- Valores semilla para departamentos académicos
+INSERT INTO departamento_academico (nombre, estado) VALUES
+('Biología Celular', 'Aprobado'),
+('Física Teórica', 'Aprobado'),
+('Química Orgánica', 'Aprobado'),
+('Genética', 'Aprobado'),
+('Ingeniería de Sistemas', 'Aprobado'),
+('Ingeniería de Software', 'Aprobado'),
+('Ciencia de la Computación', 'Aprobado'),
+('Ciencias de la Computación', 'Aprobado'),
+('Inteligencia Artificial', 'Aprobado'),
+('Matemáticas Aplicadas', 'Aprobado'),
+('Ingeniería Eléctrica', 'Aprobado'),
+('Biotecnología', 'Aprobado'),
+('Externo (RENACYT)', 'Aprobado'),
+('No Especificado', 'Aprobado');
+
+CREATE TABLE linea_investigacion (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) UNIQUE NOT NULL,
+    estado VARCHAR(30) NOT NULL DEFAULT 'Aprobado',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+COMMENT ON TABLE linea_investigacion IS 'Almacena la lista oficial de líneas de investigación institucionales.';
+
+INSERT INTO linea_investigacion (nombre, estado) VALUES
+('L1. Inteligencia Artificial y Aprendizaje Automático', 'Aprobado'),
+('L2. Ciberseguridad y Criptografía Aplicada', 'Aprobado'),
+('L3. Sistemas Distribuidos y Computación en la Nube', 'Aprobado'),
+('L4. Ingeniería de Software y Metodologías Ágiles', 'Aprobado'),
+('L5. Procesamiento de Lenguaje Natural', 'Aprobado'),
+('L6. Ciencia de Datos y Big Data', 'Aprobado'),
+('L7. Internet de las Cosas y Redes de Sensores', 'Aprobado'),
+('L8. Computación Gráfica y Realidad Virtual', 'Aprobado');
+
+
