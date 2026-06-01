@@ -1,9 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_
 from typing import List, Optional
 from pydantic import BaseModel
 import math
+import os
+import sys
+import re
+from datetime import datetime, timezone
 
 from app.db.session import get_db
 from app.models.domain import Investigador
@@ -12,6 +16,19 @@ from sgpi_capirestc.crud.crud_investigador import investigador
 from sgpi_capirestc.schemas.domain_schemas import InvestigadorCreate, InvestigadorUpdate, InvestigadorResponse
 from app.core.security import get_current_user
 from app.core.audit import log_audit_event
+
+# Inyección dinámica para importar el conector RENACYT
+current_dir = os.path.dirname(os.path.abspath(__file__))
+app_dir = os.path.abspath(os.path.join(current_dir, '..', '..', '..', '..', '..'))
+csapiren_path = os.path.join(app_dir, 'etl', 'connectors', 'SGPI-CSAPIREN')
+
+if csapiren_path not in sys.path:
+    sys.path.insert(0, csapiren_path)
+
+try:
+    from renacyt_connector.api import RenacytConnector
+except ImportError:
+    RenacytConnector = None
 
 router = APIRouter()
 
@@ -49,12 +66,20 @@ async def list_investigadores(
     # Filtros
     filters = []
     if buscar and buscar.strip():
-        term = f"%{buscar.strip()}%"
-        filters.append(or_(
-            Investigador.dni.ilike(term),
-            Investigador.apellidos.ilike(term),
-            Investigador.nombres.ilike(term)
-        ))
+        clean_term = buscar.strip()
+        if re.match(r'^\d{8}$', clean_term):
+            filters.append(Investigador.dni == clean_term)
+        else:
+            words = [word.strip() for word in clean_term.split() if word.strip()]
+            if words:
+                word_filters = []
+                for word in words:
+                    term = f"%{word}%"
+                    word_filters.append(or_(
+                        Investigador.apellidos.ilike(term),
+                        Investigador.nombres.ilike(term)
+                    ))
+                filters.append(and_(*word_filters))
     if departamento:
         filters.append(Investigador.departamento_academico == departamento)
     if nivelRenacyt:
@@ -88,6 +113,141 @@ async def list_investigadores(
     items = result.scalars().all()
 
     pages = math.ceil(total / limit) if total > 0 else 1
+
+    # Fallback a RENACYT si no se encontraron resultados locales y se ingresó un término de búsqueda
+    if total == 0 and buscar and buscar.strip() and RenacytConnector:
+        logger.info(f"No se encontraron resultados locales para '{buscar}'. Consultando caché/RENACYT...")
+        try:
+            from app.core.cache import normalize_query, cache_get, cache_set
+            
+            clean_query = buscar.strip()
+            normalized = normalize_query(clean_query)
+            cache_key = f"renacyt:search:{normalized}"
+            
+            # 1. Verificar si existe en Redis
+            cached_items = await cache_get(cache_key)
+            if cached_items is not None:
+                logger.info(f"Cache hit para búsqueda '{buscar}' (key: {cache_key})")
+                return {
+                    "items": cached_items,
+                    "total": len(cached_items),
+                    "page": 1,
+                    "pages": 1
+                }
+            
+            # Cache miss: Consultar conector
+            logger.info(f"Cache miss para búsqueda '{buscar}'. Llamando a conector RENACYT...")
+            connector = RenacytConnector(verify_ssl=False)
+            connector.rate_limit_delay = 0.1
+            
+            is_dni = re.match(r'^\d{8}$', clean_query)
+            
+            records = []
+            if is_dni:
+                r = await connector.search_by_dni(clean_query)
+                if r:
+                    records = [r]
+            else:
+                res = await connector.search_by_fullname(clean_query, page_size=limit)
+                records = res.get("data", []) if res else []
+            
+            external_items = []
+            for r in records:
+                dni = r.get("numero_documento")
+                nombres = r.get("nombres", "").title()
+                apellidos = f"{r.get('apellido_paterno', '')} {r.get('apellido_materno', '')}".strip().title()
+                
+                item_dict = {
+                    "dni": dni,
+                    "nombres": nombres,
+                    "apellidos": apellidos,
+                    "codigo_interno_vrip": None,
+                    "condicion_laboral": None,
+                    "departamento_academico": "Externo (RENACYT)",
+                    "facultad_dependencia": "Ingeniería de Sistemas e Informática",
+                    "grado_academico_max": None,
+                    "institucion_principal": r.get("institucion_laboral_principal"),
+                    "codigo_renacyt": r.get("codigo_registro"),
+                    "orcid": r.get("orcid"),
+                    "categoria_renacyt": r.get("nivel", "Sin nivel"),
+                    "estado_renacyt": r.get("condicion"),
+                    "url_cti_vitae": r.get("cti_vitae"),
+                    "investigador_sm": "SAN MARCOS" in (r.get("institucion_laboral_principal") or "").upper() or "UNMSM" in (r.get("institucion_laboral_principal") or "").upper(),
+                    "estado_vigencia": "Activo",
+                    "tiene_deuda_gi": False,
+                    "tiene_deuda_pi": False,
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                    "is_external": True
+                }
+                external_items.append(item_dict)
+                
+                # Persistencia Local Proactiva
+                try:
+                    db_item = await db.get(Investigador, dni)
+                    if not db_item:
+                        new_db_investigador = Investigador(
+                            dni=dni,
+                            nombres=nombres,
+                            apellidos=apellidos,
+                            codigo_interno_vrip=None,
+                            condicion_laboral=None,
+                            departamento_academico="Externo (RENACYT)",
+                            facultad_dependencia="Ingeniería de Sistemas e Informática",
+                            grado_academico_max=None,
+                            institucion_principal=r.get("institucion_laboral_principal"),
+                            codigo_renacyt=r.get("codigo_registro"),
+                            orcid=r.get("orcid"),
+                            categoria_renacyt=r.get("nivel", "Sin nivel"),
+                            estado_renacyt=r.get("condicion"),
+                            url_cti_vitae=r.get("cti_vitae"),
+                            investigador_sm="SAN MARCOS" in (r.get("institucion_laboral_principal") or "").upper() or "UNMSM" in (r.get("institucion_laboral_principal") or "").upper(),
+                            estado_vigencia="Activo",
+                            tiene_deuda_gi=False,
+                            tiene_deuda_pi=False,
+                            is_external=True
+                        )
+                        db.add(new_db_investigador)
+                        await db.commit()
+                        logger.info(f"Persistido investigador externo con DNI {dni} en base de datos local")
+                        
+                        await log_audit_event(
+                            db=db,
+                            tipo_evento="INSERT",
+                            entidad_afectada="investigador",
+                            pk_entidad=dni,
+                            valor_nuevo={
+                                "dni": dni,
+                                "nombres": nombres,
+                                "apellidos": apellidos,
+                                "is_external": True,
+                                "estado_vigencia": "Activo"
+                            },
+                            id_usuario=current_user.get("sub") if current_user else None,
+                        )
+                except Exception as db_err:
+                    await db.rollback()
+                    logger.error(f"Error al guardar investigador externo {dni} en DB local: {db_err}")
+            
+            # Guardar en Redis
+            if external_items:
+                # 1 hora para resultados válidos (3600 segundos)
+                await cache_set(cache_key, external_items, 3600)
+                logger.info(f"Guardados {len(external_items)} resultados en Redis para clave: {cache_key} (TTL 1h)")
+            else:
+                # 24 horas para búsquedas vacías (86400 segundos)
+                await cache_set(cache_key, [], 86400)
+                logger.info(f"Guardado resultado vacío en Redis para clave: {cache_key} (TTL 24h)")
+                
+            if external_items:
+                return {
+                    "items": external_items,
+                    "total": len(external_items),
+                    "page": 1,
+                    "pages": 1
+                }
+        except Exception as e:
+            logger.error(f"Error consultando el conector RENACYT / Caché: {e}", exc_info=True)
 
     return {
         "items": items,

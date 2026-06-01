@@ -10,15 +10,14 @@ export function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberDevice, setRememberDevice] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorBanner(null);
     try {
-      await login({ email, password, rememberDevice });
-      router.replace('/busqueda');
+      await login({ email, password });
+      router.replace('/SGPI-CFB');
     } catch (err: any) {
       setErrorBanner(err.message || 'Error al iniciar sesión. Intente nuevamente.');
     }
@@ -113,14 +112,7 @@ export function LoginForm() {
         {/* Recordar dispositivo + ¿Olvidó su contraseña? */}
         <div className="flex items-center justify-between mt-0.5">
           <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              id="remember-device"
-              type="checkbox"
-              checked={rememberDevice}
-              onChange={(e) => setRememberDevice(e.target.checked)}
-              disabled={isLoading}
-              className="w-3.5 h-3.5 rounded border-slate-300 accent-[#0f172a] cursor-pointer disabled:opacity-60"
-            />
+            <input id="remember-device" type="checkbox" disabled={isLoading} className="w-3.5 h-3.5 rounded border-slate-300 accent-[#0f172a] cursor-pointer disabled:opacity-60" />
             <span className="text-xs text-slate-600">Recordar dispositivo</span>
           </label>
           <a href="#" className="text-xs font-semibold text-[#1e3a6e] hover:underline">

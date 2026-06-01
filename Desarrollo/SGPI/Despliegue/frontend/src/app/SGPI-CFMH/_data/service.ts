@@ -57,6 +57,7 @@ function mapToDocente(inv: any): DocenteInvestigador {
     })),
     creadoEn: inv.created_at,
     actualizadoEn: inv.updated_at,
+    isExternal: inv.is_external || false,
   };
 }
  

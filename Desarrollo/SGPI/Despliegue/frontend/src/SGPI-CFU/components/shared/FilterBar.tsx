@@ -80,14 +80,8 @@ export function FilterBar({
   onFilterSubmit,
   className = '',
 }: FilterBarProps) {
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onFilterSubmit?.();
-  };
-
   return (
-    <form
-      onSubmit={handleSubmit}
+    <div
       className={`
         flex items-end gap-3
         p-4 bg-white
@@ -128,14 +122,14 @@ export function FilterBar({
       {/* ── 3. Botón de Acción ───────────────────────────────────────────── */}
       <div className="flex-shrink-0">
         <Button
-          type="submit"
           variant="primary"
-          iconLeft={<SearchIcon />}
+          iconLeft={<FilterIcon />}
+          onClick={onFilterSubmit}
         >
-          Buscar
+          Filtrar
         </Button>
       </div>
-    </form>
+    </div>
   );
 }
 

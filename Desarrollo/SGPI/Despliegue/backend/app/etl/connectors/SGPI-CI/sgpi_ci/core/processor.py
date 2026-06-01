@@ -84,6 +84,29 @@ class EtlProcessor:
         if renacyt_client:
             renacyt_client.rate_limit_delay = 0.1
 
+        import asyncio
+
+        def run_sync(coro):
+            try:
+                return asyncio.run(coro)
+            except RuntimeError:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # If loop is already running, we might need a fallback or nest_asyncio.
+                        # But EtlProcessor is synchronous and run in background thread or CLI,
+                        # so the event loop in this thread is not running.
+                        return loop.run_until_complete(coro)
+                    else:
+                        return loop.run_until_complete(coro)
+                except Exception:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        return loop.run_until_complete(coro)
+                    finally:
+                        loop.close()
+
         def normalize_str(s):
             return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8').upper()
 
@@ -96,12 +119,25 @@ class EtlProcessor:
             if not words: return None
             original_parts = [normalize_str(w) for w in words]
 
-            # 1. Intentamos buscar usando el conector de apellidos (más preciso)
+            # 1. Intentamos buscar usando el nuevo método optimizado en paralelo (search_by_fullname)
+            if hasattr(renacyt_client, 'search_by_fullname'):
+                try:
+                    res = run_sync(renacyt_client.search_by_fullname(name_str, page_size=100))
+                    if res and res.get('total', 0) > 0 and res.get('data'):
+                        for r in res['data']:
+                            c_full = normalize_str(str(r.get('nombre_completo', '')))
+                            matches = sum(1 for p in original_parts if p in c_full)
+                            if matches >= len(original_parts) - 1:
+                                return r
+                except Exception as e:
+                    logger.warning(f"Error en search_by_fullname para '{name_str}', usando fallback: {e}")
+
+            # 2. Fallback secuencial original: Búsqueda por apellidos (más preciso)
             if extract_lastnames and hasattr(renacyt_client, 'search_by_lastname'):
                 try:
                     extracted_lastname = extract_lastnames(name_str)
                     if extracted_lastname:
-                        res = renacyt_client.search_by_lastname(extracted_lastname, page_size=100)
+                        res = run_sync(renacyt_client.search_by_lastname(extracted_lastname, page_size=100))
                         if res and res.get('total', 0) > 0 and res.get('data'):
                             for r in res['data']:
                                 c_full = normalize_str(str(r.get('nombre_completo', '')))
@@ -111,7 +147,7 @@ class EtlProcessor:
                 except Exception:
                     pass
 
-            # 2. Fallback de búsqueda anterior
+            # 3. Fallback secuencial original: Búsqueda por nombre iterativa
             candidates = []
             if len(words) >= 2:
                 candidates.append(f"{words[-2]} {words[-1]}")
@@ -121,7 +157,7 @@ class EtlProcessor:
 
             for cand in candidates:
                 try:
-                    res = renacyt_client.search_by_name(cand, page_size=100)
+                    res = run_sync(renacyt_client.search_by_name(cand, page_size=100))
                     if res and res.get('total', 0) > 0 and res.get('data'):
                         for r in res['data']:
                             c_full = normalize_str(str(r.get('nombre_completo', '')))

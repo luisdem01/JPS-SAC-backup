@@ -30,6 +30,7 @@ import type {
 } from './types';
 import { MOCK_GRUPOS, MOCK_PADRON_INVESTIGADORES, getMockStats } from './mock';
 import { supabase } from '../../../SGPI-CFU/lib/supabase';
+import { apiClient } from '../../../SGPI-CFU/lib/api/client';
  
 const PAGE_SIZE = 10;
  
@@ -244,39 +245,50 @@ export async function getStats(): Promise<StatsGrupos> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function buscarInvestigadores(buscar: string): Promise<InvestigatorPadron[]> {
-  /* ── SUPABASE ──────────────────────────────────────────────────────────────
-  const { data, error } = await supabase
-    .from('docentes')
-    .select('dni, nombres, apellidos, email, facultad, departamento')
-    .or(`dni.eq.${buscar},nombres.ilike.%${buscar}%,apellidos.ilike.%${buscar}%`)
-    .limit(10);
+  const params = new URLSearchParams({
+    buscar: buscar.trim(),
+    limit: '10'
+  });
 
-  if (error) throw new Error(error.message);
+  try {
+    const data = await apiClient.get<{
+      items: any[];
+      total: number;
+    }>(`/investigators?${params.toString()}`);
 
-  return (data || []).map((d: any) => ({
-    dni: d.dni,
-    nombre: `${d.nombres} ${d.apellidos}`,
-    email: d.email,
-    facultad: d.facultad || '',
-    departamento: d.departamento || '',
-  }));
-  ──────────────────────────────────────────────────────────────────────────── */
-
-  const { data, error } = await supabase
-    .from('investigador')
-    .select('dni, nombres, apellidos, departamento_academico, facultad_dependencia')
-    .or(`dni.eq.${buscar.trim()},nombres.ilike.%${buscar.trim()}%,apellidos.ilike.%${buscar.trim()}%`)
-    .limit(10);
+    return (data.items || []).map((d: any) => ({
+      dni: d.dni,
+      nombre: `${d.nombres} ${d.apellidos}`,
+      nombres: d.nombres,
+      apellidos: d.apellidos,
+      email: `${d.dni}@unmsm.edu.pe`,
+      facultad: d.facultad_dependencia || '',
+      departamento: d.departamento_academico || '',
+      isExternal: d.is_external || false,
+      nivelRenacyt: d.categoria_renacyt || 'Sin nivel'
+    }));
+  } catch (err) {
+    console.error("Error fetching investigators from API, falling back to local Supabase query", err);
+    const { data, error } = await supabase
+      .from('investigador')
+      .select('dni, nombres, apellidos, departamento_academico, facultad_dependencia, categoria_renacyt')
+      .or(`dni.eq.${buscar.trim()},nombres.ilike.%${buscar.trim()}%,apellidos.ilike.%${buscar.trim()}%`)
+      .limit(10);
  
-  if (error) throw new Error(error.message);
+    if (error) throw new Error(error.message);
  
-  return (data || []).map((d: any) => ({
-    dni: d.dni,
-    nombre: `${d.nombres} ${d.apellidos}`,
-    email: `${d.dni}@unmsm.edu.pe`,
-    facultad: d.facultad_dependencia || '',
-    departamento: d.departamento_academico || '',
-  }));
+    return (data || []).map((d: any) => ({
+      dni: d.dni,
+      nombre: `${d.nombres} ${d.apellidos}`,
+      nombres: d.nombres,
+      apellidos: d.apellidos,
+      email: `${d.dni}@unmsm.edu.pe`,
+      facultad: d.facultad_dependencia || '',
+      departamento: d.departamento_academico || '',
+      isExternal: false,
+      nivelRenacyt: d.categoria_renacyt || 'Sin nivel'
+    }));
+  }
 }
  
 // ─────────────────────────────────────────────────────────────────────────────
@@ -291,6 +303,29 @@ export async function validarGrupo(
   const coordinatorDni = director?.dni || null;
  
   const idGrupoNum = Number(id);
+
+  // Inserción automática de investigadores externos en el padrón local para evitar FK errors
+  for (const m of payload.miembros) {
+    if (m.isExternal) {
+      const { error: errUpsert } = await supabase
+        .from('investigador')
+        .upsert({
+          dni: m.dni,
+          nombres: m.nombres || m.nombre.split(' ').slice(1).join(' ') || 'Externo',
+          apellidos: m.apellidos || m.nombre.split(' ')[0] || 'RENACYT',
+          departamento_academico: m.departamento || 'Externo (RENACYT)',
+          facultad_dependencia: m.facultad || 'Ingeniería de Sistemas e Informática',
+          categoria_renacyt: m.nivelRenacyt || 'Sin nivel',
+          estado_vigencia: 'Activo',
+          investigador_sm: false,
+          tiene_deuda_gi: false,
+          tiene_deuda_pi: false,
+        }, { onConflict: 'dni' });
+      if (errUpsert) {
+        console.error(`Error auto-importing external researcher ${m.dni}:`, errUpsert);
+      }
+    }
+  }
  
   // 1. Actualizar el grupo principal
   const { data: g, error: errGrupo } = await supabase
@@ -390,6 +425,29 @@ export async function crearGrupo(
 ): Promise<GrupoInvestigacion> {
   const director = payload.miembros.find((m) => m.rol === 'Director' && m.estado === 'activo');
   const coordinatorDni = director?.dni || null;
+
+  // Inserción automática de investigadores externos en el padrón local para evitar FK errors
+  for (const m of payload.miembros) {
+    if (m.isExternal) {
+      const { error: errUpsert } = await supabase
+        .from('investigador')
+        .upsert({
+          dni: m.dni,
+          nombres: m.nombres || m.nombre.split(' ').slice(1).join(' ') || 'Externo',
+          apellidos: m.apellidos || m.nombre.split(' ')[0] || 'RENACYT',
+          departamento_academico: m.departamento || 'Externo (RENACYT)',
+          facultad_dependencia: m.facultad || 'Ingeniería de Sistemas e Informática',
+          categoria_renacyt: m.nivelRenacyt || 'Sin nivel',
+          estado_vigencia: 'Activo',
+          investigador_sm: false,
+          tiene_deuda_gi: false,
+          tiene_deuda_pi: false,
+        }, { onConflict: 'dni' });
+      if (errUpsert) {
+        console.error(`Error auto-importing external researcher ${m.dni}:`, errUpsert);
+      }
+    }
+  }
  
   const { data: g, error: errGrupo } = await supabase
     .from('grupo_investigacion')
@@ -434,4 +492,28 @@ export async function crearGrupo(
   const gCreado = await getGrupoById(String(g.id_grupo));
   if (!gCreado) throw new Error('Error al recuperar el grupo recién creado.');
   return gCreado;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integración con Cybertesis (GET /external, POST /theses)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function buscarTesisExternas(query: string): Promise<any[]> {
+  try {
+    const data = await apiClient.get<any[]>(`/theses/external?q=${encodeURIComponent(query)}`);
+    return data || [];
+  } catch (err) {
+    console.error("Error consultando tesis externas en backend:", err);
+    throw err;
+  }
+}
+
+export async function vincularTesis(tesisPayload: any): Promise<any> {
+  try {
+    const data = await apiClient.post<any>('/theses', tesisPayload);
+    return data;
+  } catch (err) {
+    console.error("Error al vincular tesis en backend:", err);
+    throw err;
+  }
 }

@@ -69,6 +69,19 @@ const CheckCircleIcon = () => (
   </svg>
 );
 
+const SpinnerIcon = () => (
+  <svg className="animate-spin h-4 w-4 text-[#001631]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+  </svg>
+);
+
+const ClearIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente Principal
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,10 +101,11 @@ export default function NuevoGrupoPage() {
   const [fuente,          setFuente]          = useState<FuenteOrigen>('Manual');
 
   // Form — Miembros
-  const [miembros,                 setMiembros]                 = useState<MiembroGrupo[]>([]);
-  const [busquedaInv,              setBusquedaInv]              = useState('');
-  const [resultadosBusqueda,       setResultadosBusqueda]       = useState<InvestigatorPadron[]>([]);
-  const [investigadorSeleccionado, setInvestigadorSeleccionado] = useState<InvestigatorPadron | null>(null);
+  const [miembros,           setMiembros]           = useState<MiembroGrupo[]>([]);
+  const [busquedaInv,        setBusquedaInv]        = useState('');
+  const [resultadosBusqueda, setResultadosBusqueda] = useState<InvestigatorPadron[]>([]);
+  const [buscando,           setBuscando]           = useState(false);
+  const [hasSearched,        setHasSearched]        = useState(false);
 
   // UI
   const [guardando,    setGuardando]    = useState(false);
@@ -108,30 +122,45 @@ export default function NuevoGrupoPage() {
 
   // Búsqueda debounce en el padrón
   useEffect(() => {
-    if (!busquedaInv.trim()) { setResultadosBusqueda([]); return; }
+    if (!busquedaInv.trim()) {
+      setResultadosBusqueda([]);
+      setBuscando(false);
+      setHasSearched(false);
+      return;
+    }
+    setBuscando(true);
+    setHasSearched(true);
     const t = setTimeout(async () => {
       try {
         const res = await buscarInvestigadores(busquedaInv);
         setResultadosBusqueda(res);
-      } catch (err) { console.error(err); }
-    }, 220);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setBuscando(false);
+      }
+    }, 350);
     return () => clearTimeout(t);
   }, [busquedaInv]);
 
-  const handleAddMiembro = () => {
-    if (!investigadorSeleccionado) return;
-    if (miembros.some((m) => m.dni === investigadorSeleccionado.dni)) {
+  const handleAddMiembro = (inv: InvestigatorPadron) => {
+    if (miembros.some((m) => m.dni === inv.dni)) {
       alert('Este investigador ya forma parte del grupo.');
       return;
     }
     setMiembros([...miembros, {
-      dni: investigadorSeleccionado.dni,
-      nombre: investigadorSeleccionado.nombre,
+      dni: inv.dni,
+      nombre: inv.nombre,
+      nombres: inv.nombres,
+      apellidos: inv.apellidos,
       rol: miembros.length === 0 ? 'Director' : 'Colaborador', // Default to Director if first member
       fechaIncorporacion: new Date().toISOString().split('T')[0],
       estado: 'activo',
+      isExternal: inv.isExternal,
+      nivelRenacyt: inv.nivelRenacyt,
+      departamento: inv.departamento,
+      facultad: inv.facultad,
     }]);
-    setInvestigadorSeleccionado(null);
     setBusquedaInv('');
     setResultadosBusqueda([]);
   };
@@ -456,42 +485,72 @@ export default function NuevoGrupoPage() {
                       placeholder="DNI o Nombre de investigador..."
                       value={busquedaInv}
                       onChange={(e) => setBusquedaInv(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
+                      className="w-full pl-8 pr-16 py-2 font-sans text-[13px] text-on-surface bg-surface-container-lowest border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa]"
                     />
                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#94a3b8]">
                       <SearchIcon />
                     </span>
 
+                    {/* Spinner e Ícono de Limpiar */}
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                      {buscando && <SpinnerIcon />}
+                      {busquedaInv && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBusquedaInv('');
+                            setResultadosBusqueda([]);
+                          }}
+                          className="text-[#94a3b8] hover:text-on-surface p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                          aria-label="Limpiar búsqueda"
+                        >
+                          <ClearIcon />
+                        </button>
+                      )}
+                    </div>
+
                     {/* Dropdown autocompletado */}
-                    {resultadosBusqueda.length > 0 && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#e2e8f0] rounded shadow-lg max-h-52 overflow-y-auto z-50 divide-y divide-[#f1f5f9]">
-                        {resultadosBusqueda.map((inv) => (
-                          <button
-                            key={inv.dni}
-                            type="button"
-                            onClick={() => {
-                              setInvestigadorSeleccionado(inv);
-                              setBusquedaInv(`${inv.nombre} (${inv.dni})`);
-                              setResultadosBusqueda([]);
-                            }}
-                            className="w-full text-left px-4 py-2.5 hover:bg-slate-50 font-sans cursor-pointer"
-                          >
-                            <div className="text-[12px] font-bold text-[#0f172a]">{inv.nombre}</div>
-                            <div className="text-[10px] text-[#64748b]">DNI: {inv.dni} · {inv.departamento}</div>
-                          </button>
-                        ))}
+                    {(resultadosBusqueda.length > 0 || (hasSearched && !buscando && resultadosBusqueda.length === 0)) && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#e2e8f0] rounded shadow-lg max-h-60 overflow-y-auto z-50 divide-y divide-[#f1f5f9] backdrop-blur-sm bg-white/95">
+                        {resultadosBusqueda.length > 0 ? (
+                          resultadosBusqueda.map((inv) => (
+                            <button
+                              key={inv.dni}
+                              type="button"
+                              onClick={() => handleAddMiembro(inv)}
+                              className="w-full text-left px-4 py-3 hover:bg-[#f8fafc] font-sans cursor-pointer transition-all duration-150 flex items-center justify-between group"
+                            >
+                              <div className="flex flex-col gap-0.5">
+                                <div className="text-[12px] font-bold text-[#0f172a] group-hover:text-[#001631] transition-colors">{inv.nombre}</div>
+                                <div className="text-[10px] text-[#64748b] flex items-center gap-1.5 flex-wrap">
+                                  <span>DNI: {inv.dni}</span>
+                                  {inv.departamento && <span>• {inv.departamento}</span>}
+                                  {inv.isExternal && inv.nivelRenacyt && (
+                                    <span className="bg-[#fef3c7] text-[#92400e] px-1 rounded text-[9px] font-semibold">{inv.nivelRenacyt}</span>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider whitespace-nowrap transition-all duration-150 ${
+                                inv.isExternal
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200 group-hover:bg-purple-100'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 group-hover:bg-emerald-100'
+                              }`}>
+                                {inv.isExternal ? 'RENACYT' : 'UNMSM'}
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-4 py-6 text-center text-[#64748b] font-sans text-[12px] flex flex-col items-center gap-1">
+                            <span className="text-[#cbd5e1] flex justify-center">
+                              <WarningIcon />
+                            </span>
+                            <span>No se encontraron investigadores locales ni en RENACYT con ese término.</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={handleAddMiembro}
-                    disabled={!investigadorSeleccionado}
-                    className="bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded transition-colors cursor-pointer disabled:opacity-40 whitespace-nowrap"
-                  >
-                    Añadir
-                  </button>
 
                   {/* Regla de negocio inline a la derecha del botón */}
                   <div className="flex items-center gap-1.5 text-[13px] font-sans text-on-surface-variant ml-2">

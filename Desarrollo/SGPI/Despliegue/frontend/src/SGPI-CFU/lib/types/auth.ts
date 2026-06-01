@@ -24,11 +24,8 @@ export type UserRole = 'admin' | 'secretary' | 'chief' | 'readonly';
 export const ROLE_MAP: Record<string, UserRole> = {
   Administrador: 'admin',
   Secretaria:    'secretary',
-  Secretaria_UI: 'secretary',
   Jefe:          'chief',
-  'Jefe Instituto': 'chief',
   Consulta:      'readonly',
-  Investigador:  'readonly',
 } as const;
 
 /**
@@ -122,7 +119,6 @@ export interface AuthUser {
 export interface LoginCredentials {
   email:    string;
   password: string;
-  rememberDevice?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -206,8 +202,8 @@ export interface LoginResult {
  * Constantes de configuración de la sesión (en milisegundos).
  */
 export const SESSION_CONFIG = {
-  /** Tiempo de inactividad para expirar la sesión: 60 minutos */
-  INACTIVITY_TIMEOUT_MS:  60 * 60 * 1000,
+  /** Tiempo de inactividad para expirar la sesión: 30 minutos */
+  INACTIVITY_TIMEOUT_MS:  30 * 60 * 1000,
   /** Tiempo antes de expirar para mostrar la advertencia: 5 minutos */
   WARNING_BEFORE_MS:       5 * 60 * 1000,
   /** Tiempo de bloqueo tras 3 intentos fallidos: 15 minutos */

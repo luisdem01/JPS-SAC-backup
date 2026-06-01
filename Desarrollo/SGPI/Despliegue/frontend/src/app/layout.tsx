@@ -19,8 +19,6 @@ const jetBrainsMono = JetBrains_Mono({
   variable: '--font-mono',
 });
 
-import { AuthProvider } from '../SGPI-CFU/lib/hooks/useAuth';
-
 export default function RootLayout({
   children,
 }: {
@@ -29,9 +27,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${inter.variable} ${ibmPlexSans.variable} ${jetBrainsMono.variable} font-sans`}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        {children}
       </body>
     </html>
   )

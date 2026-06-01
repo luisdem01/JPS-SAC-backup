@@ -4,7 +4,7 @@
  * Maneja autenticación JWT, timeouts diferenciados, errores estandarizados
  * y redireccionamiento automático en casos de 401/403.
  *
- * - Timeout normal: 15 segundos
+ * - Timeout normal: 5 segundos
  * - Timeout para operaciones pesadas (importaciones, sync): 10 minutos
  * - Nunca expone stack traces al usuario (RNF013)
  */
@@ -16,7 +16,6 @@ import type {
   RequestConfig,
 } from '../types/api';
 import { getAccessToken, clearAllSessionData } from '../auth/storage';
-import { clientCache } from './clientCache';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración base
@@ -29,7 +28,7 @@ const BASE_URL = (process.env['NEXT_PUBLIC_API_URL'] as string | undefined) ?? '
 const API_PREFIX = '/api/v1';
 
 /** Timeout por defecto en milisegundos para operaciones normales */
-const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_TIMEOUT_MS = 5_000;
 
 /** Timeout para operaciones pesadas (importación, sync, reportes) */
 export const HEAVY_TIMEOUT_MS = 10 * 60 * 1_000; // 10 minutos
@@ -88,52 +87,6 @@ export function configureApiCallbacks(callbacks: ApiClientCallbacks): void {
   globalCallbacks = callbacks;
 }
 
-/**
- * Formatea el detalle de error del backend (FastAPI o Express)
- * convirtiendo listas de errores de validación a un formato legible en español.
- */
-function formatErrorDetail(errorMsg: any): string {
-  if (Array.isArray(errorMsg)) {
-    return errorMsg.map((err: any) => {
-      const field = err.loc && err.loc.length > 0 ? err.loc[err.loc.length - 1] : '';
-      let msg = err.msg || 'valor inválido';
-
-      if (msg === 'field required') {
-        msg = 'es obligatorio';
-      } else if (msg.includes('value is not a valid')) {
-        msg = 'tiene un formato incorrecto';
-      }
-
-      const translations: Record<string, string> = {
-        code: 'El código único del grupo',
-        name: 'El nombre oficial del grupo',
-        acronym: 'Las siglas del grupo',
-        status: 'El estado del grupo',
-        researchLines: 'La línea de investigación',
-        recognitionDate: 'La fecha de reconocimiento',
-        miembros: 'Los miembros del grupo',
-        dni: 'El DNI',
-        rol: 'El rol',
-        tipo_reporte: 'El tipo de reporte',
-        anio_corte: 'El año de corte',
-        periodo_corte: 'El periodo de corte',
-      };
-
-      if (field) {
-        const fieldName = translations[field] || `El campo "${field}"`;
-        return `${fieldName} ${msg}`;
-      }
-      return msg;
-    }).join('. ');
-  }
-
-  if (errorMsg && typeof errorMsg === 'object') {
-    return JSON.stringify(errorMsg);
-  }
-
-  return typeof errorMsg === 'string' ? errorMsg : 'Ocurrió un error inesperado.';
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Cliente HTTP
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,11 +113,7 @@ async function request<T>(
 
   // AbortController para implementar timeout
   const controller = new AbortController();
-  let isTimeout = false;
-  const timeoutId  = setTimeout(() => {
-    isTimeout = true;
-    controller.abort();
-  }, timeout);
+  const timeoutId  = setTimeout(() => controller.abort(), timeout);
 
   // Headers base con autenticación JWT
   const token   = getAccessToken();
@@ -214,19 +163,7 @@ async function request<T>(
       // 401 → Token inválido o expirado → limpiar sesión y redirigir
       if (response.status === 401) {
         clearAllSessionData();
-        if (globalCallbacks.onUnauthorized) {
-          // El hook useAuth ya está montado: delegar la redirección al router de Next.js
-          globalCallbacks.onUnauthorized();
-        } else {
-          // El hook aún no se montó (p.ej. sesión expirada antes de hidratar):
-          // redirigir directamente con hard navigation para garantizar que se llega al login
-          if (typeof window !== 'undefined') {
-            window.location.href = '/auth/login?reason=sesion_expirada';
-          }
-        }
-        // Devolver una promesa que nunca se resuelve para evitar que
-        // la aplicación React lance un Unhandled Runtime Error mientras el router redirige.
-        return new Promise(() => {}) as Promise<T>;
+        globalCallbacks.onUnauthorized?.();
       }
 
       // 403 → Sin permisos para la acción
@@ -237,7 +174,7 @@ async function request<T>(
       throw new ApiClientError(
         {
           success:   false,
-          error:     formatErrorDetail(errorMsg),
+          error:     typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg),
           code:      errorCode,
           timestamp: json?.timestamp || new Date().toISOString(),
         },
@@ -263,22 +200,17 @@ async function request<T>(
     // Re-lanzar ApiClientError directamente (ya está formateado)
     if (error instanceof ApiClientError) throw error;
 
-    // Timeout o Abort
+    // Timeout (AbortError)
     if (error instanceof DOMException && error.name === 'AbortError') {
-      if (isTimeout) {
-        throw new ApiClientError(
-          {
-            success:   false,
-            error:     'La operación tardó demasiado. Verifique su conexión e intente nuevamente.',
-            code:      'REQUEST_TIMEOUT',
-            timestamp: new Date().toISOString(),
-          },
-          408
-        );
-      } else {
-        // Aborto manual (ej. al escribir rápido en la búsqueda)
-        throw error;
-      }
+      throw new ApiClientError(
+        {
+          success:   false,
+          error:     'La operación tardó demasiado. Verifique su conexión e intente nuevamente.',
+          code:      'REQUEST_TIMEOUT',
+          timestamp: new Date().toISOString(),
+        },
+        408
+      );
     }
 
     // Error de red (sin conexión, CORS, etc.)
@@ -302,93 +234,63 @@ async function request<T>(
  * Cliente API del SGPI con métodos tipados para cada verbo HTTP.
  * Todos los métodos devuelven el dato directamente (no la envoltura ApiResponse).
  */
-/**
- * Invalida de forma inteligente la caché del cliente para la entidad afectada
- * basándose en el prefijo del path (ej. al escribir a /groups/*, invalida /groups).
- */
-function invalidateRelatedCache(path: string) {
-  const parts = path.split('/');
-  if (parts.length > 1) {
-    const prefix = `/${parts[1]}`;
-    clientCache.invalidatePrefix(prefix);
-  }
-}
-
 export const apiClient = {
   /**
-   * Petición GET. Usa caché en memoria del cliente a menos que se indique skipCache.
+   * Petición GET.
    *
    * @template T - Tipo del dato esperado
    * @param path   - Ruta relativa del endpoint
    * @param config - Configuración opcional
    */
-  async get<T>(path: string, config?: RequestConfig): Promise<T> {
-    if (!config?.skipCache) {
-      const cached = clientCache.get(path, config?.ttl);
-      if (cached !== null) {
-        return cached as T;
-      }
-    }
-    const res = await request<T>('GET', path, undefined, config);
-    if (!config?.skipCache) {
-      clientCache.set(path, res);
-    }
-    return res;
+  get<T>(path: string, config?: RequestConfig): Promise<T> {
+    return request<T>('GET', path, undefined, config);
   },
 
   /**
-   * Petición POST. Al realizar una escritura, invalida la caché de la entidad relacionada.
+   * Petición POST.
    *
    * @template T - Tipo del dato esperado en la respuesta
    * @param path   - Ruta relativa del endpoint
    * @param body   - Cuerpo de la petición
    * @param config - Configuración opcional
    */
-  async post<T>(path: string, body?: unknown, config?: RequestConfig): Promise<T> {
-    const res = await request<T>('POST', path, body, config);
-    invalidateRelatedCache(path);
-    return res;
+  post<T>(path: string, body?: unknown, config?: RequestConfig): Promise<T> {
+    return request<T>('POST', path, body, config);
   },
 
   /**
-   * Petición PUT. Al realizar una escritura, invalida la caché de la entidad relacionada.
+   * Petición PUT.
    *
    * @template T - Tipo del dato esperado en la respuesta
    * @param path   - Ruta relativa del endpoint
    * @param body   - Cuerpo de la petición
    * @param config - Configuración opcional
    */
-  async put<T>(path: string, body?: unknown, config?: RequestConfig): Promise<T> {
-    const res = await request<T>('PUT', path, body, config);
-    invalidateRelatedCache(path);
-    return res;
+  put<T>(path: string, body?: unknown, config?: RequestConfig): Promise<T> {
+    return request<T>('PUT', path, body, config);
   },
 
   /**
-   * Petición PATCH. Al realizar una escritura, invalida la caché de la entidad relacionada.
+   * Petición PATCH.
    *
    * @template T - Tipo del dato esperado en la respuesta
    * @param path   - Ruta relativa del endpoint
    * @param body   - Cuerpo de la petición
    * @param config - Configuración opcional
    */
-  async patch<T>(path: string, body?: unknown, config?: RequestConfig): Promise<T> {
-    const res = await request<T>('PATCH', path, body, config);
-    invalidateRelatedCache(path);
-    return res;
+  patch<T>(path: string, body?: unknown, config?: RequestConfig): Promise<T> {
+    return request<T>('PATCH', path, body, config);
   },
 
   /**
-   * Petición DELETE. Al realizar una escritura, invalida la caché de la entidad relacionada.
+   * Petición DELETE.
    *
    * @template T - Tipo del dato esperado en la respuesta
    * @param path   - Ruta relativa del endpoint
    * @param config - Configuración opcional
    */
-  async delete<T>(path: string, config?: RequestConfig): Promise<T> {
-    const res = await request<T>('DELETE', path, undefined, config);
-    invalidateRelatedCache(path);
-    return res;
+  delete<T>(path: string, config?: RequestConfig): Promise<T> {
+    return request<T>('DELETE', path, undefined, config);
   },
 
   /**
@@ -409,11 +311,7 @@ export const apiClient = {
     const timeout = config?.timeout ?? HEAVY_TIMEOUT_MS;
 
     const controller = new AbortController();
-    let isTimeout = false;
-    const timeoutId  = setTimeout(() => {
-      isTimeout = true;
-      controller.abort();
-    }, timeout);
+    const timeoutId  = setTimeout(() => controller.abort(), timeout);
 
     const token   = getAccessToken();
     const headers: Record<string, string> = {};
@@ -451,16 +349,7 @@ export const apiClient = {
 
         if (response.status === 401) {
           clearAllSessionData();
-          if (globalCallbacks.onUnauthorized) {
-            globalCallbacks.onUnauthorized();
-          } else {
-            if (typeof window !== 'undefined') {
-              window.location.href = '/auth/login?reason=sesion_expirada';
-            }
-          }
-          // Devolver una promesa que nunca se resuelve para evitar que
-          // la aplicación React lance un Unhandled Runtime Error mientras el router redirige.
-          return new Promise(() => {}) as Promise<T>;
+          globalCallbacks.onUnauthorized?.();
         }
         if (response.status === 403) {
           globalCallbacks.onForbidden?.();
@@ -469,7 +358,7 @@ export const apiClient = {
         throw new ApiClientError(
           {
             success:   false,
-            error:     formatErrorDetail(errorMsg),
+            error:     typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg),
             code:      errorCode,
             timestamp: json?.timestamp || new Date().toISOString(),
           },
@@ -483,34 +372,26 @@ export const apiClient = {
         if (!json.success) {
           throw new ApiClientError(json as ApiError, response.status);
         }
-        const res = json.data;
-        invalidateRelatedCache(path);
-        return res;
+        return json.data;
       }
 
       // Caso B: Formato nuevo/FastAPI direct payload
-      const res = json as T;
-      invalidateRelatedCache(path);
-      return res;
+      return json as T;
 
     } catch (error) {
       clearTimeout(timeoutId);
       if (error instanceof ApiClientError) throw error;
 
       if (error instanceof DOMException && error.name === 'AbortError') {
-        if (isTimeout) {
-          throw new ApiClientError(
-            {
-              success:   false,
-              error:     'La subida del archivo tardó demasiado. Intente nuevamente.',
-              code:      'REQUEST_TIMEOUT',
-              timestamp: new Date().toISOString(),
-            },
-            408
-          );
-        } else {
-          throw error;
-        }
+        throw new ApiClientError(
+          {
+            success:   false,
+            error:     'La subida del archivo tardó demasiado. Intente nuevamente.',
+            code:      'REQUEST_TIMEOUT',
+            timestamp: new Date().toISOString(),
+          },
+          408
+        );
       }
 
       throw new ApiClientError(

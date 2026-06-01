@@ -19,8 +19,8 @@ export const API_BASE_URL =
 /** Prefijo de versión de la API */
 export const API_PREFIX = '/api/v1';
 
-/** Timeout por defecto para peticiones normales (15 segundos) */
-export const DEFAULT_TIMEOUT_MS = 15_000;
+/** Timeout por defecto para peticiones normales (5 segundos) */
+export const DEFAULT_TIMEOUT_MS = 5_000;
 
 /** Timeout para operaciones pesadas: importaciones, sync, reportes (10 minutos) */
 export const HEAVY_OPERATION_TIMEOUT_MS = 10 * 60 * 1_000;
@@ -120,33 +120,33 @@ export const STORAGE_KEY_LOCK_UNTIL     = `${STORAGE_PREFIX}lock_until`;
 /** Rutas principales de la aplicación */
 export const ROUTES = {
   /** Página de inicio de sesión */
-  LOGIN:          '/auth/login',
+  LOGIN:          '/login',
   /** Dashboard principal */
   DASHBOARD:      '/dashboard',
   /** Módulo de investigadores */
-  INVESTIGATORS:  '/investigadores',
+  INVESTIGATORS:  '/investigators',
   /** Detalle de un investigador */
-  INVESTIGATOR:   (id: string) => `/investigadores/${id}`,
+  INVESTIGATOR:   (id: string) => `/investigators/${id}`,
   /** Módulo de proyectos */
-  PROJECTS:       '/proyectos',
+  PROJECTS:       '/projects',
   /** Detalle de un proyecto */
-  PROJECT:        (id: string) => `/proyectos/${id}`,
+  PROJECT:        (id: string) => `/projects/${id}`,
   /** Módulo de publicaciones */
-  PUBLICATIONS:   '/publicaciones',
+  PUBLICATIONS:   '/publications',
   /** Módulo de convocatorias */
-  CALLS:          '/convocatorias',
+  CALLS:          '/calls',
   /** Módulo de importación */
-  IMPORT:         '/importacion',
+  IMPORT:         '/import',
   /** Módulo de sincronización ETL */
-  SYNC:           '/sincronizacion',
+  SYNC:           '/sync',
   /** Módulo de reportes */
-  REPORTS:        '/reportes',
+  REPORTS:        '/reports',
   /** Panel de administración de usuarios */
   USERS:          '/admin/users',
   /** Panel de logs de auditoría */
   LOGS:           '/admin/logs',
   /** Búsqueda global */
-  SEARCH:         '/busqueda',
+  SEARCH:         '/search',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
