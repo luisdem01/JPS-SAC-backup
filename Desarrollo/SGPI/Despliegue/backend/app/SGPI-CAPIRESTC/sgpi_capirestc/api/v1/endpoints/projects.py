@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, delete
+from sqlalchemy import select, func, or_, and_, delete
 from typing import List, Optional
 from pydantic import BaseModel
 import math
@@ -16,8 +16,6 @@ from sgpi_capirestc.crud.crud_proyecto import proyecto
 from sgpi_capirestc.schemas.domain_schemas import ProyectoCreate, ProyectoUpdate, ProyectoResponse, EntregableCreate, EntregableUpdate, EntregableResponse, InvestigadorProyectoCreate, InvestigadorProyectoResponse, ProyectoEstadoUpdate
 from app.core.security import get_current_user, require_admin
 from app.core.audit import log_audit_event
-
-from app.db.errors import handle_db_integrity_error
 
 # Inyección dinámica para importar conectores
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -84,8 +82,8 @@ async def list_proyectos(
     if buscar and buscar.strip():
         term = f"%{buscar.strip()}%"
         filters.append(or_(
-            func.unaccent(Proyecto.codigo_proyecto).ilike(func.unaccent(term)),
-            func.unaccent(Proyecto.titulo_proyecto).ilike(func.unaccent(term))
+            Proyecto.codigo_proyecto.ilike(term),
+            Proyecto.titulo_proyecto.ilike(term)
         ))
     if estado:
         filters.append(Proyecto.estado_proyecto == estado)
@@ -206,40 +204,6 @@ async def list_proyectos(
         "pages": pages
     }
 
-@router.get("/stats")
-async def get_projects_stats(
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    from app.models.domain import Proyecto
-    stmt = select(
-        Proyecto.estado_proyecto,
-        func.count(Proyecto.codigo_proyecto)
-    ).group_by(Proyecto.estado_proyecto)
-    res = await db.execute(stmt)
-    rows = res.all()
-    
-    total = 0
-    en_ejecucion = 0
-    concluidos = 0
-    aprobados = 0
-    
-    for estado, count in rows:
-        total += count
-        if estado == "En ejecución":
-            en_ejecucion = count
-        elif estado == "Concluido":
-            concluidos = count
-        elif estado == "Aprobado":
-            aprobados = count
-            
-    return {
-        "totalProyectos": total,
-        "pendientesValidar": aprobados,
-        "enEjecucion": en_ejecucion,
-        "concluidos": concluidos
-    }
-
 @router.get("/{codigo}", response_model=ProyectoResponse)
 async def get_proyecto(codigo: str, db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     logger.info(f"[SGPI-CFPI] Fetching project detail: codigo={codigo!r}")
@@ -297,34 +261,15 @@ async def get_proyecto(codigo: str, db: AsyncSession = Depends(get_db), current_
     return p
 
 @router.post("/", response_model=ProyectoResponse)
-async def create_proyecto(
-    obj_in: ProyectoCreate,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
+async def create_proyecto(obj_in: ProyectoCreate, db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     logger.info(f"[SGPI-CFPI] Creating project: codigo={obj_in.codigo_proyecto!r}, user={current_user.get('sub')!r}")
     p = await proyecto.get_by_codigo(db, codigo=obj_in.codigo_proyecto)
     if p:
         logger.warning(f"[SGPI-CFPI] Duplicate project code rejected: {obj_in.codigo_proyecto!r}")
         raise HTTPException(status_code=400, detail="Proyecto with this code already exists")
 
-    # Validar duplicado de resolución
-    if obj_in.resolucion_aprobacion and obj_in.resolucion_aprobacion.strip():
-        result_res = await db.execute(
-            select(Proyecto).where(Proyecto.resolucion_aprobacion == obj_in.resolucion_aprobacion)
-        )
-        existing_res = result_res.scalars().first()
-        if existing_res:
-            logger.warning(f"[SGPI-CFPI] Duplicate resolution rejected: {obj_in.resolucion_aprobacion!r}")
-            raise HTTPException(
-                status_code=400,
-                detail="Ya existe un proyecto registrado con este número de resolución."
-            )
-
     # Resolver codigo_grupo → id_grupo si se recibe codigo_grupo
     project_data = obj_in.model_dump()
-    investigadores_data = project_data.pop("investigadores", None)
     codigo_grupo = project_data.pop("codigo_grupo", None)
     if codigo_grupo:
         from app.models.domain import GrupoInvestigacion
@@ -337,73 +282,55 @@ async def create_proyecto(
         else:
             logger.warning(f"[SGPI-CFPI] Group not found for codigo_grupo={codigo_grupo!r}, inserting without group")
 
-    try:
-        db_proyecto = Proyecto(**project_data)
-        db.add(db_proyecto)
-        await db.flush()  # Obtener el objeto sin commit para poder crear entregables
+    db_proyecto = Proyecto(**project_data)
+    db.add(db_proyecto)
+    await db.flush()  # Obtener el objeto sin commit para poder crear entregables
 
-        # Crear entregables iniciales por defecto
-        estado_proyecto = project_data.get("estado_proyecto", "Aprobado")
-        fecha_inicio = project_data.get("fecha_inicio")
-        if fecha_inicio:
-            import calendar
-            def add_months(d, months):
-                month = d.month - 1 + months
-                year = d.year + month // 12
-                month = month % 12 + 1
-                day = min(d.day, calendar.monthrange(year, month)[1])
-                return d.replace(year=year, month=month, day=day)
+    # Crear entregables iniciales por defecto
+    estado_proyecto = project_data.get("estado_proyecto", "Aprobado")
+    fecha_inicio = project_data.get("fecha_inicio")
+    if fecha_inicio:
+        from datetime import timedelta, date as date_type
+        import calendar
+        def add_months(d, months):
+            month = d.month - 1 + months
+            year = d.year + month // 12
+            month = month % 12 + 1
+            day = min(d.day, calendar.monthrange(year, month)[1])
+            return d.replace(year=year, month=month, day=day)
 
-            h1_vence = add_months(fecha_inicio, 12)
-            h2_vence = add_months(fecha_inicio, 36)
-            estado_h1 = "Pendiente" if estado_proyecto == "En ejecución" else "Bloqueado"
+        h1_vence = add_months(fecha_inicio, 12)
+        h2_vence = add_months(fecha_inicio, 36)
+        estado_h1 = "Pendiente" if estado_proyecto == "En ejecución" else "Bloqueado"
 
-            db.add(Entregable(
-                codigo_proyecto=obj_in.codigo_proyecto,
-                tipo_entregable="Informe Académico (12 Meses)",
-                fecha_limite_programada=h1_vence,
-                estado_entregable=estado_h1,
-            ))
-            db.add(Entregable(
-                codigo_proyecto=obj_in.codigo_proyecto,
-                tipo_entregable="Productos Entregables (36 Meses)",
-                fecha_limite_programada=h2_vence,
-                estado_entregable="Bloqueado",
-            ))
-
-        # Registrar historial de estado inicial
-        db.add(ProyectoEstadoHistorial(
+        db.add(Entregable(
             codigo_proyecto=obj_in.codigo_proyecto,
-            estado_anterior=None,
-            estado_nuevo=estado_proyecto,
-            justificacion="Proyecto creado manualmente en el sistema.",
-            id_usuario_responsable=current_user.get("sub"),
+            tipo_entregable="Informe Académico (12 Meses)",
+            fecha_limite_programada=h1_vence,
+            estado_entregable=estado_h1,
+        ))
+        db.add(Entregable(
+            codigo_proyecto=obj_in.codigo_proyecto,
+            tipo_entregable="Productos Entregables (36 Meses)",
+            fecha_limite_programada=h2_vence,
+            estado_entregable="Bloqueado",
         ))
 
-        # Insertar investigadores asociados
-        if investigadores_data:
-            for inv_data in investigadores_data:
-                db_inv = InvestigadorProyecto(
-                    codigo_proyecto=obj_in.codigo_proyecto,
-                    dni_investigador=inv_data["dni_investigador"],
-                    condicion_rol=inv_data["condicion_rol"],
-                    tipo_vinculo=inv_data.get("tipo_vinculo", "Docente"),
-                    facultad_integrante=inv_data.get("facultad_integrante", "Ingeniería de Sistemas e Informática"),
-                    condicion_gi=inv_data.get("condicion_gi", None)
-                )
-                db.add(db_inv)
+    # Registrar historial de estado inicial
+    db.add(ProyectoEstadoHistorial(
+        codigo_proyecto=obj_in.codigo_proyecto,
+        estado_anterior=None,
+        estado_nuevo=estado_proyecto,
+        justificacion="Proyecto creado manualmente en el sistema.",
+        id_usuario_responsable=current_user.get("sub"),
+    ))
 
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        handle_db_integrity_error(e)
-
+    await db.commit()
     await db.refresh(db_proyecto)
     logger.info(f"[SGPI-CFPI] Project created successfully: {db_proyecto.codigo_proyecto!r}")
 
-    background_tasks.add_task(
-        log_audit_event,
-        db=None,
+    await log_audit_event(
+        db=db,
         tipo_evento="INSERT",
         entidad_afectada="proyecto",
         pk_entidad=db_proyecto.codigo_proyecto,
@@ -414,13 +341,7 @@ async def create_proyecto(
 
 
 @router.put("/{codigo}", response_model=ProyectoResponse)
-async def update_proyecto(
-    codigo: str,
-    obj_in: ProyectoUpdate,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
+async def update_proyecto(codigo: str, obj_in: ProyectoUpdate, db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     logger.info(f"[SGPI-CFPI] Updating project: codigo={codigo!r}, fields={list(obj_in.model_dump(exclude_unset=True).keys())}, user={current_user.get('sub')!r}")
     p = await proyecto.get_by_codigo(db, codigo=codigo)
     if not p:
@@ -428,23 +349,6 @@ async def update_proyecto(
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
 
     update_data = obj_in.model_dump(exclude_unset=True)
-    investigadores = update_data.pop("investigadores", None)
-    
-    # Validar duplicado de resolución
-    if "resolucion_aprobacion" in update_data and update_data["resolucion_aprobacion"] and update_data["resolucion_aprobacion"].strip():
-        result_res = await db.execute(
-            select(Proyecto).where(
-                Proyecto.resolucion_aprobacion == update_data["resolucion_aprobacion"],
-                Proyecto.codigo_proyecto != codigo
-            )
-        )
-        existing_res = result_res.scalars().first()
-        if existing_res:
-            logger.warning(f"[SGPI-CFPI] Duplicate resolution rejected during update: {update_data['resolucion_aprobacion']!r}")
-            raise HTTPException(
-                status_code=400,
-                detail="Ya existe un proyecto registrado con este número de resolución."
-            )
     
     # 1. Resolver codigo_grupo → id_grupo si se recibe
     codigo_grupo = update_data.pop("codigo_grupo", None)
@@ -499,45 +403,19 @@ async def update_proyecto(
                 db.add(d)
 
     valor_anterior = {k: getattr(p, k) for k in update_data.keys() if hasattr(p, k)}
-    
-    try:
-        for field, value in update_data.items():
-            setattr(p, field, value)
-        db.add(p)
-        await db.flush()
+    updated_p = await proyecto.update(db, db_obj=p, obj_in=update_data)
+    logger.info(f"[SGPI-CFPI] Project updated successfully: {codigo!r}")
 
-        if investigadores is not None:
-            await db.execute(delete(InvestigadorProyecto).where(InvestigadorProyecto.codigo_proyecto == codigo))
-            for inv_data in investigadores:
-                db_inv = InvestigadorProyecto(
-                    codigo_proyecto=codigo,
-                    dni_investigador=inv_data["dni_investigador"],
-                    condicion_rol=inv_data["condicion_rol"],
-                    tipo_vinculo=inv_data.get("tipo_vinculo", "Docente"),
-                    facultad_integrante=inv_data.get("facultad_integrante", "Ingeniería de Sistemas e Informática"),
-                    condicion_gi=inv_data.get("condicion_gi", None)
-                )
-                db.add(db_inv)
-
-        await db.commit()
-        await db.refresh(p)
-        logger.info(f"[SGPI-CFPI] Project updated successfully: {codigo!r}")
-
-        background_tasks.add_task(
-            log_audit_event,
-            db=None,
-            tipo_evento="UPDATE",
-            entidad_afectada="proyecto",
-            pk_entidad=codigo,
-            valor_anterior=valor_anterior,
-            valor_nuevo=update_data,
-            id_usuario=current_user.get("sub"),
-        )
-        return p
-
-    except Exception as e:
-        await db.rollback()
-        handle_db_integrity_error(e)
+    await log_audit_event(
+        db=db,
+        tipo_evento="UPDATE",
+        entidad_afectada="proyecto",
+        pk_entidad=codigo,
+        valor_anterior=valor_anterior,
+        valor_nuevo=update_data,
+        id_usuario=current_user.get("sub"),
+    )
+    return updated_p
 
 @router.post("/{codigo}/deliverables", response_model=EntregableResponse)
 async def create_deliverable(codigo: str, obj_in: EntregableCreate, db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):

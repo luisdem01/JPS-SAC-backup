@@ -16,9 +16,10 @@
  */
 
 import type {
-  RegistroProduccion, FiltrosProduccion, ConfirmarPayload, InvestigadorResumen,
+  RegistroProduccion, FiltrosProduccion, ConfirmarPayload, InvestigadorResumen, GrupoInvestigacionResumen
 } from './types';
 import { MOCK_PRODUCCIONES, MOCK_INVESTIGADORES } from './mock';
+import { apiClient } from '@/SGPI-CFU/lib';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers de formato
@@ -34,43 +35,13 @@ export function formatFecha(iso: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getProducciones(filtros: FiltrosProduccion): Promise<RegistroProduccion[]> {
-  /* ── REAL API ──────────────────────────────────────────────────────────────
   const params = new URLSearchParams({
-    q:          filtros.buscar,
+    buscar:     filtros.buscar,
     tipo:       filtros.tipo,
     estado:     filtros.estado,
     indexacion: filtros.indexacion,
   });
-  const res = await fetch(`/api/v1/publicaciones?${params}`);
-  if (!res.ok) throw new Error('Error al cargar producciones.');
-  return res.json() as Promise<RegistroProduccion[]>;
-  ──────────────────────────────────────────────────────────────────────── */
-
-  // MOCK
-  await new Promise((r) => setTimeout(r, 300));
-
-  let list = [...MOCK_PRODUCCIONES];
-
-  if (filtros.tipo !== 'todos')
-    list = list.filter((p) => p.tipo === filtros.tipo);
-
-  if (filtros.estado !== 'todos')
-    list = list.filter((p) => p.estado === filtros.estado);
-
-  if (filtros.indexacion !== 'todas')
-    list = list.filter((p) => p.fuente === filtros.indexacion);
-
-  if (filtros.buscar.trim()) {
-    const q = filtros.buscar.toLowerCase();
-    list = list.filter(
-      (p) =>
-        p.titulo.toLowerCase().includes(q) ||
-        p.autores.toLowerCase().includes(q) ||
-        (p.doi?.toLowerCase().includes(q) ?? false)
-    );
-  }
-
-  return list;
+  return apiClient.get<RegistroProduccion[]>(`/cfpt/producciones?${params}`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,14 +49,7 @@ export async function getProducciones(filtros: FiltrosProduccion): Promise<Regis
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getProduccionById(id: string): Promise<RegistroProduccion | null> {
-  /* ── REAL API ──────────────────────────────────────────────────────────────
-  const res = await fetch(`/api/v1/publicaciones/${id}`);
-  if (!res.ok) return null;
-  return res.json();
-  ──────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 200));
-  return MOCK_PRODUCCIONES.find((p) => p.id === id) ?? null;
+  return apiClient.get<RegistroProduccion>(`/cfpt/producciones/${id}`).catch(() => null);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -93,42 +57,7 @@ export async function getProduccionById(id: string): Promise<RegistroProduccion 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function confirmarProduccion(payload: ConfirmarPayload): Promise<RegistroProduccion> {
-  /* ── REAL API ──────────────────────────────────────────────────────────────
-  const res = await fetch(`/api/v1/publicaciones/${payload.id}/confirmar`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Error al confirmar la producción.');
-  return res.json();
-  ──────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 700));
-
-  const idx = MOCK_PRODUCCIONES.findIndex((p) => p.id === payload.id);
-  if (idx === -1) throw new Error('Registro no encontrado.');
-
-  // Reconstruir investigadoresVinculados desde los IDs
-  const vinculados = payload.investigadoresVinculados.map(({ investigadorId, rol }) => {
-    const inv = MOCK_INVESTIGADORES.find((i) => i.id === investigadorId);
-    if (!inv) throw new Error(`Investigador ${investigadorId} no encontrado.`);
-    return { investigador: inv, rol };
-  });
-
-  const updated: RegistroProduccion = {
-    ...MOCK_PRODUCCIONES[idx],
-    estado:                  'validado',
-    doi:                     payload.doi     ?? MOCK_PRODUCCIONES[idx].doi,
-    issn:                    payload.issn    ?? MOCK_PRODUCCIONES[idx].issn,
-    volNum:                  payload.volNum  ?? MOCK_PRODUCCIONES[idx].volNum,
-    revista:                 payload.revista ?? MOCK_PRODUCCIONES[idx].revista,
-    cuartil:                 payload.cuartil ?? MOCK_PRODUCCIONES[idx].cuartil,
-    investigadoresVinculados: vinculados,
-    confirmadoPor:           'Ana Mendoza',
-    confirmadoEn:            new Date().toISOString(),
-  };
-  MOCK_PRODUCCIONES[idx] = updated;
-  return updated;
+  return apiClient.post<RegistroProduccion>(`/cfpt/producciones/${payload.id}/confirmar`, payload);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,16 +65,7 @@ export async function confirmarProduccion(payload: ConfirmarPayload): Promise<Re
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function validarDOI(doi: string): Promise<{ duplicado: boolean; existenteId?: string }> {
-  /* ── REAL API ──────────────────────────────────────────────────────────────
-  const res = await fetch(`/api/v1/publicaciones/validar-doi?doi=${encodeURIComponent(doi)}`);
-  return res.json();
-  ──────────────────────────────────────────────────────────────────────── */
-
-  await new Promise((r) => setTimeout(r, 150));
-  const existente = MOCK_PRODUCCIONES.find(
-    (p) => p.doi && p.doi === doi && p.estado === 'validado'
-  );
-  return { duplicado: !!existente, existenteId: existente?.id };
+  return apiClient.get<{ duplicado: boolean; existenteId?: string }>(`/cfpt/validar-doi?doi=${encodeURIComponent(doi)}`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,15 +73,22 @@ export async function validarDOI(doi: string): Promise<{ duplicado: boolean; exi
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function buscarInvestigadores(q: string): Promise<InvestigadorResumen[]> {
-  /* ── REAL API ──────────────────────────────────────────────────────────────
-  const res = await fetch(`/api/v1/investigadores?q=${encodeURIComponent(q)}`);
-  return res.json();
-  ──────────────────────────────────────────────────────────────────────── */
+  const data = await apiClient.get<any>(`/investigators?buscar=${encodeURIComponent(q)}`);
+  // Ensure we map the response to the frontend's expected InvestigtorResumen format
+  return data.items.map((i: any) => ({
+    id: i.dni,
+    nombre: `${i.nombres} ${i.apellidos}`,
+    dni: i.dni,
+    departamento: i.departamento_academico,
+    esDocente: i.condicion_laboral == 'Docente',
+    esInvestigador: i.investigador_sm
+  }));
+}
 
-  await new Promise((r) => setTimeout(r, 200));
-  if (!q.trim()) return MOCK_INVESTIGADORES;
-  const query = q.toLowerCase();
-  return MOCK_INVESTIGADORES.filter(
-    (i) => i.nombre.toLowerCase().includes(query) || i.dni.includes(query)
-  );
+// ─────────────────────────────────────────────────────────────────────────────
+// Buscar grupos de investigación para vincular (Artículos)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function buscarGrupos(q: string): Promise<GrupoInvestigacionResumen[]> {
+  return apiClient.get<GrupoInvestigacionResumen[]>(`/cfpt/grupos-investigacion?query=${encodeURIComponent(q)}`);
 }

@@ -2,7 +2,7 @@
 
 /**
  * @file [id]/validar/page.tsx
- * @route /proyectos/[id]/validar
+ * @route /SGPI-CFPI/[id]/validar
  * @description Pantalla de Auditoría/Validación de Proyecto de Investigación con dos pestañas.
  */
 
@@ -279,7 +279,8 @@ export default function AuditoriaProyectoPage() {
         miembros,
         cambioEstadoObs: observacion
       });
-      router.push(`/proyectos/${id}?validated=true`);
+      setShowToast(true);
+      setTimeout(() => { router.push(`/SGPI-CFPI/${id}`); }, 2000);
     } catch (err: any) {
       setErrors([err.message || 'Error al guardar el proyecto.']);
       setGuardando(false);
@@ -302,7 +303,7 @@ export default function AuditoriaProyectoPage() {
       <MainLayout title="Auditoría de Proyecto" subtitle="">
         <div className="bg-red-50 text-red-800 p-6 rounded border border-red-200">
           <p className="font-sans font-bold">Proyecto no encontrado.</p>
-          <button onClick={() => router.push('/proyectos')} className="mt-3 text-[13px] font-bold text-red-700 underline cursor-pointer">
+          <button onClick={() => router.push('/SGPI-CFPI')} className="mt-3 text-[13px] font-bold text-red-700 underline cursor-pointer">
             Volver a la bandeja
           </button>
         </div>
@@ -319,7 +320,7 @@ export default function AuditoriaProyectoPage() {
           {/* Izquierda */}
           <div>
             <button
-              onClick={() => router.push('/proyectos')}
+              onClick={() => router.push('/SGPI-CFPI')}
               className="inline-flex items-center gap-1 text-[13px] font-sans text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer mb-2"
               aria-label="Volver a la lista"
             >
@@ -346,7 +347,7 @@ export default function AuditoriaProyectoPage() {
           <div className="flex gap-2 flex-shrink-0 ml-4">
             <button
               type="button"
-              onClick={() => router.push('/proyectos')}
+              onClick={() => router.push('/SGPI-CFPI')}
               className="border border-[#e2e8f0] hover:bg-slate-50 font-sans text-[13px] text-[#475569] px-4 py-2 rounded transition-colors cursor-pointer"
             >
               Cancelar
@@ -377,7 +378,7 @@ export default function AuditoriaProyectoPage() {
         <div className="border-b border-outline-variant flex bg-surface-container-lowest rounded-t border border-b-0">
           <button
             onClick={() => setActiveTab('ficha')}
-            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-all duration-300 ease-out cursor-pointer ${
+            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-colors duration-100 cursor-pointer ${
               activeTab === 'ficha'
                 ? 'border-[#001631] text-[#001631]'
                 : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline'
@@ -388,7 +389,7 @@ export default function AuditoriaProyectoPage() {
           </button>
           <button
             onClick={() => setActiveTab('equipo')}
-            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-all duration-300 ease-out cursor-pointer ${
+            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-colors duration-100 cursor-pointer ${
               activeTab === 'equipo'
                 ? 'border-[#001631] text-[#001631]'
                 : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline'
@@ -400,7 +401,7 @@ export default function AuditoriaProyectoPage() {
         </div>
 
         {/* ── Contenido del Tab ─────────────────────────────────────────────── */}
-        <div key={activeTab} className="bg-surface-container-lowest border border-t-0 border-outline-variant rounded-b p-6 shadow-level-1 animate-sweep-in">
+        <div className="bg-surface-container-lowest border border-t-0 border-outline-variant rounded-b p-6 shadow-level-1">
 
           {/* TAB 1 — FICHA TÉCNICA Y FINANCIERA */}
           {activeTab === 'ficha' && (
@@ -550,7 +551,7 @@ export default function AuditoriaProyectoPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label htmlFor="grupo-vinculado" className="block font-sans font-bold text-[10px] text-on-surface-variant uppercase tracking-widest mb-1.5">
-                    GRUPO DE INVESTIGACIÓN
+                    GRUPO DE INVESTIGACIÓN (CU05)
                   </label>
                   <select
                     id="grupo-vinculado"
@@ -569,7 +570,7 @@ export default function AuditoriaProyectoPage() {
 
                 <div>
                   <label htmlFor="resp-principal" className="block font-sans font-bold text-[10px] text-on-surface-variant uppercase tracking-widest mb-1.5">
-                    RESPONSABLE PRINCIPAL
+                    RESPONSABLE PRINCIPAL (CU04)
                   </label>
                   <select
                     id="resp-principal"

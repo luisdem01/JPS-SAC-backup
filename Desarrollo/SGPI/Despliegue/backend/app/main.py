@@ -31,6 +31,11 @@ from sgpi_crapi.api.v1.api import api_router as crapi_router
 from sgpi_cmee.api.v1.api import api_router as cmee_router
 from sgpi_capiac.api.v1.api import api_router as capiac_router
 
+# Importar rutas de CMEPDF añadiéndolo temporalmente al sys.path por nombre de carpeta
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "SGPI-CMEPDF"))
+from api.routes import router as cmepdf_router
+sys.path.pop(0)
+
 
 # ---------------------------------------------------------------------------
 # Middleware de Correlation ID para rastreo de peticiones
@@ -126,6 +131,8 @@ app.include_router(
 app.include_router(crapi_router, prefix="/api/v1")
 # CMEE — Exportación Excel
 app.include_router(cmee_router, prefix="/api/v1")
+# CMEPDF — Exportación PDF (el prefix /api/pdf ya viene en su router)
+app.include_router(cmepdf_router)
 # CAPIAC — Configuración y Auditoría
 app.include_router(capiac_router, prefix="/api/v1")
 

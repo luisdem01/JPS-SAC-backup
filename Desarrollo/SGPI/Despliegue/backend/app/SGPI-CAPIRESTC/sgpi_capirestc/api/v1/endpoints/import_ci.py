@@ -103,8 +103,11 @@ async def _run_sgpi_ci(job_id: str, file_path: str) -> None:
                 if isinstance(items, list):
                     total_inserted += len(items)
                 elif isinstance(items, dict):
-                    # Por si devuelve algo estructurado (created, updated)
-                    total_inserted += len(items.get("data", []))
+                    if "procesados" in items:
+                        total_inserted += items.get("procesados", 0)
+                    else:
+                        # Por si devuelve algo estructurado (created, updated)
+                        total_inserted += len(items.get("data", []))
 
             job.created = total_inserted
             job.errors = resultado.get("conflictos_inconsistencias", 0)

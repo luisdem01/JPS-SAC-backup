@@ -8,6 +8,21 @@ from vrip_connector.engines.base import BaseExtractor
 from vrip_connector.core.models import ConvocatoriaModel
 from vrip_connector.utils.date_parser import parse_spanish_date, extract_deadline_from_text, calculate_days_remaining
 
+import tempfile
+import sys
+import os
+
+# Configuración de path para SGPI-CPPDF
+local_parent = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+sgpi_cppdf_path = os.path.join(local_parent, "processors", "SGPI-CPPDF")
+if sgpi_cppdf_path not in sys.path:
+    sys.path.insert(0, sgpi_cppdf_path)
+
+try:
+    from sgpi_parser.engines.heuristic.cronograma_heuristic import HeuristicCronogramaParser
+except ImportError:
+    HeuristicCronogramaParser = None
+
 class VripConvocatoriasExtractor(BaseExtractor):
     def __init__(self):
         super().__init__("vrip_convocatorias")
@@ -112,6 +127,38 @@ class VripConvocatoriasExtractor(BaseExtractor):
                 
                 final_link = directiva_link if directiva_link else cronograma_link
 
+                # Integración SGPI-CPPDF para extraer el cronograma exacto del PDF si es posible
+                if final_link and HeuristicCronogramaParser:
+                    try:
+                        pdf_response = self.client.get(final_link)
+                        if pdf_response and pdf_response.status_code == 200 and pdf_response.content.startswith(b"%PDF"):
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+                                tmp_pdf.write(pdf_response.content)
+                                tmp_pdf_path = tmp_pdf.name
+                            
+                            try:
+                                parser = HeuristicCronogramaParser(default_year=target_year)
+                                cronograma = parser.parse(tmp_pdf_path)
+                                
+                                # Buscar la fecha de cierre en las actividades
+                                for act in cronograma.actividades:
+                                    act_lower = act.actividad.lower()
+                                    if "cierre" in act_lower or "recepción" in act_lower or "postulación" in act_lower or "presentación" in act_lower:
+                                        if act.fecha_fin:
+                                            parsed_deadline = act.fecha_fin
+                                            deadline_original = act.fecha_detalle
+                                        elif act.fecha_inicio:
+                                            parsed_deadline = act.fecha_inicio
+                                            deadline_original = act.fecha_detalle
+                                        break
+                            except Exception as e:
+                                print(f"{Fore.YELLOW}[Convocatorias VRIP] Error procesando PDF Elementor con SGPI-CPPDF: {e}{Style.RESET_ALL}")
+                            finally:
+                                if os.path.exists(tmp_pdf_path):
+                                    os.remove(tmp_pdf_path)
+                    except Exception as e:
+                        pass
+
                 items.append(ConvocatoriaModel(
                     titulo=title,
                     entidad_promotora="Vicerrectorado de Investigación y Posgrado (VRIP) - UNMSM",
@@ -179,6 +226,37 @@ class VripConvocatoriasExtractor(BaseExtractor):
                     
                     if not guidelines_link:
                         guidelines_link = link
+
+                    # Integración SGPI-CPPDF para el layout clásico de posts
+                    if guidelines_link and HeuristicCronogramaParser:
+                        try:
+                            pdf_response = self.client.get(guidelines_link)
+                            if pdf_response and pdf_response.status_code == 200 and pdf_response.content.startswith(b"%PDF"):
+                                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+                                    tmp_pdf.write(pdf_response.content)
+                                    tmp_pdf_path = tmp_pdf.name
+                                
+                                try:
+                                    parser = HeuristicCronogramaParser(default_year=target_year)
+                                    cronograma = parser.parse(tmp_pdf_path)
+                                    
+                                    for act in cronograma.actividades:
+                                        act_lower = act.actividad.lower()
+                                        if "cierre" in act_lower or "recepción" in act_lower or "postulación" in act_lower or "presentación" in act_lower:
+                                            if act.fecha_fin:
+                                                parsed_deadline = act.fecha_fin
+                                                deadline_original = act.fecha_detalle
+                                            elif act.fecha_inicio:
+                                                parsed_deadline = act.fecha_inicio
+                                                deadline_original = act.fecha_detalle
+                                            break
+                                except Exception as e:
+                                    print(f"{Fore.YELLOW}[Convocatorias VRIP] Error procesando PDF Clásico con SGPI-CPPDF: {e}{Style.RESET_ALL}")
+                                finally:
+                                    if os.path.exists(tmp_pdf_path):
+                                        os.remove(tmp_pdf_path)
+                        except Exception as e:
+                            pass
 
                     items.append(ConvocatoriaModel(
                         titulo=title,

@@ -32,3 +32,22 @@ class LogAuditoriaResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class UsuarioBase(BaseModel):
+    correo_institucional: str
+    rol_sistema: str
+    estado_cuenta: Optional[bool] = True
+
+class UsuarioCreate(UsuarioBase):
+    pass
+
+class UsuarioUpdate(BaseModel):
+    rol_sistema: Optional[str] = None
+    estado_cuenta: Optional[bool] = None
+
+class UsuarioResponse(UsuarioBase):
+    id_usuario: Any
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True

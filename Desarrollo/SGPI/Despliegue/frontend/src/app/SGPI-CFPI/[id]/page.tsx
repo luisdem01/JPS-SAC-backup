@@ -2,7 +2,7 @@
 
 /**
  * @file [id]/page.tsx
- * @route /proyectos/[id]
+ * @route /SGPI-CFPI/[id]
  * @description Expediente Digital de Proyecto — Vista consolidada del proyecto, hitos e historial de auditoría.
  */
 
@@ -11,6 +11,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import type { Proyecto } from '../_data/types';
 import { getProyectoById, completarHito, verificarHitoConCybertesis } from '../_data/service';
+import { ExportButton } from '@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Íconos SVG
@@ -79,22 +80,6 @@ export default function ExpedienteDigitalPage() {
   const [proyecto, setProyecto] = useState<Proyecto | null>(null);
   const [cargando, setCargando] = useState(true);
   const [completandoId, setCompletandoId] = useState<string | null>(null);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('created') === 'true') {
-        setToastMsg("Proyecto creado exitosamente.");
-        const timer = setTimeout(() => setToastMsg(null), 3000);
-        return () => clearTimeout(timer);
-      } else if (urlParams.get('validated') === 'true') {
-        setToastMsg("Proyecto validado exitosamente.");
-        const timer = setTimeout(() => setToastMsg(null), 3000);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, []);
 
   // Estados del modal de Cybertesis
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -110,7 +95,7 @@ export default function ExpedienteDigitalPage() {
     setSearchError(null);
     
     let defaultQuery = '';
-    const tesista = proyecto?.miembros?.find(m => (m.rol as string) === 'Tesista vinculado' || (m.rol as string) === 'Tesista');
+    const tesista = proyecto?.miembros?.find(m => m.rol === 'Tesista vinculado' || m.rol === 'Tesista');
     if (tesista) {
       defaultQuery = tesista.nombre;
     } else {
@@ -246,7 +231,7 @@ export default function ExpedienteDigitalPage() {
       <MainLayout title="Expediente Digital de Proyecto" subtitle="">
         <div className="bg-red-50 text-red-800 p-6 rounded border border-red-200">
           <p className="font-sans font-bold">Proyecto no encontrado.</p>
-          <button onClick={() => router.push('/proyectos')} className="mt-3 text-[13px] font-bold text-red-700 underline cursor-pointer">
+          <button onClick={() => router.push('/SGPI-CFPI')} className="mt-3 text-[13px] font-bold text-red-700 underline cursor-pointer">
             Volver a la bandeja
           </button>
         </div>
@@ -277,7 +262,7 @@ export default function ExpedienteDigitalPage() {
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
-              onClick={() => router.push('/proyectos')}
+              onClick={() => router.push('/SGPI-CFPI')}
               className="flex items-center gap-1.5 px-4 py-2 rounded font-sans font-bold text-[13px] text-on-surface border border-outline-variant hover:bg-slate-50 transition-colors cursor-pointer"
               aria-label="Volver a la Bandeja"
             >
@@ -653,12 +638,6 @@ export default function ExpedienteDigitalPage() {
               </button>
             </div>
           </div>
-        </div>
-      )}
-      {toastMsg && (
-        <div className="fixed bottom-8 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-lg bg-[#22c55e] text-white shadow-2xl font-sans font-semibold text-[14px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-white"/>
-          {toastMsg}
         </div>
       )}
     </MainLayout>

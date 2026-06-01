@@ -44,13 +44,16 @@ async def generate_report_dispatched(db: AsyncSession, params: ReportParams):
     Dispatcher (Factory) para delegar la generación del reporte al servicio adecuado
     basado en el tipo_reporte.
     """
-    if params.tipo_reporte == "Carga No Lectiva":
+    # Normalizamos o mapeamos los tipos de reporte que vienen desde el frontend
+    tipo_reporte = params.tipo_reporte.strip().lower()
+    
+    if tipo_reporte == "carga no lectiva":
         return await generate_workload_report(db, params)
-    elif params.tipo_reporte == "Proyectos Activos":
+    elif tipo_reporte == "proyectos activos":
         return await generate_active_projects_report(db, params)
-    elif params.tipo_reporte == "Produccion Cientifica":
+    elif tipo_reporte in ["produccion cientifica", "producción científica"]:
         return await generate_scientific_production_report(db, params)
-    elif params.tipo_reporte == "Resumen General":
+    elif tipo_reporte in ["resumen general", "base de datos para poi"]:
         return await generate_general_summary_report(db, params)
     else:
         raise ValueError(f"Tipo de reporte '{params.tipo_reporte}' no soportado.")
@@ -164,7 +167,7 @@ async def generate_active_projects_report(db: AsyncSession, params: ReportParams
     stmt = select(Proyecto).where(Proyecto.estado_proyecto.in_(['Aprobado', 'En ejecución']))
     
     if params.grupo_investigacion:
-        stmt = stmt.join(GrupoInvestigacion, Proyecto.id_grupo == GrupoInvestigacion.id_grupo).where(GrupoInvestigacion.codigo_grupo == params.grupo_investigacion)
+        stmt = stmt.join(GrupoInvestigacion, Proyecto.id_grupo == GrupoInvestigacion.id_grupo).where(GrupoInvestigacion.nombre_grupo == params.grupo_investigacion)
     
     if params.departamento_academico:
         subq = select(InvestigadorProyecto.codigo_proyecto).join(
@@ -238,7 +241,7 @@ async def generate_scientific_production_report(db: AsyncSession, params: Report
             stmt_pub = stmt_pub.where(Publicacion.fecha_publicacion <= params.fecha_fin_hasta)
             
     if params.grupo_investigacion:
-        stmt_pub = stmt_pub.where(Publicacion.codigo_grupo == params.grupo_investigacion)
+        stmt_pub = stmt_pub.join(GrupoInvestigacion, Publicacion.id_grupo == GrupoInvestigacion.id_grupo).where(GrupoInvestigacion.nombre_grupo == params.grupo_investigacion)
         
     if params.departamento_academico:
         subq = select(InvestigadorPublicacion.id_publicacion).join(
@@ -286,7 +289,9 @@ async def generate_scientific_production_report(db: AsyncSession, params: Report
     # 2. Tesis
     stmt_tesis = select(Tesis)
     if params.anio_corte:
-        stmt_tesis = stmt_tesis.where(Tesis.anio_publicacion == params.anio_corte)
+        stmt_tesis = stmt_tesis.where(
+            (Tesis.anio_publicacion == params.anio_corte) | (Tesis.anio_publicacion.is_(None))
+        )
         
     if params.departamento_academico:
         stmt_tesis = stmt_tesis.join(

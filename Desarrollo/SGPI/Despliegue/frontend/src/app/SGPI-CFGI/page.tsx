@@ -2,18 +2,16 @@
 
 /**
  * @file page.tsx
- * @route /grupos
+ * @route /SGPI-CFGI
  * @description Bandeja principal de Gestión de Grupos de Investigación (SGPI-CFGI).
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
-import { Button } from '@/SGPI-CFU/components/ui';
 import type { FiltrosGrupos, EstadoGrupo, FuenteOrigen } from './_data/types';
 import { getGrupos, getStats, type PaginatedGrupos } from './_data/service';
 import type { StatsGrupos } from './_data/types';
-import { useAuth } from '@/SGPI-CFU/lib/hooks';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración visual de badges
@@ -214,7 +212,6 @@ function Pagination({ page, pages, onChange }: {
 
 export default function GruposBandejaPage() {
   const router = useRouter();
-  const { user } = useAuth();
 
   const [filtros,    setFiltros]    = useState<FiltrosGrupos>(DEFAULT_FILTROS);
   const [tempBuscar, setTempBuscar] = useState('');
@@ -225,33 +222,24 @@ export default function GruposBandejaPage() {
   const [stats,     setStats]     = useState<StatsGrupos | null>(null);
   const [cargando,  setCargando]  = useState(true);
   const [pagina,    setPagina]    = useState(1);
-  const [errorCarga, setErrorCarga] = useState<string | null>(null);
 
   const cargarDatos = useCallback(async () => {
     setCargando(true);
-    setErrorCarga(null);
     try {
-      const dataGrupos = await getGrupos(filtros, pagina);
+      const [dataGrupos, dataStats] = await Promise.all([
+        getGrupos(filtros, pagina),
+        getStats(),
+      ]);
       setResultado(dataGrupos);
-    } catch (error: any) {
+      setStats(dataStats);
+    } catch (error) {
       console.error('Error al cargar datos de grupos:', error);
-      setErrorCarga(error?.message || 'No se pudieron cargar los datos de los grupos de investigación.');
     } finally {
       setCargando(false);
     }
   }, [filtros, pagina]);
 
-  const cargarStats = useCallback(async () => {
-    try {
-      const dataStats = await getStats();
-      setStats(dataStats);
-    } catch (error) {
-      console.error('Error al cargar stats:', error);
-    }
-  }, []);
-
   useEffect(() => { cargarDatos(); }, [cargarDatos]);
-  useEffect(() => { cargarStats(); }, [cargarStats]);
 
   const handleFiltrar = (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,15 +280,13 @@ export default function GruposBandejaPage() {
               Controle e identifique la información importada de fuentes externas que requiere atención.
             </p>
           </div>
-          {user?.role === 'admin' && (
-            <button
-              onClick={() => router.push('/grupos/nuevo')}
-              className="flex items-center gap-1.5 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded shadow transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              <PlusIcon />
-              Nuevo Grupo
-            </button>
-          )}
+          <button
+            onClick={() => router.push('/SGPI-CFGI/nuevo')}
+            className="flex items-center gap-1.5 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded shadow transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
+          >
+            <PlusIcon />
+            Nuevo Grupo
+          </button>
         </div>
 
         {/* Barra de Filtros */}
@@ -366,24 +352,21 @@ export default function GruposBandejaPage() {
 
           {/* Botones */}
           <div className="flex gap-2">
-            <Button
+            <button
               type="submit"
-              variant="primary"
-              size="md"
-              loading={cargando}
-              iconLeft={<FilterIcon />}
+              className="flex items-center gap-1.5 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-[7px] rounded transition-colors cursor-pointer"
             >
+              <FilterIcon />
               Filtrar
-            </Button>
+            </button>
             {hayFiltrosActivos && (
-              <Button
+              <button
                 type="button"
-                variant="secondary"
-                size="md"
                 onClick={handleLimpiar}
+              className="border border-outline-variant hover:bg-slate-50 font-sans text-[13px] text-on-surface-variant px-4 py-[7px] rounded transition-colors cursor-pointer"
               >
                 Limpiar
-              </Button>
+              </button>
             )}
           </div>
         </form>
@@ -415,25 +398,7 @@ export default function GruposBandejaPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant">
-                {errorCarga ? (
-                  <tr>
-                    <td colSpan={6} className="px-5 py-10 text-center">
-                      <div className="flex flex-col items-center justify-center gap-3">
-                        <div className="flex items-center gap-2 text-error text-[13px] font-sans font-medium">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                          <span>{errorCarga}</span>
-                        </div>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={cargarDatos}
-                        >
-                          Reintentar carga
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : cargando ? (
+                {cargando ? (
                   Array.from({ length: 4 }).map((_, i) => (
                     <tr key={`skel-${i}`} className="animate-pulse">
                       <td className="px-5 py-4"><div className="h-4 bg-slate-100 rounded w-20" /></td>
@@ -465,7 +430,7 @@ export default function GruposBandejaPage() {
                       <td className="px-5 py-3.5 text-right">
                         {grupo.status === 'pendiente_validacion' ? (
                           <button
-                            onClick={() => router.push(`/grupos/${grupo.code}/validar`)}
+                            onClick={() => router.push(`/SGPI-CFGI/${grupo.code}/validar`)}
                             className="inline-flex items-center gap-1.5 border border-[#001631] text-[#001631] hover:bg-[#001631] hover:text-white font-sans font-bold text-[12px] px-3 py-1 rounded transition-colors cursor-pointer"
                           >
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -475,7 +440,7 @@ export default function GruposBandejaPage() {
                           </button>
                         ) : (
                           <button
-                            onClick={() => router.push(`/grupos/${grupo.code}/ficha`)}
+                            onClick={() => router.push(`/SGPI-CFGI/${grupo.code}/ficha`)}
                             className="inline-flex items-center justify-center text-[#475569] hover:text-[#0f172a] p-1.5 rounded hover:bg-slate-100 transition-colors cursor-pointer"
                             title="Ver Ficha Consolidada"
                             aria-label="Ver Ficha"
@@ -510,22 +475,12 @@ export default function GruposBandejaPage() {
         </div>
 
         {/* Bloque de KPIs — al final de la página como indica el diseño */}
-        {stats ? (
+        {stats && (
           <div className="flex flex-wrap gap-4 mt-2">
             <KpiCard label="Total de Grupos"        value={stats.totalGrupos}       sub="Registrados en el sistema" />
             <KpiCard label="Pendientes de Validar"  value={stats.pendientesValidar} sub="Requieren curación de datos" />
             <KpiCard label="Validados Activos"       value={stats.validadosActivos}  sub="Grupos vigentes VRIP" />
             <KpiCard label="Validados Inactivos"     value={stats.validadosInactivos} sub="Grupos dados de baja" />
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-4 mt-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={`stats-skel-${i}`} className="flex-1 min-w-[160px] bg-white border border-[#e2e8f0] rounded p-5 animate-pulse">
-                <div className="h-3 bg-slate-100 rounded w-2/3 mb-2" />
-                <div className="h-8 bg-slate-100 rounded w-1/2 mb-2" />
-                <div className="h-3 bg-slate-100 rounded w-3/4" />
-              </div>
-            ))}
           </div>
         )}
 

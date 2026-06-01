@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { useAsyncJob } from '@/SGPI-CFU/lib/hooks/useAsyncJob';
 
 /**
  * ============================================================================
@@ -67,43 +66,96 @@ type ExportFormat = 'pdf' | 'excel';
 // ─────────────────────────────────────────────────────────────────────────────
 export function ExportFlow({ context, onClose }: { context: string, onClose: () => void }) {
   const [format, setFormat] = useState<ExportFormat>('pdf');
-  
-  // Usamos una ref para evitar problemas de "stale closure" dentro del setInterval de useAsyncJob
-  const formatRef = useRef(format);
-  formatRef.current = format;
-
-  // --- Integración con useAsyncJob ---
-  const mockStatusFetcher = async (jobId: string) => {
-    const startTimeStr = localStorage.getItem(`export_job_${jobId}`);
-    const startTime = startTimeStr ? parseInt(startTimeStr, 10) : Date.now();
-    const elapsed = Date.now() - startTime;
-    // Progreso simulado: completa en ~4 segundos
-    const progress = Math.min(100, Math.floor((elapsed / 4000) * 100));
-
-    // SIMULAR ERROR SI ES EXCEL (A petición para pruebas)
-    if (formatRef.current === 'excel' && progress > 40) {
-      return { 
-        status: 'failed' as const, 
-        progress,
-        error: 'Ha ocurrido un error al preparar el archivo. Es posible que los datos consultados hayan caducado o la sesión haya expirado.' 
-      };
-    }
-
-    if (progress >= 100) {
-      return { status: 'completed' as const, progress: 100 };
-    }
-    return { status: 'running' as const, progress };
-  };
-
-  const { startJob, progress, statusLabel, isRunning, isSuccess, error, cancel } = useAsyncJob(mockStatusFetcher);
+  const [isRunning, setIsRunning] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleStartExport = async (selectedFormat: ExportFormat) => {
     setFormat(selectedFormat);
-    await startJob(async () => {
-      const jobId = `job_${Date.now()}`;
-      localStorage.setItem(`export_job_${jobId}`, Date.now().toString());
-      return { job_id: jobId };
-    });
+    setIsRunning(true);
+    setProgress(10);
+    setError(null);
+    setIsSuccess(false);
+
+    // Progreso visual mientras esperamos la descarga (flujo síncrono)
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => (prev < 90 ? prev + 10 : prev));
+    }, 500);
+
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      let url = '';
+      let payload: any = {};
+
+      if (selectedFormat === 'pdf') {
+        url = `${API_URL}/api/pdf/generate`;
+        // Payload mínimo genérico esperado por CMEPDF
+        payload = {
+          title: `Reporte ${context}`,
+          subtitle: 'Generado desde el sistema',
+          user_requesting: 'Usuario Autorizado',
+          doc_type: 'report',
+          columns: ['Columna', 'Valor'],
+          data: [['Contexto', context], ['Estado', 'Generado']],
+        };
+      } else {
+        url = `${API_URL}/api/v1/reports/export/excel`;
+        
+        // El backend CRAPI exige tipos de reporte exactos, mapeamos o usamos default
+        const validTypes = ["Carga No Lectiva", "Proyectos Activos", "Produccion Cientifica", "Resumen General"];
+        const finalTipo = validTypes.includes(context) ? context : "Resumen General";
+
+        // Payload esperado por CMEE (ReportParams)
+        payload = {
+          tipo_reporte: finalTipo
+        };
+      }
+
+      // IMPORTANTE: En producción usar auth tokens
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('sgpi_access_token') || ''}`
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+         throw new Error(`Error ${response.status}: Ha ocurrido un error al generar el archivo.`);
+      }
+
+      const blob = await response.blob();
+      
+      // Intentar obtener el filename del header
+      const disposition = response.headers.get('Content-Disposition');
+      let filename = `Reporte_${context}.${selectedFormat === 'excel' ? 'xlsx' : 'pdf'}`;
+      if (disposition && disposition.includes('filename=')) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+        if (matches != null && matches[1]) { 
+          filename = matches[1].replace(/['"]/g, '');
+        }
+      }
+
+      // Descargar el archivo binario síncronamente
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      setProgress(100);
+      setIsSuccess(true);
+    } catch (err: any) {
+      setError(err.message || 'Ha ocurrido un error al preparar el archivo.');
+    } finally {
+      clearInterval(progressInterval);
+      setIsRunning(false);
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -320,7 +372,7 @@ export function ExportFlow({ context, onClose }: { context: string, onClose: () 
             </button>
           ) : (
             <button 
-              onClick={() => { if(isRunning) cancel(); onClose(); }} 
+              onClick={() => { onClose(); }} 
               className={`px-6 py-2.5 font-bold rounded transition-colors text-base ${isRunning ? 'text-slate-400 hover:text-slate-500' : 'text-[#0f172a] hover:bg-slate-100'}`}
             >
               Cancelar

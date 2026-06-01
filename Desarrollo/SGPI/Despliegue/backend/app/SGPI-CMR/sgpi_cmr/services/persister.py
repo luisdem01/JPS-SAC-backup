@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 from app.models.domain import ReconciliacionPendiente, LogAuditoria, Investigador, Proyecto, Publicacion, Tesis
 
 class ReconciliationPersister:
-    async def persist_quarantine(self, db: AsyncSession, entidad: str, llave_sugerida: str, 
+    async def persist_quarantine(self, db: AsyncSession, entidad: str, llave_sugerida: str,
                                 fuentes: List[str], conflicto: Dict[str, Any], motivo: str) -> None:
         """
         Guarda el registro en cuarentena.
@@ -20,18 +20,36 @@ class ReconciliationPersister:
             estado='Pendiente'
         )
         db.add(pendiente)
-        
+
+        # Mapear tipo_evento a un valor permitido por el CHECK constraint de log_auditoria
+        _fuente_map = {
+            'RENACYT':    'SYNC_RENACYT',
+            'Cybertesis': 'SYNC_CYBERTESIS',
+            'VRIP':       'SYNC_VRIP',
+        }
+        primera_fuente = fuentes[0] if fuentes else ''
+        tipo_evento_log = _fuente_map.get(primera_fuente, 'INSERT')
+
+        # Serializar datetimes antes de guardar en columna JSON
+        import datetime
+        conflicto_serializable = {
+            k: v.isoformat() if isinstance(v, (datetime.datetime, datetime.date)) else v
+            for k, v in conflicto.items()
+        }
+
         # Auditoría de envío a cuarentena
         log = LogAuditoria(
-            tipo_evento='RECONCILIATION_QUARANTINE',
+            tipo_evento=tipo_evento_log,
             entidad_afectada='reconciliacion_pendientes',
-            valor_nuevo=conflicto,
+            pk_entidad=llave_sugerida,
+            valor_nuevo=conflicto_serializable,
             resultado='Exito',
             detalle_error=motivo
         )
         db.add(log)
-        
+
         await db.commit()
+
 
     async def persist_resolved(self, db: AsyncSession, entidad: str, llave_pk: str, 
                              merged_data: Dict[str, Any], fuente_ganadora: str) -> None:
@@ -40,6 +58,7 @@ class ReconciliationPersister:
         """
         try:
             is_update = False
+            merged_data.pop('updated_at', None)
             
             if entidad == "investigador":
                 result = await db.execute(select(Investigador).where(Investigador.dni == llave_pk))
@@ -100,11 +119,22 @@ class ReconciliationPersister:
                     await db.execute(insert(Tesis).values(**tesis_data))
             
             # Generar Auditoría (Misma transacción)
+            import datetime
+            from decimal import Decimal
+            serializable_data = {}
+            for k, v in merged_data.items():
+                if isinstance(v, (datetime.datetime, datetime.date)):
+                    serializable_data[k] = v.isoformat()
+                elif isinstance(v, Decimal):
+                    serializable_data[k] = float(v)
+                else:
+                    serializable_data[k] = v
+
             log = LogAuditoria(
                 tipo_evento='UPDATE' if is_update else 'INSERT',
                 entidad_afectada=entidad,
                 pk_entidad=llave_pk,
-                valor_nuevo=merged_data,
+                valor_nuevo=serializable_data,
                 resultado='Exito',
                 detalle_error=f"Reconciliado vía MRN. Fuente principal: {fuente_ganadora}"
             )

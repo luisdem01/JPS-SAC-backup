@@ -19,13 +19,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
-import { ExportButton } from '@/SGPI-CFU/components/SGPI-CFE/export/ExportFlow';
 import type {
   RegistroProduccion, InvestigadorVinculado, InvestigadorResumen,
-  RolPublicacion, Cuartil,
+  RolPublicacion, Cuartil, GrupoInvestigacionResumen
 } from '../_data/types';
 import {
-  getProduccionById, confirmarProduccion, validarDOI, buscarInvestigadores,
+  getProduccionById, confirmarProduccion, validarDOI, buscarInvestigadores, buscarGrupos
 } from '../_data/service';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,6 +230,89 @@ function BuscarInvestigadorModal({
         <div className="px-5 py-3 bg-[#f8fafc] border-t border-[#e2e8f0]">
           <p className="font-sans text-[11px] text-on-surface-variant">
             Nota: Solo se muestran investigadores pertenecientes a la FISI.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modal Buscar Grupo de Investigación
+// ─────────────────────────────────────────────────────────────────────────────
+
+function BuscarGrupoModal({
+  onSelect, onClose
+}: {
+  onSelect: (grupo: GrupoInvestigacionResumen) => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState('');
+  const [resultados, setResultados] = useState<GrupoInvestigacionResumen[]>([]);
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); buscar(''); }, []);
+
+  const buscar = async (query: string) => {
+    setLoading(true);
+    const res = await buscarGrupos(query);
+    setResultados(res);
+    setLoading(false);
+  };
+
+  const handleChange = (v: string) => { setQ(v); buscar(v); };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog" aria-modal="true" aria-label="Buscar grupo de investigación">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
+      <div className="relative w-full max-w-[480px] bg-white rounded-xl shadow-2xl border border-[#e2e8f0] overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-[#e2e8f0] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <SearchIcon />
+            <h2 className="font-heading font-bold text-[15px] text-on-surface">
+              Buscar Grupo de Investigación
+            </h2>
+          </div>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface text-[20px] leading-none font-light" aria-label="Cerrar">×</button>
+        </div>
+        {/* Buscador */}
+        <div className="px-5 py-3 border-b border-[#e2e8f0]">
+          <div className="relative">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"><SearchIcon /></span>
+            <input ref={inputRef} type="text" value={q}
+              onChange={(e) => handleChange(e.target.value)}
+              placeholder="Nombre o siglas del grupo..."
+              className="w-full pl-9 pr-3 py-2 font-sans text-[13px] text-on-surface border border-outline-variant rounded outline-none focus:ring-2 focus:ring-[#a8c8fa] transition-all"
+            />
+          </div>
+        </div>
+        {/* Resultados */}
+        <div className="overflow-y-auto max-h-[300px]">
+          {loading && (
+            <div className="py-8 text-center font-sans text-[13px] text-on-surface-variant">Buscando...</div>
+          )}
+          {!loading && resultados.length === 0 && (
+            <div className="py-8 text-center font-sans text-[13px] text-on-surface-variant">No se encontraron grupos.</div>
+          )}
+          {!loading && resultados.map((g) => (
+            <button key={g.id} onClick={() => onSelect(g)}
+              className="w-full flex items-start gap-3 px-5 py-3 text-left hover:bg-surface-container-low border-b border-[#f1f5f9] transition-colors group">
+              <span className="flex-shrink-0 w-8 h-8 rounded-full bg-[#fce7f3] text-[#be185d] flex items-center justify-center text-[11px] font-bold">
+                {g.siglas ? g.siglas.substring(0,2) : g.nombre.substring(0,2).toUpperCase()}
+              </span>
+              <div>
+                <p className="font-sans font-semibold text-[13px] text-on-surface group-hover:text-[#001631]">{g.nombre}</p>
+                <p className="font-sans text-[11px] text-on-surface-variant">{g.siglas ?? 'Sin siglas'} · {g.facultad}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+        <div className="px-5 py-3 bg-[#f8fafc] border-t border-[#e2e8f0]">
+          <p className="font-sans text-[11px] text-on-surface-variant">
+            Nota: Solo se muestran grupos de investigación activos de la facultad.
           </p>
         </div>
       </div>
@@ -497,6 +579,65 @@ function TabVinculacion({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Tab: Vinculación de Grupo de Investigación
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TabVinculacionGrupo({
+  grupoVinculado, onRemove, onBuscar,
+}: {
+  grupoVinculado: GrupoInvestigacionResumen | null;
+  onRemove: () => void;
+  onBuscar: () => void;
+}) {
+  return (
+    <div className="p-5">
+      <div className="border border-outline-variant rounded overflow-hidden">
+        {/* Header tabla */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-outline-variant">
+          <p className="font-sans font-bold text-[11px] text-on-surface uppercase tracking-widest">
+            Grupo de Investigación Vinculado
+          </p>
+          {!grupoVinculado && (
+            <button onClick={onBuscar}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded font-sans font-semibold text-[12px] text-on-surface border border-outline-variant hover:bg-surface-container transition-colors"
+              aria-label="Vincular grupo">
+              <SearchIcon /> Vincular Grupo
+            </button>
+          )}
+        </div>
+
+        {/* Filas */}
+        {grupoVinculado ? (
+          <div className="grid grid-cols-[1fr_40px] gap-0 items-center px-5 py-3 hover:bg-surface-container-low transition-colors">
+            <div className="flex items-center gap-3">
+              <span className="flex-shrink-0 w-10 h-10 rounded-full bg-[#fce7f3] flex items-center justify-center text-[14px] text-[#be185d] font-bold">
+                {grupoVinculado.siglas ? grupoVinculado.siglas.substring(0,2) : grupoVinculado.nombre.substring(0,2).toUpperCase()}
+              </span>
+              <div>
+                <p className="font-sans font-semibold text-[14px] text-on-surface">{grupoVinculado.nombre}</p>
+                <p className="font-sans text-[12px] text-on-surface-variant">{grupoVinculado.siglas ?? 'Sin siglas'} · {grupoVinculado.facultad}</p>
+              </div>
+            </div>
+            <button onClick={onRemove}
+              className="w-8 h-8 flex items-center justify-center rounded text-[#dc2626] hover:bg-[#fee2e2] transition-colors"
+              aria-label={`Eliminar vínculo con ${grupoVinculado.nombre}`}>
+              <TrashIcon />
+            </button>
+          </div>
+        ) : (
+          <div className="px-5 py-5 text-center">
+            <p className="font-sans text-[12px] text-on-surface-variant">No se ha vinculado ningún grupo de investigación a este artículo.</p>
+          </div>
+        )}
+      </div>
+      <p className="font-sans text-[11px] text-on-surface-variant mt-3">
+        <span className="font-semibold">Nota:</span> Es obligatorio vincular un grupo de investigación activo para validar un artículo científico.
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Vista: Repositorio de Producción Validada
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -525,10 +666,6 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
             aria-label="Volver a la bandeja">
             <BackArrowIcon /> Volver a Bandeja
           </button>
-          <ExportButton
-            context="publicaciones_tesis"
-            label="Generar Constancia"
-          />
         </div>
       </div>
 
@@ -555,25 +692,38 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
                 {prod.titulo}
               </h2>
 
-              {/* Autores validados */}
+              {/* Autores validados o Grupo */}
               <div>
                 <p className="font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-2">
-                  Autores Validados (FISI)
+                  {prod.tipo === 'articulo' ? 'Grupo de Investigación Validado' : 'Autores Validados (FISI)'}
                 </p>
-                {prod.investigadoresVinculados.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {prod.investigadoresVinculados.map((v) => (
-                      <span key={v.investigador.id} className="flex items-center gap-1.5 font-sans text-[13px] text-[#166534]">
-                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-[#dcfce7]">
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                        </span>
-                        <span className="font-semibold">{v.investigador.nombre}</span>
-                        <span className="text-on-surface-variant text-[12px]">({v.rol})</span>
+                {prod.tipo === 'articulo' ? (
+                  prod.grupoVinculado ? (
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 flex items-center justify-center rounded-full bg-[#fce7f3] text-[#be185d]">
+                        <UsersIcon />
                       </span>
-                    ))}
-                  </div>
+                      <span className="font-sans font-semibold text-[13px] text-on-surface">{prod.grupoVinculado.nombre}</span>
+                    </div>
+                  ) : (
+                    <p className="font-sans text-[13px] text-on-surface-variant">Sin grupo vinculado.</p>
+                  )
                 ) : (
-                  <p className="font-sans text-[13px] text-on-surface-variant">Sin investigadores vinculados.</p>
+                  prod.investigadoresVinculados.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {prod.investigadoresVinculados.map((v) => (
+                        <span key={v.investigador.id} className="flex items-center gap-1.5 font-sans text-[13px] text-[#166534]">
+                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-[#dcfce7]">
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                          </span>
+                          <span className="font-semibold">{v.investigador.nombre}</span>
+                          <span className="text-on-surface-variant text-[12px]">({v.rol})</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-sans text-[13px] text-on-surface-variant">Sin investigadores vinculados.</p>
+                  )
                 )}
               </div>
 
@@ -621,8 +771,25 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
                 Esta publicación ha sido contabilizada exitosamente y sumará a los siguientes indicadores institucionales:
               </p>
 
-              {/* Indicador 1: Carga No Lectiva */}
-              {prod.investigadoresVinculados.map((v) => (
+              {/* Indicador 1: Memoria de Grupo (para artículos) */}
+              {prod.tipo === 'articulo' && prod.grupoVinculado && (
+                <div className="flex items-center gap-3 p-3 rounded border border-outline-variant hover:bg-surface-container-low transition-colors">
+                  <span className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-[#ede9fe] text-[#6d28d9]">
+                    <UsersIcon />
+                  </span>
+                  <div className="flex-1">
+                    <p className="font-sans font-bold text-[13px] text-on-surface">Memoria de Grupo de Investigación</p>
+                    <p className="font-sans text-[12px] text-on-surface-variant">
+                      Suma como 1 artículo{prod.cuartil ? ` ${prod.cuartil}` : ''} al perfil del grupo{' '}
+                      <span className="font-semibold text-[#001631]">{prod.grupoVinculado.nombre}</span> para el periodo 2026-1.
+                    </p>
+                  </div>
+                  <span className="flex-shrink-0 px-2.5 py-1 rounded bg-[#dcfce7] text-[#166534] font-sans font-bold text-[12px]">+1</span>
+                </div>
+              )}
+
+              {/* Indicadores Tesis */}
+              {prod.tipo === 'tesis' && prod.investigadoresVinculados.map((v) => (
                 <div key={`carga-${v.investigador.id}`}
                   className="flex items-center gap-3 p-3 rounded border border-outline-variant hover:bg-surface-container-low transition-colors">
                   <span className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-[#dbeafe] text-[#1d4ed8]">
@@ -631,7 +798,7 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
                   <div className="flex-1">
                     <p className="font-sans font-bold text-[13px] text-on-surface">Carga No Lectiva (Docente)</p>
                     <p className="font-sans text-[12px] text-on-surface-variant">
-                      Suma como 1 {prod.tipo === 'articulo' ? `artículo${prod.cuartil ? ` ${prod.cuartil}` : ''}` : prod.tipo} al perfil de{' '}
+                      Suma como 1 tesis al perfil de{' '}
                       <span className="font-semibold text-[#001631]">{v.investigador.nombre}</span> para el periodo 2026-1.
                     </p>
                   </div>
@@ -639,29 +806,9 @@ function VistaValidada({ prod, onVolver }: { prod: RegistroProduccion; onVolver:
                 </div>
               ))}
 
-              {/* Indicador 2: Memoria de Grupo */}
-              {prod.investigadoresVinculados
-                .filter((v) => v.investigador.grupo)
-                .map((v) => (
-                  <div key={`grupo-${v.investigador.id}`}
-                    className="flex items-center gap-3 p-3 rounded border border-outline-variant hover:bg-surface-container-low transition-colors">
-                    <span className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-[#ede9fe] text-[#6d28d9]">
-                      <UsersIcon />
-                    </span>
-                    <div className="flex-1">
-                      <p className="font-sans font-bold text-[13px] text-on-surface">Memoria de Grupo de Investigación</p>
-                      <p className="font-sans text-[12px] text-on-surface-variant">
-                        Actualiza el contador del grupo{' '}
-                        <span className="font-semibold text-[#001631]">{v.investigador.grupo}</span>.
-                      </p>
-                    </div>
-                    <span className="flex-shrink-0 px-2.5 py-1 rounded bg-[#dcfce7] text-[#166534] font-sans font-bold text-[12px]">+1</span>
-                  </div>
-                ))}
-
-              {prod.investigadoresVinculados.length === 0 && (
+              {((prod.tipo === 'tesis' && prod.investigadoresVinculados.length === 0) || (prod.tipo === 'articulo' && !prod.grupoVinculado)) && (
                 <p className="font-sans text-[13px] text-on-surface-variant text-center py-2">
-                  Sin impacto calculado (no hay investigadores vinculados).
+                  Sin impacto calculado (no hay vinculación).
                 </p>
               )}
             </div>
@@ -757,6 +904,7 @@ export default function ProduccionDetailPage() {
 
   // Form state: vinculados
   const [vinculados, setVinculados] = useState<InvestigadorVinculado[]>([]);
+  const [grupoVinculado, setGrupoVinculado] = useState<GrupoInvestigacionResumen | null>(null);
 
   // ── Cargar ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -778,6 +926,7 @@ export default function ProduccionDetailPage() {
         urlCybertesis: data.urlCybertesis ?? '',
       });
       setVinculados(data.investigadoresVinculados ?? []);
+      setGrupoVinculado(data.grupoVinculado ?? null);
       setIsLoading(false);
     }
     load();
@@ -803,6 +952,11 @@ export default function ProduccionDetailPage() {
     setShowBuscar(false);
   };
 
+  const handleSelectGrupo = (grupo: GrupoInvestigacionResumen) => {
+    setGrupoVinculado(grupo);
+    setShowBuscar(false);
+  };
+
   const handleRolChange = (idx: number, rol: RolPublicacion) => {
     setVinculados((prev) => prev.map((v, i) => i === idx ? { ...v, rol } : v));
   };
@@ -816,9 +970,11 @@ export default function ProduccionDetailPage() {
     if (doiError) { setSaveError('Corrija el DOI antes de confirmar.'); return; }
     setSaveError(null);
     setIsSaving(true);
+    if (!prod) return;
     try {
       const updated = await confirmarProduccion({
         id,
+        tipo: prod.tipo,
         doi: meta.doi || undefined,
         issn: meta.issn || undefined,
         volNum: meta.volNum || undefined,
@@ -828,9 +984,11 @@ export default function ProduccionDetailPage() {
           investigadorId: v.investigador.id,
           rol: v.rol,
         })),
+        id_grupo: grupoVinculado?.id || undefined,
       });
       setProd(updated);
       setVinculados(updated.investigadoresVinculados);
+      setGrupoVinculado(updated.grupoVinculado ?? null);
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : 'Error al confirmar.');
     } finally {
@@ -955,7 +1113,7 @@ export default function ProduccionDetailPage() {
         <div className="flex border-b border-outline-variant">
           {([
             { id: 'metadata', label: 'Metadata Técnica', icon: <DocIcon /> },
-            { id: 'vinculacion', label: 'Vinculación de Investigadores', icon: <LinkPersonIcon /> },
+            { id: 'vinculacion', label: prod.tipo === 'articulo' ? 'Grupo de Investigación' : 'Vinculación de Asesores', icon: <LinkPersonIcon /> },
           ] as { id: TabId; label: string; icon: React.ReactNode }[]).map((t) => (
             <button key={t.id} onClick={() => setActiveTab(t.id)}
               className={`
@@ -981,24 +1139,39 @@ export default function ProduccionDetailPage() {
             />
           )}
           {activeTab === 'vinculacion' && (
-            <TabVinculacion
-              vinculados={vinculados}
-              onRolChange={handleRolChange}
-              onRemove={handleRemoveVinculado}
-              onBuscar={() => setShowBuscar(true)}
-            />
+            prod.tipo === 'articulo' ? (
+              <TabVinculacionGrupo
+                grupoVinculado={grupoVinculado}
+                onRemove={() => setGrupoVinculado(null)}
+                onBuscar={() => setShowBuscar(true)}
+              />
+            ) : (
+              <TabVinculacion
+                vinculados={vinculados}
+                onRolChange={handleRolChange}
+                onRemove={handleRemoveVinculado}
+                onBuscar={() => setShowBuscar(true)}
+              />
+            )
           )}
         </div>
 
       </div>
 
-      {/* ── Modal buscar investigador (EX1) ──────────────────────────────────── */}
+      {/* ── Modal buscar investigador o grupo (EX1) ──────────────────────────────────── */}
       {showBuscar && (
-        <BuscarInvestigadorModal
-          onSelect={handleSelectInvestigador}
-          onClose={() => setShowBuscar(false)}
-          excluirIds={vinculados.map((v) => v.investigador.id)}
-        />
+        prod.tipo === 'articulo' ? (
+          <BuscarGrupoModal
+            onSelect={handleSelectGrupo}
+            onClose={() => setShowBuscar(false)}
+          />
+        ) : (
+          <BuscarInvestigadorModal
+            onSelect={handleSelectInvestigador}
+            onClose={() => setShowBuscar(false)}
+            excluirIds={vinculados.map((v) => v.investigador.id)}
+          />
+        )
       )}
 
     </MainLayout>

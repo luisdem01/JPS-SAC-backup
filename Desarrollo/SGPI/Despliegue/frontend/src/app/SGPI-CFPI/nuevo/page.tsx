@@ -2,7 +2,7 @@
 
 /**
  * @file nuevo/page.tsx
- * @route /proyectos/nuevo
+ * @route /SGPI-CFPI/nuevo
  * @description Registro de Nuevo Proyecto de Investigación — Carga Manual (Tabs: Ficha Técnica y Financiera / Equipo y Grupo)
  */
 
@@ -13,7 +13,6 @@ import type { MiembroProyecto, RolMiembroProyecto, EstadoProyecto } from '../_da
 import { buscarInvestigadores, crearProyecto, getGruposDisponibles, getConvocatorias, getProyectoById } from '../_data/service';
 import type { GrupoInvestigacion } from '../_data/service';
 import type { InvestigatorPadron } from '../../SGPI-CFGI/_data/types';
-import { useAuth } from '@/SGPI-CFU/lib/hooks';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Íconos SVG
@@ -93,14 +92,6 @@ const GroupIcon = () => (
 
 export default function NuevoProyectoPage() {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
-
-  // Redirigir si el usuario no es administrador
-  useEffect(() => {
-    if (!isLoading && (!user || user.role !== 'admin')) {
-      router.replace('/proyectos');
-    }
-  }, [user, isLoading, router]);
 
   const [activeTab, setActiveTab] = useState<'ficha' | 'equipo'>('ficha');
 
@@ -310,28 +301,13 @@ export default function NuevoProyectoPage() {
         miembros,
         fuente: 'Manual'
       });
-      router.push(`/proyectos/${formattedCode}?created=true`);
+      setShowToast(true);
+      setTimeout(() => { router.push(`/SGPI-CFPI/${formattedCode}`); }, 2000);
     } catch (err: any) {
       setErrors([err.message || 'Error al guardar el proyecto.']);
       setGuardando(false);
     }
   };
-
-  if (isLoading || !user || user.role !== 'admin') {
-    return (
-      <MainLayout title="" subtitle="">
-        <div className="flex h-[50vh] items-center justify-center bg-background">
-          <div className="flex flex-col items-center gap-3">
-            <svg className="animate-spin h-8 w-8 text-[#001631]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span className="font-sans text-[14px] text-[#475569]">Verificando credenciales...</span>
-          </div>
-        </div>
-      </MainLayout>
-    );
-  }
 
   return (
     <MainLayout title="" subtitle="">
@@ -342,7 +318,7 @@ export default function NuevoProyectoPage() {
           {/* Izquierda */}
           <div>
             <button
-              onClick={() => router.push('/proyectos')}
+              onClick={() => router.push('/SGPI-CFPI')}
               className="inline-flex items-center gap-1 text-[13px] font-sans text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer mb-2"
               aria-label="Volver a la bandeja principal"
             >
@@ -363,22 +339,20 @@ export default function NuevoProyectoPage() {
           <div className="flex gap-2 flex-shrink-0 ml-4">
             <button
               type="button"
-              onClick={() => router.push('/proyectos')}
+              onClick={() => router.push('/SGPI-CFPI')}
               className="border border-[#e2e8f0] hover:bg-slate-50 font-sans text-[13px] text-[#475569] px-4 py-2 rounded transition-colors cursor-pointer"
             >
               Cancelar
             </button>
-            {user?.role === 'admin' && (
-              <button
-                type="button"
-                onClick={handleGuardar}
-                disabled={guardando}
-                className="flex items-center gap-2 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded shadow transition-colors cursor-pointer disabled:opacity-60"
-              >
-                <CheckIcon />
-                {guardando ? 'Guardando...' : 'Guardar y Validar'}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleGuardar}
+              disabled={guardando}
+              className="flex items-center gap-2 bg-[#001631] hover:bg-[#002b54] text-white font-sans font-bold text-[13px] px-4 py-2 rounded shadow transition-colors cursor-pointer disabled:opacity-60"
+            >
+              <CheckIcon />
+              {guardando ? 'Guardando...' : 'Guardar y Validar'}
+            </button>
           </div>
         </div>
 
@@ -396,7 +370,7 @@ export default function NuevoProyectoPage() {
         <div className="border-b border-outline-variant flex bg-surface-container-lowest rounded-t border border-b-0">
           <button
             onClick={() => setActiveTab('ficha')}
-            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-all duration-300 ease-out cursor-pointer ${
+            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-colors duration-100 cursor-pointer ${
               activeTab === 'ficha'
                 ? 'border-[#001631] text-[#001631]'
                 : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline'
@@ -407,7 +381,7 @@ export default function NuevoProyectoPage() {
           </button>
           <button
             onClick={() => setActiveTab('equipo')}
-            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-all duration-300 ease-out cursor-pointer ${
+            className={`flex items-center gap-2 px-5 py-3 font-sans font-semibold text-[13px] border-b-2 transition-colors duration-100 cursor-pointer ${
               activeTab === 'equipo'
                 ? 'border-[#001631] text-[#001631]'
                 : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline'
@@ -419,7 +393,7 @@ export default function NuevoProyectoPage() {
         </div>
 
         {/* ── Contenido del Tab ─────────────────────────────────────────────── */}
-        <div key={activeTab} className="bg-surface-container-lowest border border-t-0 border-outline-variant rounded-b p-6 shadow-level-1 animate-sweep-in">
+        <div className="bg-surface-container-lowest border border-t-0 border-outline-variant rounded-b p-6 shadow-level-1">
 
           {/* TAB 1 — FICHA TÉCNICA */}
           {activeTab === 'ficha' && (
@@ -567,7 +541,7 @@ export default function NuevoProyectoPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label htmlFor="grupo-vinculado" className="block font-sans font-bold text-[10px] text-on-surface-variant uppercase tracking-widest mb-1.5">
-                    GRUPO DE INVESTIGACIÓN
+                    GRUPO DE INVESTIGACIÓN (CU05)
                   </label>
                   <select
                     id="grupo-vinculado"
@@ -590,7 +564,7 @@ export default function NuevoProyectoPage() {
 
                 <div>
                   <label htmlFor="resp-principal" className="block font-sans font-bold text-[10px] text-on-surface-variant uppercase tracking-widest mb-1.5">
-                    RESPONSABLE PRINCIPAL
+                    RESPONSABLE PRINCIPAL (CU04)
                   </label>
                   <select
                     id="resp-principal"
