@@ -1,0 +1,35 @@
+{
+  "vrip_convocatorias": {
+    "url": "https://vrip.unmsm.edu.pe/convocatoria-2026/",
+    "fallback_urls": [
+      "https://vrip.unmsm.edu.pe/convocatoria-2025/",
+      "https://vrip.unmsm.edu.pe/convocatoria-2024/"
+    ],
+    "selectors": {
+      "item": "article, .post, .entry, .type-post",
+      "title": "h2.entry-title a, h1.entry-title a, .post-title a, h2 a",
+      "date": ".entry-date, .date, time",
+      "link": "a[href*='bases'], a[href*='bases-y-anexos'], a[href*='pdf'], a.more-link, h2 a"
+    }
+  },
+  "cybertesis": {
+    "api_url": "https://cybertesis.unmsm.edu.pe/backend/api/discover/search/objects",
+    "web_url": "https://cybertesis.unmsm.edu.pe"
+  },
+  "vrip_proyectos": {
+    "wp_api_url": "https://vrip.unmsm.edu.pe/wp-json/wp/v2/posts",
+    "categories_url": "https://vrip.unmsm.edu.pe/wp-json/wp/v2/categories",
+    "media_url": "https://vrip.unmsm.edu.pe/wp-json/wp/v2/media"
+  },
+  "request_settings": {
+    "timeout": 15,
+    "max_retries": 3,
+    "retry_delay_seconds": 2,
+    "user_agents": [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ]
+  }
+}

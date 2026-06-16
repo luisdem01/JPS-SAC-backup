@@ -1,0 +1,1 @@
+# Motores heurísticos offline locales

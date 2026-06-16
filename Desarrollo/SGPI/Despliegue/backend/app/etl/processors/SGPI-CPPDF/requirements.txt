@@ -1,0 +1,8 @@
+pymupdf
+pdfplumber
+openpyxl
+typer
+pydantic
+python-dotenv
+pytesseract
+pillow
