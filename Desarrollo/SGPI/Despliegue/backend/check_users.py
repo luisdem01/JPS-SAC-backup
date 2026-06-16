@@ -12,7 +12,8 @@ async def check():
         print("--- USUARIOS REGISTRADOS EN LA TABLA public.usuario ---")
         for u in users:
             print(
-                f"ID: {u.id_usuario} | Email: {u.correo_institucional} | Rol: {u.rol_sistema} | Activo: {u.estado_cuenta}"
+                f"ID: {u.id_usuario} | Email: {u.correo_institucional} | "
+                f"Rol: {u.rol_sistema} | Activo: {u.estado_cuenta}"
             )
         print("-----------------------------------------------------")
 
