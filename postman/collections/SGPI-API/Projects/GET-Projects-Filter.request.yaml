@@ -1,0 +1,32 @@
+name: GET Projects - Filter by Estado
+method: GET
+url: '{{base_url}}/api/v1/projects'
+queryParams:
+  - key: estado
+    value: EN_EJECUCION
+  - key: skip
+    value: '0'
+  - key: limit
+    value: '5'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Filter projects by estado. All returned items must match filter.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("All returned projects match filter", function () {
+        const json = pm.response.json();
+        const items = Array.isArray(json) ? json : (json.items || json.data || []);
+        items.forEach(function(project) {
+          if (project.estado) {
+            pm.expect(project.estado).to.equal("EN_EJECUCION");
+          }
+        });
+      });

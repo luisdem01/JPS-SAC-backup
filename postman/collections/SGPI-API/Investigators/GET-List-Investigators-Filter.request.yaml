@@ -1,0 +1,26 @@
+name: GET List Investigators - With Filters
+method: GET
+url: '{{base_url}}/api/v1/investigators'
+queryParams:
+  - key: skip
+    value: '0'
+  - key: limit
+    value: '10'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Test pagination - limit=10 returns at most 10 records.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Result respects limit", function () {
+        const json = pm.response.json();
+        const items = Array.isArray(json) ? json : (json.items || json.data || []);
+        pm.expect(items.length).to.be.at.most(10);
+      });

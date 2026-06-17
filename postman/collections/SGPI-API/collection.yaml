@@ -1,0 +1,100 @@
+﻿name: SGPI - Sistema de Gestion de Proyectos de Investigacion
+description: >-
+  Complete API test collection for the SGPI research project management system.
+  Covers Auth (MAAPI), Core REST (CAPIRESTC), Reports (CRAPI), Excel Export (CMEE),
+  Config and Audit (CAPIAC), and Reconciliation (CMR) modules.
+version: '1.0.0'
+variables:
+  - key: base_url
+    value: 'http://localhost:8000'
+    description: FastAPI backend base URL
+  - key: auth_url
+    value: 'http://localhost:3445'
+    description: Auth service base URL (NestJS / JWT issuer)
+  - key: access_token
+    value: ''
+    description: Bearer token - populated automatically by the beforeRequest script
+  - key: test_email
+    value: 'admin@sgpi.test'
+    description: Test user e-mail for authentication
+  - key: test_password
+    value: 'Admin1234!'
+    description: Test user password
+  - key: test_dni
+    value: '12345678'
+    description: DNI used in researcher / user lookup tests
+  - key: test_group_code
+    value: 'GRP-001'
+    description: Research group code used in group-related tests
+  - key: test_project_code
+    value: 'PRY-001'
+    description: Project code used in project-related tests
+  - key: test_user_id
+    value: '1'
+    description: Numeric user ID used in user-management tests
+  - key: test_config_key
+    value: 'MAX_PROJECTS_PER_GROUP'
+    description: Configuration key used in config/audit tests
+  - key: test_quarantine_id
+    value: '1'
+    description: Quarantine record ID used in reconciliation tests
+  - key: token_expiry
+    value: '0'
+    description: >-
+      Unix timestamp (ms) when the current access_token expires.
+      Set by the afterResponse script of POST Login; read by beforeRequest.
+  - key: token_expiry_buffer_ms
+    value: '30000'
+    description: >-
+      Milliseconds before actual expiry at which the token is considered stale
+      and a silent re-authentication is triggered (default: 30000 ms = 30 s).
+scripts:
+  beforeRequest:
+    type: text/javascript
+    content: |
+      // Auto re-authentication guard
+      // Skips itself when the current request IS the login call to avoid loops.
+      const requestUrl = pm.request.url.toString();
+      const isLoginRequest = requestUrl.includes('/api/auth/login');
+      if (isLoginRequest) { return; }
+      const expiryStr = pm.collectionVariables.get('token_expiry');
+      const bufferStr = pm.collectionVariables.get('token_expiry_buffer_ms');
+      const expiry    = parseInt(expiryStr  || '0',  10);
+      const buffer    = parseInt(bufferStr  || '30000', 10);
+      const now       = Date.now();
+      const tokenExists = !!pm.collectionVariables.get('access_token');
+      const needsRefresh = !tokenExists || (expiry > 0 && now >= expiry - buffer);
+      if (!needsRefresh) { return; }
+      const authUrl  = pm.collectionVariables.get('auth_url') || 'http://localhost:3445';
+      const email    = pm.collectionVariables.get('test_email');
+      const password = pm.collectionVariables.get('test_password');
+      pm.sendRequest(
+        {
+          url:    authUrl + '/api/auth/login',
+          method: 'POST',
+          header: { 'Content-Type': 'application/json' },
+          body: { mode: 'raw', raw: JSON.stringify({ email: email, password: password }) }
+        },
+        function (err, res) {
+          if (err) { console.error('[SGPI beforeRequest] Re-auth failed:', err); return; }
+          if (res.code !== 200) { console.error('[SGPI beforeRequest] HTTP', res.code); return; }
+          const body = res.json();
+          if (body && body.access_token) {
+            pm.collectionVariables.set('access_token', body.access_token);
+            try {
+              const parts   = body.access_token.split('.');
+              const payload = JSON.parse(atob(parts[1]));
+              if (payload.exp) {
+                pm.collectionVariables.set('token_expiry', String(payload.exp * 1000));
+              } else {
+                pm.collectionVariables.set('token_expiry', String(Date.now() + 3600000));
+              }
+            } catch (e) {
+              pm.collectionVariables.set('token_expiry', String(Date.now() + 3600000));
+            }
+            console.log('[SGPI beforeRequest] Token refreshed.');
+          } else {
+            console.error('[SGPI beforeRequest] Missing access_token in response.');
+          }
+        }
+      );

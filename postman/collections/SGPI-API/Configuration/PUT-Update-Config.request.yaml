@@ -1,0 +1,31 @@
+name: PUT Update Configuration
+method: PUT
+url: '{{base_url}}/api/v1/configuracion/{{test_config_key}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "valor": "SGPI - Sistema Actualizado",
+      "descripcion": "Nombre del sistema actualizado via API"
+    }
+description: Update config value. 200 on success, 404 if key not found.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 or 404", function () {
+        pm.expect([200, 404]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 200) {
+        pm.test("Updated config returned", function () {
+          pm.expect(pm.response.json()).to.have.property("clave");
+        });
+      }

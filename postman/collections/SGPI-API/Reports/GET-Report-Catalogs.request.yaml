@@ -1,0 +1,19 @@
+name: GET Report Catalogs
+method: GET
+url: '{{base_url}}/api/v1/reports/catalogs'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get available report types and catalog data.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Catalogs response is not null", function () {
+        pm.expect(pm.response.json()).to.not.be.null;
+      });

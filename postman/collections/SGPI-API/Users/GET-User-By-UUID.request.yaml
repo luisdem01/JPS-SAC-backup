@@ -1,0 +1,21 @@
+name: GET User by UUID
+method: GET
+url: '{{base_url}}/api/v1/users/{{test_user_id}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get user by UUID. 200 if found, 404 if not, 422 on malformed UUID.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200, 404, or 422", function () {
+        pm.expect([200, 404, 422]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 200) {
+        pm.test("User has email", function () {
+          pm.expect(pm.response.json()).to.have.property("email");
+        });
+      }

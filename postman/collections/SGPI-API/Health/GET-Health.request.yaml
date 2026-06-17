@@ -1,0 +1,26 @@
+name: GET Health Check
+method: GET
+url: '{{base_url}}/health'
+description: >-
+  Check server status, DB connectivity, environment, version.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response time under 2000ms", function () {
+        pm.expect(pm.response.responseTime).to.be.below(2000);
+      });
+      pm.test("Has status field", function () {
+        pm.expect(pm.response.json()).to.have.property("status");
+      });
+      pm.test("Database is connected", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property("db");
+        pm.expect(json.db).to.not.equal("disconnected");
+      });
+      pm.test("Has version field", function () {
+        pm.expect(pm.response.json()).to.have.property("version");
+      });

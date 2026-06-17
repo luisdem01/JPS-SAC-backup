@@ -1,0 +1,24 @@
+name: GET Quarantine Items
+method: GET
+url: '{{base_url}}/api/v1/reconciliation/quarantine'
+queryParams:
+  - key: skip
+    value: '0'
+  - key: limit
+    value: '20'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get items in reconciliation quarantine queue.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response is array or object", function () {
+        pm.expect(pm.response.json()).to.satisfy(v => Array.isArray(v) || typeof v === 'object');
+      });

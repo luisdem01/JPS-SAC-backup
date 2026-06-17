@@ -1,0 +1,29 @@
+name: GET Investigator by DNI
+method: GET
+url: '{{base_url}}/api/v1/investigators/{{test_dni}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get investigator by DNI. 200 if found, 404 if not.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 or 404", function () {
+        pm.expect([200, 404]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 200) {
+        pm.test("Has dni field", function () {
+          pm.expect(pm.response.json()).to.have.property("dni");
+        });
+        pm.test("Has nombre field", function () {
+          pm.expect(pm.response.json()).to.have.property("nombre");
+        });
+      }
+      if (pm.response.code === 404) {
+        pm.test("404 has detail", function () {
+          pm.expect(pm.response.json()).to.have.property("detail");
+        });
+      }

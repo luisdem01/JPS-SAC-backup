@@ -1,0 +1,42 @@
+name: POST Create Project
+method: POST
+url: '{{base_url}}/api/v1/projects'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "codigo": "{{test_project_code}}",
+      "titulo": "Proyecto de Investigacion en IA Aplicada",
+      "descripcion": "Desarrollo de modelos de ML para prediccion academica",
+      "fecha_inicio": "2024-01-01",
+      "fecha_fin": "2024-12-31",
+      "estado": "EN_EJECUCION",
+      "grupo_codigo": "{{test_group_code}}",
+      "presupuesto": 50000.00,
+      "tipo_financiamiento": "INTERNO"
+    }
+description: >-
+  Create project. 201 on success, 409 if code exists, 422 on invalid dates or missing fields.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 201, 409, or 422", function () {
+        pm.expect([201, 409, 422]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 201) {
+        pm.test("Created project has codigo", function () {
+          pm.expect(pm.response.json()).to.have.property("codigo");
+        });
+        pm.test("Created project has titulo", function () {
+          pm.expect(pm.response.json()).to.have.property("titulo");
+        });
+      }

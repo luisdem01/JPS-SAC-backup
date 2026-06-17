@@ -1,0 +1,24 @@
+name: GET Project by Code
+method: GET
+url: '{{base_url}}/api/v1/projects/{{test_project_code}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get project by code. 200 if found, 404 if not.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 or 404", function () {
+        pm.expect([200, 404]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 200) {
+        pm.test("Project has codigo", function () {
+          pm.expect(pm.response.json()).to.have.property("codigo");
+        });
+        pm.test("Project has titulo", function () {
+          pm.expect(pm.response.json()).to.have.property("titulo");
+        });
+      }

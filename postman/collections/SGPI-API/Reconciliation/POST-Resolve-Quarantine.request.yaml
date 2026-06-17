@@ -1,0 +1,38 @@
+name: POST Resolve Quarantine Item
+method: POST
+url: '{{base_url}}/api/v1/reconciliation/quarantine/{{test_quarantine_id}}/resolve'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "accion": "ACEPTAR",
+      "comentario": "Datos verificados manualmente - aceptar version del sistema"
+    }
+description: >-
+  Resolve quarantine item. accion must be ACEPTAR or RECHAZAR.
+  200 on success, 404 if not found, 422 on invalid accion.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200, 404, or 422", function () {
+        pm.expect([200, 404, 422]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 200) {
+        pm.test("Resolution confirmed", function () {
+          pm.expect(pm.response.json()).to.not.be.null;
+        });
+      }
+      if (pm.response.code === 422) {
+        pm.test("Validation error has detail", function () {
+          pm.expect(pm.response.json()).to.have.property("detail");
+        });
+      }

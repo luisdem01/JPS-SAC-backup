@@ -1,0 +1,44 @@
+name: POST Create Investigator
+method: POST
+url: '{{base_url}}/api/v1/investigators'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "dni": "{{test_dni}}",
+      "nombre": "Juan",
+      "apellido_paterno": "Perez",
+      "apellido_materno": "Garcia",
+      "email": "juan.perez@universidad.edu.pe",
+      "telefono": "987654321",
+      "especialidad": "Ingenieria de Software",
+      "grado_academico": "Doctor",
+      "codigo_orcid": "0000-0001-2345-6789"
+    }
+description: >-
+  Create investigator. 201 on success, 409 if DNI exists, 422 on missing fields.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 201, 409, or 422", function () {
+        pm.expect([201, 409, 422]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 201) {
+        pm.test("Created investigator has dni", function () {
+          pm.expect(pm.response.json()).to.have.property("dni");
+        });
+      }
+      if (pm.response.code === 422) {
+        pm.test("Validation error has detail", function () {
+          pm.expect(pm.response.json()).to.have.property("detail");
+        });
+      }

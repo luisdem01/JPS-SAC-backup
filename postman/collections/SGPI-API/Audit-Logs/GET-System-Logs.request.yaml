@@ -1,0 +1,26 @@
+name: GET System Logs
+method: GET
+url: '{{base_url}}/api/v1/logs/system'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get system-level logs. 200 for admin, 403 for non-admin.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 or 403", function () {
+        pm.expect([200, 403]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 200) {
+        pm.test("System logs not null", function () {
+          pm.expect(pm.response.json()).to.not.be.null;
+        });
+      }
+      if (pm.response.code === 403) {
+        pm.test("Forbidden detail present", function () {
+          pm.expect(pm.response.json()).to.have.property("detail");
+        });
+      }

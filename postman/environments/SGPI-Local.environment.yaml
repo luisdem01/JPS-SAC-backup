@@ -1,0 +1,46 @@
+name: SGPI - Local Development
+values:
+  - key: base_url
+    value: 'http://localhost:8000'
+    enabled: true
+    type: default
+  - key: auth_url
+    value: 'http://localhost:3000'
+    enabled: true
+    type: default
+  - key: access_token
+    value: ''
+    enabled: true
+    type: default
+  - key: test_email
+    value: 'testuser@universidad.edu.pe'
+    enabled: true
+    type: default
+  - key: test_password
+    value: 'TestPass123'
+    enabled: true
+    type: default
+  - key: test_dni
+    value: '12345678'
+    enabled: true
+    type: default
+  - key: test_group_code
+    value: 'GRP-TEST-001'
+    enabled: true
+    type: default
+  - key: test_project_code
+    value: 'PROJ-TEST-001'
+    enabled: true
+    type: default
+  - key: test_user_id
+    value: ''
+    enabled: true
+    type: default
+  - key: test_config_key
+    value: 'SISTEMA_NOMBRE'
+    enabled: true
+    type: default
+  - key: test_quarantine_id
+    value: '1'
+    enabled: true
+    type: default

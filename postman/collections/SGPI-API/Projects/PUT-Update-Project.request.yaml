@@ -1,0 +1,27 @@
+name: PUT Update Project
+method: PUT
+url: '{{base_url}}/api/v1/projects/{{test_project_code}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "descripcion": "Descripcion actualizada del proyecto",
+      "presupuesto": 75000.00,
+      "estado": "EN_EJECUCION"
+    }
+description: Update project. 200 on success, 404 if not found.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 or 404", function () {
+        pm.expect([200, 404]).to.include(pm.response.code);
+      });
