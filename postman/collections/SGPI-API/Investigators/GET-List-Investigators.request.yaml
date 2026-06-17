@@ -1,0 +1,23 @@
+name: GET List Investigators
+method: GET
+url: '{{base_url}}/api/v1/investigators'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get paginated list of investigators.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response is array or object", function () {
+        const json = pm.response.json();
+        pm.expect(json).to.satisfy(v => Array.isArray(v) || typeof v === 'object');
+      });
+      pm.test("Response time under 3000ms", function () {
+        pm.expect(pm.response.responseTime).to.be.below(3000);
+      });

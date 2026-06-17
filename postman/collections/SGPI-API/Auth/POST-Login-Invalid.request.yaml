@@ -1,0 +1,27 @@
+name: POST Login - Invalid Credentials
+method: POST
+url: '{{auth_url}}/api/auth/login'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  mode: raw
+  raw: |-
+    {
+      "email": "{{test_email}}",
+      "password": "WrongPassword999"
+    }
+  options:
+    raw:
+      language: json
+description: Negative test - wrong password must return 401.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 401 Unauthorized", function () {
+        pm.response.to.have.status(401);
+      });
+      pm.test("Error detail present", function () {
+        pm.expect(pm.response.json()).to.have.property("detail");
+      });

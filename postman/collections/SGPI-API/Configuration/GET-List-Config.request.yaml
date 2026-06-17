@@ -1,0 +1,26 @@
+name: GET List Configuration
+method: GET
+url: '{{base_url}}/api/v1/configuracion'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get all system configuration key-value pairs.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response is array or object", function () {
+        pm.expect(pm.response.json()).to.satisfy(v => Array.isArray(v) || typeof v === 'object');
+      });
+      const json = pm.response.json();
+      const items = Array.isArray(json) ? json : (json.items || json.data || []);
+      if (items.length > 0) {
+        pm.test("Config entries have clave field", function () {
+          pm.expect(items[0]).to.have.property("clave");
+        });
+      }

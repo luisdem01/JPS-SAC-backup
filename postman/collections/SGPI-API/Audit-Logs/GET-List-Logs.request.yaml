@@ -1,0 +1,27 @@
+name: GET List Audit Logs
+method: GET
+url: '{{base_url}}/api/v1/logs'
+queryParams:
+  - key: skip
+    value: '0'
+  - key: limit
+    value: '20'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get paginated audit log entries.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response is array or object", function () {
+        pm.expect(pm.response.json()).to.satisfy(v => Array.isArray(v) || typeof v === 'object');
+      });
+      pm.test("Response time under 3000ms", function () {
+        pm.expect(pm.response.responseTime).to.be.below(3000);
+      });

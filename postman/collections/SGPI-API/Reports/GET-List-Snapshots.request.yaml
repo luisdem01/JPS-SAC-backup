@@ -1,0 +1,19 @@
+name: GET List Snapshots
+method: GET
+url: '{{base_url}}/api/v1/reports/snapshots'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get all report snapshots.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response is array or object", function () {
+        pm.expect(pm.response.json()).to.satisfy(v => Array.isArray(v) || typeof v === 'object');
+      });

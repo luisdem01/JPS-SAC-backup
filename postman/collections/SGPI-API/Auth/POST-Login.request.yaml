@@ -1,0 +1,62 @@
+﻿name: POST Login
+description: >-
+  Authenticates a user against the Auth service and stores the returned
+  access_token and token_expiry in collection variables so that all
+  subsequent requests can use Bearer authentication automatically.
+request:
+  method: POST
+  url: '{{auth_url}}/api/auth/login'
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    mode: raw
+    raw: |
+      {
+        "email: {{test_email}},
+ password: {{test_password}}
+ }
+scripts:
+ afterResponse:
+ type: text/javascript
+ content: |
+ // Response assertions
+ pm.test('Status is 200 OK', function () {
+ pm.response.to.have.status(200);
+ });
+ pm.test('Response contains access_token', function () {
+ const body = pm.response.json();
+ pm.expect(body).to.have.property('access_token');
+ pm.expect(body.access_token).to.be.a('string').and.not.empty;
+ });
+ pm.test('Response contains refresh_token', function () {
+ const body = pm.response.json();
+ pm.expect(body).to.have.property('refresh_token');
+ pm.expect(body.refresh_token).to.be.a('string').and.not.empty;
+ });
+ pm.test('Response contains rol_sistema', function () {
+ const body = pm.response.json();
+ pm.expect(body).to.have.property('rol_sistema');
+ });
+ // Persist token + expiry to collection variables
+ const body = pm.response.json();
+ if (body && body.access_token) {
+ pm.collectionVariables.set('access_token', body.access_token);
+ try {
+ const parts = body.access_token.split('.');
+ const payload = JSON.parse(atob(parts[1]));
+ if (payload.exp) {
+ pm.collectionVariables.set('token_expiry', String(payload.exp * 1000));
+ console.log('[POST Login] token_expiry set to', payload.exp * 1000);
+ } else {
+ pm.collectionVariables.set('token_expiry', String(Date.now() + 3600000));
+ console.warn('[POST Login] JWT has no exp claim - defaulting to +1 h.');
+ }
+ } catch (e) {
+ pm.collectionVariables.set('token_expiry', String(Date.now() + 3600000));
+ console.warn('[POST Login] Could not decode JWT - defaulting to +1 h.', e);
+ }
+ console.log('[POST Login] access_token saved to collection variables.');
+ } else {
+ console.error('[POST Login] Response did not contain access_token - check credentials.');
+ }

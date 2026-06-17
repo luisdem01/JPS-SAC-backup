@@ -1,0 +1,11 @@
+name: GET Me - No Token (Negative)
+method: GET
+url: '{{auth_url}}/api/auth/me'
+description: Negative test - no Bearer token must return 401.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 401 Unauthorized", function () {
+        pm.response.to.have.status(401);
+      });

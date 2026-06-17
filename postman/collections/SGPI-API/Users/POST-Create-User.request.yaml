@@ -1,0 +1,36 @@
+name: POST Create User
+method: POST
+url: '{{base_url}}/api/v1/users'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "nuevo.usuario@universidad.edu.pe",
+      "password": "SecurePass123",
+      "rol": "INVESTIGADOR",
+      "dni_investigador": "{{test_dni}}"
+    }
+description: Create user. 201 on success, 409 if email exists. Saves UUID to variable.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 201, 409, or 422", function () {
+        pm.expect([201, 409, 422]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 201) {
+        pm.test("Created user has uuid", function () {
+          const json = pm.response.json();
+          const uuid = json.uuid || json.id;
+          pm.expect(uuid).to.be.a("string").and.not.empty;
+          pm.collectionVariables.set("test_user_id", uuid);
+        });
+      }

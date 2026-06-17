@@ -1,0 +1,25 @@
+name: PUT Deactivate User
+method: PUT
+url: '{{base_url}}/api/v1/users/{{test_user_id}}/deactivate'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Deactivate user. 200 on success, 404 if not found.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 or 404", function () {
+        pm.expect([200, 404]).to.include(pm.response.code);
+      });
+      if (pm.response.code === 200) {
+        pm.test("User is deactivated", function () {
+          const json = pm.response.json();
+          const active = json.activo !== undefined ? json.activo : json.is_active;
+          if (active !== undefined) {
+            pm.expect(active).to.equal(false);
+          }
+        });
+      }

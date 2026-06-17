@@ -1,0 +1,22 @@
+name: GET Me - Authenticated Profile
+method: GET
+url: '{{auth_url}}/api/auth/me'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+description: Get authenticated user profile. 200 with valid token, 401 without.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Has email field", function () {
+        pm.expect(pm.response.json()).to.have.property("email");
+      });
+      pm.test("Has rol_sistema field", function () {
+        pm.expect(pm.response.json()).to.have.property("rol_sistema");
+      });

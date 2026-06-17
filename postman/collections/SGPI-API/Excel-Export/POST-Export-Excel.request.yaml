@@ -1,0 +1,40 @@
+name: POST Export to Excel
+method: POST
+url: '{{base_url}}/api/v1/export/excel'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{access_token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "tipo_exportacion": "PROYECTOS",
+      "filtros": {
+        "estado": "EN_EJECUCION"
+      },
+      "incluir_columnas": ["codigo", "titulo", "estado", "fecha_inicio", "fecha_fin", "presupuesto"]
+    }
+description: >-
+  Export data to Excel (.xlsx). Returns StreamingResponse binary.
+  Content-Type must be spreadsheetml or octet-stream.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Content-Type is Excel or octet-stream", function () {
+        const ct = pm.response.headers.get("Content-Type") || "";
+        pm.expect(ct).to.satisfy(function(v) {
+          return v.includes("spreadsheetml") || v.includes("octet-stream") || v.includes("excel");
+        });
+      });
+      pm.test("Response body is not empty", function () {
+        pm.expect(pm.response.responseSize).to.be.above(0);
+      });
