@@ -9,4 +9,5 @@ Desarrollo/SGPI/Despliegue/backend/app/etl/processors/SGPI-CPPDF/sgpi_parser/val
 Desarrollo/SGPI/Despliegue/backend/app/SGPI-CMEPDF/tests/test_canvas.py
 Desarrollo/SGPI/Despliegue/backend/app/SGPI-CMEPDF/tests/test_performance.py
 Desarrollo/SGPI/Despliegue/backend/app/SGPI-CMEPDF/tests/test_security.py
-Desarrollo/SGPI/Despliegue/backend/logs/sgpi.log
+Desarrollo/SGPI/Despliegue/backend/logs/
+
