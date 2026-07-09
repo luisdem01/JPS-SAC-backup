@@ -28,7 +28,7 @@ async def list_grupos(
     estado: Optional[str] = None,
     fuente: Optional[str] = None,
     page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
