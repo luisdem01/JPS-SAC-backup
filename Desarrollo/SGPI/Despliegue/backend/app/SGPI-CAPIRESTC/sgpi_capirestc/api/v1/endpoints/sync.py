@@ -112,7 +112,9 @@ class SyncFilters(BaseModel):
     max_docentes_cybertesis: int = 100
     
     # RENACYT
-    renacyt_mode: Optional[str] = None     # "update" | "expanded" | "both"
+    renacyt_mode: Optional[str] = None         # "update" | "expanded" | "both"
+    renacyt_max_update: Optional[int] = None   # límite de investigadores existentes a actualizar (None = todos)
+    renacyt_max_new: Optional[int] = None      # límite de nuevos investigadores a descubrir (None = sin límite)
 
 class SyncRequest(BaseModel):
     sources: List[str]                     # ["VRIP", "CYBERTESIS", "RENACYT"]
@@ -359,9 +361,13 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
 
     # 1. Actualización de investigadores ya registrados
     if mode in ["update", "both"]:
-        total_inv = len(investigadores_padron)
-        job.add_log("INFO", f"RENACYT: Consultando {total_inv} investigadores registrados por DNI...")
-        for idx, inv in enumerate(investigadores_padron):
+        padron_a_actualizar = investigadores_padron
+        if filters.renacyt_max_update is not None:
+            padron_a_actualizar = investigadores_padron[:filters.renacyt_max_update]
+        total_inv = len(padron_a_actualizar)
+        limite_label = f" (límite: {filters.renacyt_max_update})" if filters.renacyt_max_update is not None else ""
+        job.add_log("INFO", f"RENACYT: Consultando {total_inv} investigadores registrados por DNI{limite_label}...")
+        for idx, inv in enumerate(padron_a_actualizar):
             dni = inv.get("dni")
             if not dni or dni in seen_dnis:
                 continue
@@ -379,12 +385,24 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
 
     # 2. Búsqueda expandida por institución UNMSM + filtro FISI
     if mode in ["expanded", "both"]:
-        try:
-            job.add_log("INFO", "RENACYT: Iniciando búsqueda expandida por UNMSM con filtro FISI...")
-            logger.info("[Sync/RENACYT] Iniciando búsqueda expandida en UNMSM...")
+        # Calcular límite de páginas según renacyt_max_new (cada página trae 50 registros)
+        import math as _math
+        if filters.renacyt_max_new is not None:
+            MAX_RENACYT_PAGES = max(1, _math.ceil(filters.renacyt_max_new / 50))
+            job.add_log("INFO", f"RENACYT: Búsqueda expandida UNMSM con filtro FISI (límite: {filters.renacyt_max_new} nuevos ≈ {MAX_RENACYT_PAGES} páginas)...")
+        else:
             MAX_RENACYT_PAGES = 200
+            job.add_log("INFO", "RENACYT: Iniciando búsqueda expandida por UNMSM con filtro FISI (sin límite)...")
+        logger.info(f"[Sync/RENACYT] Iniciando búsqueda expandida en UNMSM (max páginas: {MAX_RENACYT_PAGES})...")
+        nuevos_encontrados = 0
+        try:
             for page in range(1, MAX_RENACYT_PAGES + 1):
-                job.add_log("INFO", f"RENACYT: Descargando investigadores UNMSM - página {page}...")
+                # Detener si ya alcanzamos el límite de nuevos
+                if filters.renacyt_max_new is not None and nuevos_encontrados >= filters.renacyt_max_new:
+                    job.add_log("INFO", f"RENACYT: Límite de {filters.renacyt_max_new} nuevos investigadores alcanzado. Deteniendo búsqueda expandida.")
+                    break
+
+                job.add_log("INFO", f"RENACYT: Descargando investigadores UNMSM - página {page}/{MAX_RENACYT_PAGES}...")
                 result = await connector.search_by_institution("Universidad Nacional Mayor de San Marcos", page=page, page_size=50)
                 registros = result.get("data", [])
                 total = result.get("total", 0)
@@ -394,6 +412,8 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
 
                 matched_this_page = 0
                 for rec in registros:
+                    if filters.renacyt_max_new is not None and nuevos_encontrados >= filters.renacyt_max_new:
+                        break
                     dni = rec.get("numero_documento") or rec.get("dni")
                     if dni and dni in seen_dnis:
                         continue
@@ -410,14 +430,15 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
                             seen_dnis.add(dni)
                         all_records.append(rec)
                         matched_this_page += 1
+                        nuevos_encontrados += 1
 
-                job.add_log("INFO", f"RENACYT: Página {page} procesada. {matched_this_page} investigadores coinciden con FISI.")
+                job.add_log("INFO", f"RENACYT: Página {page} procesada. {matched_this_page} coinciden con FISI (total nuevos: {nuevos_encontrados}).")
 
-                # Paginación
+                # Paginación natural
                 if page * 50 >= total:
                     break
             else:
-                job.add_log("WARN", f"RENACYT: Se alcanzó el límite máximo de páginas de resguardo ({MAX_RENACYT_PAGES}).")
+                job.add_log("WARN", f"RENACYT: Se alcanzó el límite máximo de páginas ({MAX_RENACYT_PAGES}).")
 
         except Exception as e:
             logger.error(f"[Sync/RENACYT] Error en búsqueda expandida: {e}")
@@ -429,7 +450,8 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
 
 # ---------------------------------------------------------------------------
 # Tarea de background: orquesta todo y persiste en BD
-# -----------async def _run_sync_job(job_id: str, request: SyncRequest):
+# ---------------------------------------------------------------------------
+async def _run_sync_job(job_id: str, request: SyncRequest):
     """Tarea principal del orquestador. Corre en background."""
     from app.db.session import AsyncSessionLocal
 

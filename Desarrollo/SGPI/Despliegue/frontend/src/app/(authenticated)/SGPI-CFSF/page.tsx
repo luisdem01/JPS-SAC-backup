@@ -36,6 +36,8 @@ interface CybertesisFilters {
 interface RenacytFilters {
   enabled: boolean;
   mode: 'update' | 'expanded' | 'both'; // update=solo DNIs en BD, expanded=UNMSM, both=ambos
+  maxUpdate: string;   // límite de investigadores existentes a actualizar ('' = todos)
+  maxNuevos: string;   // límite de nuevos investigadores a descubrir ('' = sin límite)
 }
 
 interface FormState {
@@ -66,6 +68,8 @@ const INITIAL: FormState = {
   renacyt: {
     enabled: true,
     mode: 'both',
+    maxUpdate: '',
+    maxNuevos: '50',
   },
 };
 
@@ -75,7 +79,7 @@ function nowTime() {
   return new Date().toLocaleTimeString('es-PE', { hour12: false });
 }
 function addLog(prev: LogEntry[], level: LogLevel, text: string): LogEntry[] {
-  return [...prev.slice(-39), { time: nowTime(), level, text }];
+  return [...prev.slice(-199), { time: nowTime(), level, text }];
 }
 function healthToStatus(h?: SourceHealth): 'online' | 'unavailable' | 'loading' {
   if (!h) return 'unavailable';
@@ -315,7 +319,7 @@ export default function SincronizacionDeFuentesPage() {
       } catch {
         setLogs((p) => addLog(p, 'WARN', 'Error temporal consultando estado — reintentando…'));
       }
-    }, 5000);
+    }, 2000);
   }, [router]);
 
   // ── Lanzar sincronización ─────────────────────────────────────────────────
@@ -354,6 +358,12 @@ export default function SincronizacionDeFuentesPage() {
     }
     if (form.renacyt.enabled) {
       filters.renacyt_mode = form.renacyt.mode;
+      if (form.renacyt.maxUpdate.trim()) {
+        filters.renacyt_max_update = parseInt(form.renacyt.maxUpdate);
+      }
+      if (form.renacyt.maxNuevos.trim()) {
+        filters.renacyt_max_new = parseInt(form.renacyt.maxNuevos);
+      }
     }
 
     try {
@@ -621,6 +631,40 @@ export default function SincronizacionDeFuentesPage() {
             <p className="text-[11px] text-on-surface-variant font-sans bg-slate-50 rounded px-2.5 py-2">
               <strong>Extrae:</strong> nivel RENACYT (I–VII), código CTI Vitae, ORCID, grado académico e institución principal. Sin filtro de año (registro activo por reglamento).
             </p>
+
+            {/* Límites de cantidad */}
+            <div className="grid grid-cols-2 gap-3 border-t border-[#f1f5f9] pt-3 mt-1">
+              {(form.renacyt.mode === 'update' || form.renacyt.mode === 'both') && (
+                <Field label="Máx. existentes a actualizar">
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    className={inputCls}
+                    placeholder="Todos (sin límite)"
+                    value={form.renacyt.maxUpdate}
+                    onChange={(e) => setRenacyt({ maxUpdate: e.target.value })}
+                    disabled={running}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 font-sans">~1s por investigador</p>
+                </Field>
+              )}
+              {(form.renacyt.mode === 'expanded' || form.renacyt.mode === 'both') && (
+                <Field label="Máx. nuevos a descubrir">
+                  <input
+                    type="number"
+                    min="1"
+                    max="5000"
+                    className={inputCls}
+                    placeholder="Sin límite"
+                    value={form.renacyt.maxNuevos}
+                    onChange={(e) => setRenacyt({ maxNuevos: e.target.value })}
+                    disabled={running}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 font-sans">50 = ~1 pág. RENACYT</p>
+                </Field>
+              )}
+            </div>
           </ConnectorCard>
         </div>
 

@@ -17,6 +17,8 @@ export interface SyncFilters {
   degree?: string | null;
   expanded_search?: boolean;
   max_docentes_cybertesis?: number;
+  renacyt_max_update?: number;   // límite de investigadores existentes a actualizar
+  renacyt_max_new?: number;      // límite de nuevos investigadores a descubrir
 }
 
 export interface SyncRequest {
@@ -114,7 +116,7 @@ export const syncService = {
 
   /** Consulta el estado actual de un job de sincronización. */
   getJobStatus(jobId: string): Promise<SyncJobStatusData> {
-    return apiClient.get<SyncJobStatusData>(`/sync/${jobId}/status`);
+    return apiClient.get<SyncJobStatusData>(`/sync/${jobId}/status`, { skipCache: true });
   },
 
   /** Verifica qué conectores están disponibles en el servidor. */
