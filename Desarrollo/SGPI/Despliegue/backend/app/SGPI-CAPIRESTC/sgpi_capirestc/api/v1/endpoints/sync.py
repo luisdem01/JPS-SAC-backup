@@ -900,7 +900,9 @@ async def run_sync(
     # Persist initially to DB as queued
     await job.save_to_db(db)
     
-    background_tasks.add_task(_run_sync_job, job_id, request)
+    # Desacoplar la ejecución usando asyncio.create_task para evitar que Starlette/uvicorn
+    # mantengan la conexión del request HTTP abierta o interfieran con la respuesta.
+    asyncio.create_task(_run_sync_job(job_id, request))
 
     return {
         "success": True,
