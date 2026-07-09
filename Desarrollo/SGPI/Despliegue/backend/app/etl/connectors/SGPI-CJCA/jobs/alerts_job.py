@@ -162,6 +162,15 @@ class AlertsJob:
                             is_modified = True
 
                         # B) Actualizar otros campos si han cambiado
+                        if conv_model.fecha_inicio:
+                            try:
+                                parsed_start_date = date.fromisoformat(conv_model.fecha_inicio)
+                                if existing_conv.fecha_inicio_inscripcion != parsed_start_date:
+                                    existing_conv.fecha_inicio_inscripcion = parsed_start_date
+                                    is_modified = True
+                            except ValueError:
+                                pass
+
                         if existing_conv.url_bases_vrip != conv_model.enlace:
                             existing_conv.url_bases_vrip = conv_model.enlace
                             is_modified = True
@@ -186,7 +195,7 @@ class AlertsJob:
                             entidad_emisora="VRIP-UNMSM",
                             presupuesto_maximo=None,  # Poblado manualmente por Secretaria o parseado en el futuro
                             # Para cumplir el NOT NULL. Preservado en futuras ejecuciones
-                            fecha_inicio_inscripcion=date.today(),
+                            fecha_inicio_inscripcion=date.fromisoformat(conv_model.fecha_inicio) if conv_model.fecha_inicio else date.today(),
                             fecha_cierre=parsed_close_date,
                             url_bases_vrip=conv_model.enlace,
                             cambios_cronograma=[],  # Vacío por ser primer registro

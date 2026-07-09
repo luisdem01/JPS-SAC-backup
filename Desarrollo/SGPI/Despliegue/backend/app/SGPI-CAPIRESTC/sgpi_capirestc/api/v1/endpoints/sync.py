@@ -472,6 +472,13 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                 })
                                 existing_conv.cambios_cronograma = historial
                                 existing_conv.fecha_cierre = parsed_close_date
+                            if conv.fecha_inicio:
+                                try:
+                                    parsed_start_date = date.fromisoformat(conv.fecha_inicio)
+                                    if existing_conv.fecha_inicio_inscripcion != parsed_start_date:
+                                        existing_conv.fecha_inicio_inscripcion = parsed_start_date
+                                except ValueError:
+                                    pass
                             existing_conv.url_bases_vrip = conv.enlace
                             existing_conv.estado_convocatoria = estado_resuelto
                             report["VRIP"]["resueltos"] += 1
@@ -485,7 +492,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                             new_conv = Convocatoria(
                                 titulo_convocatoria=conv.titulo,
                                 entidad_emisora="VRIP-UNMSM",
-                                fecha_inicio_inscripcion=date.today(),
+                                fecha_inicio_inscripcion=date.fromisoformat(conv.fecha_inicio) if conv.fecha_inicio else date.today(),
                                 fecha_cierre=parsed_close_date,
                                 url_bases_vrip=conv.enlace,
                                 cambios_cronograma=[],

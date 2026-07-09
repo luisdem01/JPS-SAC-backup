@@ -13,7 +13,7 @@ import sys
 import os
 
 # Configuración de path para SGPI-CPPDF
-local_parent = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+local_parent = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 sgpi_cppdf_path = os.path.join(local_parent, "processors", "SGPI-CPPDF")
 if sgpi_cppdf_path not in sys.path:
     sys.path.insert(0, sgpi_cppdf_path)
@@ -22,6 +22,19 @@ try:
     from sgpi_parser.engines.heuristic.cronograma_heuristic import HeuristicCronogramaParser
 except ImportError:
     HeuristicCronogramaParser = None
+
+
+def to_date_obj(d_val):
+    if not d_val:
+        return None
+    if isinstance(d_val, date):
+        return d_val
+    if isinstance(d_val, str):
+        try:
+            return date.fromisoformat(d_val)
+        except ValueError:
+            return None
+    return None
 
 
 class VripConvocatoriasExtractor(BaseExtractor):
@@ -137,14 +150,16 @@ class VripConvocatoriasExtractor(BaseExtractor):
                 # Determine Year / Publish Date context from links
                 publish_year = str(target_year)
                 for link in [cronograma_link, directiva_link]:
-                    year_match = re.search(r"/20(2\d)/", link)
-                    if year_match:
-                        publish_year = f"20{year_match.group(1)}"
-                        break
+                    if link:
+                        year_match = re.search(r"/20(2\d)/", link)
+                        if year_match:
+                            publish_year = f"20{year_match.group(1)}"
+                            break
 
                 # We do not guess status, we extract objective dates
                 deadline_original = "Ver cronograma" if cronograma_link else "Ver bases"
                 parsed_deadline = None
+                parsed_start_date = None
 
                 # If there's an explicit date in the Elementor container text, let's extract it!
                 container_text = c.get_text(" ", strip=True)
@@ -153,12 +168,13 @@ class VripConvocatoriasExtractor(BaseExtractor):
                     deadline_original = extracted_text
                     parsed_deadline = extracted_date
 
-                final_link = directiva_link if directiva_link else cronograma_link
+                enlace_publico = directiva_link if directiva_link else cronograma_link
+                parse_link = cronograma_link if cronograma_link else directiva_link
 
                 # Integración SGPI-CPPDF para extraer el cronograma exacto del PDF si es posible
-                if final_link and HeuristicCronogramaParser:
+                if parse_link and HeuristicCronogramaParser:
                     try:
-                        pdf_response = self.client.get(final_link)
+                        pdf_response = self.client.get(parse_link)
                         if (
                             pdf_response
                             and pdf_response.status_code == 200
@@ -172,6 +188,19 @@ class VripConvocatoriasExtractor(BaseExtractor):
                                 parser = HeuristicCronogramaParser(default_year=target_year)
                                 cronograma = parser.parse(tmp_pdf_path)
 
+                                # Buscar la fecha de inicio en las actividades (registro, postulación, inscripción, recepción)
+                                for act in cronograma.actividades:
+                                    act_lower = act.actividad.lower()
+                                    if (
+                                        "registro" in act_lower
+                                        or "postulación" in act_lower
+                                        or "inscripción" in act_lower
+                                        or "recepción" in act_lower
+                                    ):
+                                        if act.fecha_inicio:
+                                            parsed_start_date = to_date_obj(act.fecha_inicio)
+                                            break
+
                                 # Buscar la fecha de cierre en las actividades
                                 for act in cronograma.actividades:
                                     act_lower = act.actividad.lower()
@@ -182,10 +211,10 @@ class VripConvocatoriasExtractor(BaseExtractor):
                                         or "presentación" in act_lower
                                     ):
                                         if act.fecha_fin:
-                                            parsed_deadline = act.fecha_fin
+                                            parsed_deadline = to_date_obj(act.fecha_fin)
                                             deadline_original = act.fecha_detalle
                                         elif act.fecha_inicio:
-                                            parsed_deadline = act.fecha_inicio
+                                            parsed_deadline = to_date_obj(act.fecha_inicio)
                                             deadline_original = act.fecha_detalle
                                         break
                             except Exception as e:
@@ -206,8 +235,9 @@ class VripConvocatoriasExtractor(BaseExtractor):
                         fecha_publicacion=f"Convocatoria {publish_year}",
                         plazo_cierre=parsed_deadline.isoformat() if parsed_deadline else None,
                         plazo_cierre_original=deadline_original,
-                        enlace=final_link,
+                        enlace=enlace_publico,
                         dias_restantes=calculate_days_remaining(parsed_deadline) if parsed_deadline else None,
+                        fecha_inicio=parsed_start_date.isoformat() if parsed_start_date else None,
                     )
                 )
 
@@ -270,21 +300,49 @@ class VripConvocatoriasExtractor(BaseExtractor):
                     # Try to extract deadline date from post description text
                     snippet_text = post.get_text(strip=True)
                     deadline_original, parsed_deadline = extract_deadline_from_text(snippet_text)
+                    parsed_start_date = None
 
                     # Check for direct link to document
-                    guidelines_elem = post.select_one(selectors.get("link", "a[href*='bases'], a[href*='pdf']"))
-                    guidelines_link = guidelines_elem.get("href", "") if guidelines_elem else ""
+                    cronograma_link = ""
+                    directiva_link = ""
 
-                    if guidelines_link and not guidelines_link.startswith("http"):
-                        guidelines_link = "https://vrip.unmsm.edu.pe" + guidelines_link
+                    all_links = post.find_all("a")
+                    for a_tag in all_links:
+                        href = a_tag.get("href", "")
+                        if not href:
+                            continue
+                        if not href.startswith("http"):
+                            href = "https://vrip.unmsm.edu.pe" + href
 
-                    if not guidelines_link:
-                        guidelines_link = link
+                        a_text = a_tag.get_text(strip=True).lower()
+                        href_lower = href.lower()
+
+                        if "cronograma" in a_text or "cronograma" in href_lower:
+                            cronograma_link = href
+                        elif "directiva" in a_text or "bases" in a_text or "directiva" in href_lower or "bases" in href_lower:
+                            directiva_link = href
+
+                    if not cronograma_link and not directiva_link:
+                        guidelines_elem = post.select_one(selectors.get("link", "a[href*='bases'], a[href*='pdf'], a[href*='cronograma']"))
+                        gl = guidelines_elem.get("href", "") if guidelines_elem else ""
+                        if gl:
+                            if not gl.startswith("http"):
+                                gl = "https://vrip.unmsm.edu.pe" + gl
+                            if "cronograma" in gl.lower():
+                                cronograma_link = gl
+                            else:
+                                directiva_link = gl
+
+                    if not cronograma_link and not directiva_link:
+                        directiva_link = link
+
+                    enlace_publico = directiva_link if directiva_link else cronograma_link
+                    parse_link = cronograma_link if cronograma_link else directiva_link
 
                     # Integración SGPI-CPPDF para el layout clásico de posts
-                    if guidelines_link and HeuristicCronogramaParser:
+                    if parse_link and HeuristicCronogramaParser:
                         try:
-                            pdf_response = self.client.get(guidelines_link)
+                            pdf_response = self.client.get(parse_link)
                             if (
                                 pdf_response
                                 and pdf_response.status_code == 200
@@ -298,6 +356,19 @@ class VripConvocatoriasExtractor(BaseExtractor):
                                     parser = HeuristicCronogramaParser(default_year=target_year)
                                     cronograma = parser.parse(tmp_pdf_path)
 
+                                    # Buscar la fecha de inicio en las actividades (registro, postulación, inscripción, recepción)
+                                    for act in cronograma.actividades:
+                                        act_lower = act.actividad.lower()
+                                        if (
+                                            "registro" in act_lower
+                                            or "postulación" in act_lower
+                                            or "inscripción" in act_lower
+                                            or "recepción" in act_lower
+                                        ):
+                                            if act.fecha_inicio:
+                                                parsed_start_date = to_date_obj(act.fecha_inicio)
+                                                break
+
                                     for act in cronograma.actividades:
                                         act_lower = act.actividad.lower()
                                         if (
@@ -307,10 +378,10 @@ class VripConvocatoriasExtractor(BaseExtractor):
                                             or "presentación" in act_lower
                                         ):
                                             if act.fecha_fin:
-                                                parsed_deadline = act.fecha_fin
+                                                parsed_deadline = to_date_obj(act.fecha_fin)
                                                 deadline_original = act.fecha_detalle
                                             elif act.fecha_inicio:
-                                                parsed_deadline = act.fecha_inicio
+                                                parsed_deadline = to_date_obj(act.fecha_inicio)
                                                 deadline_original = act.fecha_detalle
                                             break
                                 except Exception as e:
@@ -331,8 +402,9 @@ class VripConvocatoriasExtractor(BaseExtractor):
                             fecha_publicacion=date_str,
                             plazo_cierre=parsed_deadline.isoformat() if parsed_deadline else None,
                             plazo_cierre_original=deadline_original,
-                            enlace=guidelines_link,
+                            enlace=enlace_publico,
                             dias_restantes=calculate_days_remaining(parsed_deadline) if parsed_deadline else None,
+                            fecha_inicio=parsed_start_date.isoformat() if parsed_start_date else None,
                         )
                     )
                 except Exception:

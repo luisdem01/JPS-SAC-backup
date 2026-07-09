@@ -10,6 +10,7 @@ class ConvocatoriaModel(BaseModel):
     plazo_cierre_original: str = Field(..., description="Texto original de la fecha de cierre obtenido de la web")
     enlace: str = Field(..., description="Link de descarga directa de directivas/bases o convocatoria")
     dias_restantes: Optional[int] = Field(None, description="Días hasta el cierre respecto a la fecha actual")
+    fecha_inicio: Optional[str] = Field(None, description="Fecha de inicio parseada en formato YYYY-MM-DD")
 
 
 class ProyectoModel(BaseModel):
