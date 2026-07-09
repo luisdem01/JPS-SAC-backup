@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.db.session import get_db
+from app.core.config import settings
 from app.core.security import require_staff
 from app.models.domain import Investigador
 from app.core.faculty_config import FISI_KEYWORDS, CYBERTESIS_QUERIES
@@ -108,6 +109,7 @@ class SyncFilters(BaseModel):
     year_end: Optional[int] = None
     degree: Optional[str] = None           # "pregrado" | "maestria" | "doctorado" | None
     by_docentes: bool = True
+    max_docentes_cybertesis: int = 100
     
     # RENACYT
     renacyt_mode: Optional[str] = None     # "update" | "expanded" | "both"
@@ -117,12 +119,14 @@ class SyncRequest(BaseModel):
     filters: SyncFilters = SyncFilters()
 
 # ---------------------------------------------------------------------------
-# Estado de Jobs en memoria
+# Estado de Jobs en memoria y DB
 # ---------------------------------------------------------------------------
 class SyncJobState:
-    def __init__(self, job_id: str, sources: List[str]):
+    def __init__(self, job_id: str, sources: List[str], filters: Dict[str, Any] = None, id_usuario: Optional[str] = None):
         self.job_id = job_id
         self.sources = sources
+        self.filters = filters or {}
+        self.id_usuario = id_usuario
         self.status = "queued"
         self.started_at = datetime.now(timezone.utc).isoformat()
         self.finished_at: Optional[str] = None
@@ -139,6 +143,37 @@ class SyncJobState:
             "level": level,
             "text": text
         })
+
+    async def save_to_db(self, db: AsyncSession):
+        from app.models.domain import SyncJob
+        import uuid as _uuid
+        from datetime import datetime as dt, timezone as tz
+        
+        uuid_obj = _uuid.UUID(self.job_id)
+        result = await db.execute(select(SyncJob).where(SyncJob.job_id == uuid_obj))
+        db_job = result.scalars().first()
+        
+        if not db_job:
+            user_uuid = _uuid.UUID(self.id_usuario) if self.id_usuario else None
+            db_job = SyncJob(
+                job_id=uuid_obj,
+                sources=self.sources,
+                filters=self.filters,
+                status=self.status,
+                started_at=dt.fromisoformat(self.started_at) if self.started_at else dt.now(tz.utc),
+                id_usuario=user_uuid
+            )
+            db.add(db_job)
+            
+        db_job.status = self.status
+        db_job.progress_logs = self.progress_logs
+        db_job.report = self.report
+        db_job.error_message = self.error
+        
+        if self.finished_at:
+            db_job.finished_at = dt.fromisoformat(self.finished_at)
+            
+        await db.commit()
 
 _sync_jobs: Dict[str, SyncJobState] = {}
 
@@ -285,8 +320,9 @@ def _run_cybertesis(filters: SyncFilters, investigadores_padron: List[Dict], job
 
     # Búsqueda adicional por nombres de docentes existentes en BD
     if filters.by_docentes:
-        docentes_a_buscar = investigadores_padron[:30]
-        job.add_log("INFO", f"Cybertesis: Buscando asesorías/autorías para {len(docentes_a_buscar)} docentes de la base de datos...")
+        docentes_limit = getattr(filters, "max_docentes_cybertesis", 100)
+        docentes_a_buscar = investigadores_padron[:docentes_limit]
+        job.add_log("INFO", f"Cybertesis: Buscando asesorías/autorías para {len(docentes_a_buscar)} docentes de la base de datos (límite: {docentes_limit})...")
         for idx, inv in enumerate(docentes_a_buscar):
             nombre_completo = f"{inv.get('nombres', '')} {inv.get('apellidos', '')}".strip()
             if not nombre_completo:
@@ -315,7 +351,7 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
         job.add_log("ERROR", "RENACYT: Conector no instalado en el servidor.")
         return {"error": "Conector RENACYT no instalado", "registros": []}
 
-    connector = RenacytConnector(rate_limit_delay=1.5)
+    connector = RenacytConnector(rate_limit_delay=settings.RENACYT_RATE_LIMIT_SECONDS)
     all_records = []
     seen_dnis = set()
     
@@ -346,8 +382,8 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
         try:
             job.add_log("INFO", "RENACYT: Iniciando búsqueda expandida por UNMSM con filtro FISI...")
             logger.info("[Sync/RENACYT] Iniciando búsqueda expandida en UNMSM...")
-            page = 1
-            while True:
+            MAX_RENACYT_PAGES = 200
+            for page in range(1, MAX_RENACYT_PAGES + 1):
                 job.add_log("INFO", f"RENACYT: Descargando investigadores UNMSM - página {page}...")
                 result = await connector.search_by_institution("Universidad Nacional Mayor de San Marcos", page=page, page_size=50)
                 registros = result.get("data", [])
@@ -380,7 +416,8 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
                 # Paginación
                 if page * 50 >= total:
                     break
-                page += 1
+            else:
+                job.add_log("WARN", f"RENACYT: Se alcanzó el límite máximo de páginas de resguardo ({MAX_RENACYT_PAGES}).")
 
         except Exception as e:
             logger.error(f"[Sync/RENACYT] Error en búsqueda expandida: {e}")
@@ -392,8 +429,7 @@ async def _run_renacyt(filters: SyncFilters, investigadores_padron: List[Dict], 
 
 # ---------------------------------------------------------------------------
 # Tarea de background: orquesta todo y persiste en BD
-# ---------------------------------------------------------------------------
-async def _run_sync_job(job_id: str, request: SyncRequest):
+# -----------async def _run_sync_job(job_id: str, request: SyncRequest):
     """Tarea principal del orquestador. Corre en background."""
     from app.db.session import AsyncSessionLocal
 
@@ -403,6 +439,9 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
 
     job.status = "running"
     job.add_log("INFO", "Iniciando ejecución en segundo plano...")
+    async with AsyncSessionLocal() as db:
+        await job.save_to_db(db)
+
     report = {s: {"procesados": 0, "resueltos": 0, "cuarentena": 0, "errores": 0, "registros": []} for s in request.sources}
 
     if not _cmr_ok:
@@ -410,277 +449,369 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
         job.error = "El módulo CMR no está disponible. Imposible reconciliar."
         job.add_log("ERROR", "Fallo: El módulo CMR no está disponible en el servidor.")
         job.finished_at = datetime.now(timezone.utc).isoformat()
+        async with AsyncSessionLocal() as db:
+            await job.save_to_db(db)
+        _sync_jobs.pop(job_id, None)
         return
 
-    async with AsyncSessionLocal() as db:
-        # Pre-cargar padrón de investigadores para fuzzy matching y búsquedas
-        try:
-            job.add_log("INFO", "Cargando padrón de investigadores desde la base de datos local...")
-            res = await db.execute(select(Investigador.dni, Investigador.nombres, Investigador.apellidos))
-            padron_rows = res.all()
-            padron_dict = {row.dni: f"{row.nombres} {row.apellidos}" for row in padron_rows}
-            padron_list = [{"dni": row.dni, "nombres": row.nombres, "apellidos": row.apellidos} for row in padron_rows]
-            job.add_log("INFO", f"Padrón cargado. {len(padron_rows)} investigadores encontrados en la base de datos.")
-        except Exception as e:
-            logger.error(f"[Sync] Error cargando padrón: {e}")
-            job.add_log("WARN", f"Error cargando padrón: {str(e)}")
-            padron_dict = {}
-            padron_list = []
-
-        # ---- VRIP ----
-        if "VRIP" in request.sources:
+    try:
+        async with AsyncSessionLocal() as db:
+            # Pre-cargar padrón de investigadores para fuzzy matching y búsquedas
             try:
-                job.add_log("INFO", "VRIP: Iniciando extracción de datos desde VRIP...")
-                vrip_data = await asyncio.to_thread(_run_vrip, request.filters, job)
+                job.add_log("INFO", "Cargando padrón de investigadores desde la base de datos local...")
+                res = await db.execute(select(Investigador.dni, Investigador.nombres, Investigador.apellidos))
+                padron_rows = res.all()
+                padron_dict = {row.dni: f"{row.nombres} {row.apellidos}" for row in padron_rows}
+                padron_list = [{"dni": row.dni, "nombres": row.nombres, "apellidos": row.apellidos} for row in padron_rows]
+                job.add_log("INFO", f"Padrón cargado. {len(padron_rows)} investigadores encontrados en la base de datos.")
+            except Exception as e:
+                logger.error(f"[Sync] Error cargando padrón: {e}")
+                job.add_log("WARN", f"Error cargando padrón: {str(e)}")
+                padron_dict = {}
+                padron_list = []
 
-                from app.models.domain import Proyecto, Convocatoria
-                from sqlalchemy.future import select as sa_select
-                from datetime import date, timedelta
+            await job.save_to_db(db)
 
-                convocatorias_lista = vrip_data.get("convocatorias_lista", [])
-                # Reconciliar convocatorias (Upsert sin CMR)
-                job.add_log("INFO", f"VRIP: Reconciliando {len(convocatorias_lista)} convocatorias con la base de datos...")
-                for conv in convocatorias_lista:
-                    report["VRIP"]["procesados"] += 1
-                    try:
-                        parsed_close_date = None
-                        if conv.plazo_cierre:
-                            try:
-                                parsed_close_date = date.fromisoformat(conv.plazo_cierre)
-                            except ValueError:
-                                pass
-                        if not parsed_close_date:
-                            parsed_close_date = date.today() + timedelta(days=30)
-                        
-                        estado_resuelto = "Abierta" if parsed_close_date >= date.today() else "Cerrada"
-                        
-                        res = await db.execute(sa_select(Convocatoria).where(
-                            (Convocatoria.titulo_convocatoria == conv.titulo) |
-                            (Convocatoria.url_bases_vrip == conv.enlace)
-                        ))
-                        existing_conv = res.scalars().first()
-                        
-                        if existing_conv:
-                            if existing_conv.fecha_cierre != parsed_close_date:
-                                historial = existing_conv.cambios_cronograma or []
-                                motivo = "Modificación de cronograma detectada en sincronización."
-                                historial.append({
-                                    "fecha_anterior": existing_conv.fecha_cierre.isoformat() if existing_conv.fecha_cierre else None,
-                                    "fecha_nueva": parsed_close_date.isoformat(),
-                                    "motivo": motivo,
-                                    "fecha_cambio": datetime.now(timezone.utc).isoformat()
-                                })
-                                existing_conv.cambios_cronograma = historial
-                                existing_conv.fecha_cierre = parsed_close_date
-                            if conv.fecha_inicio:
+            # ---- VRIP ----
+            if "VRIP" in request.sources:
+                try:
+                    job.add_log("INFO", "VRIP: Iniciando extracción de datos desde VRIP...")
+                    await job.save_to_db(db)
+                    vrip_data = await asyncio.to_thread(_run_vrip, request.filters, job)
+
+                    from app.models.domain import Proyecto, Convocatoria
+                    from sqlalchemy.future import select as sa_select
+                    from datetime import date, timedelta
+
+                    convocatorias_lista = vrip_data.get("convocatorias_lista", [])
+                    # Reconciliar convocatorias (Upsert sin CMR)
+                    job.add_log("INFO", f"VRIP: Reconciliando {len(convocatorias_lista)} convocatorias con la base de datos...")
+                    for conv in convocatorias_lista:
+                        report["VRIP"]["procesados"] += 1
+                        try:
+                            parsed_close_date = None
+                            if conv.plazo_cierre:
                                 try:
-                                    parsed_start_date = date.fromisoformat(conv.fecha_inicio)
-                                    if existing_conv.fecha_inicio_inscripcion != parsed_start_date:
-                                        existing_conv.fecha_inicio_inscripcion = parsed_start_date
+                                    parsed_close_date = date.fromisoformat(conv.plazo_cierre)
                                 except ValueError:
                                     pass
-                            existing_conv.url_bases_vrip = conv.enlace
-                            existing_conv.estado_convocatoria = estado_resuelto
-                            report["VRIP"]["resueltos"] += 1
-                            report["VRIP"]["registros"].append({
-                                "tipo": "Convocatoria",
-                                "id": str(existing_conv.id_convocatoria) if existing_conv.id_convocatoria else conv.titulo,
-                                "titulo": conv.titulo,
-                                "estado": "Actualizado"
-                            })
-                        else:
-                            new_conv = Convocatoria(
-                                titulo_convocatoria=conv.titulo,
-                                entidad_emisora="VRIP-UNMSM",
-                                fecha_inicio_inscripcion=date.fromisoformat(conv.fecha_inicio) if conv.fecha_inicio else date.today(),
-                                fecha_cierre=parsed_close_date,
-                                url_bases_vrip=conv.enlace,
-                                cambios_cronograma=[],
-                                estado_convocatoria=estado_resuelto
-                            )
-                            db.add(new_conv)
-                            report["VRIP"]["resueltos"] += 1
-                            report["VRIP"]["registros"].append({
-                                "tipo": "Convocatoria",
-                                "id": conv.titulo,
-                                "titulo": conv.titulo,
-                                "estado": "Nuevo"
-                            })
-                    except Exception as e:
-                        logger.warning(f"[Sync/VRIP] Error procesando convocatoria: {e}")
-                        report["VRIP"]["errores"] += 1
+                            if not parsed_close_date:
+                                parsed_close_date = date.today() + timedelta(days=30)
+                            
+                            estado_resuelto = "Abierta" if parsed_close_date >= date.today() else "Cerrada"
+                            
+                            res = await db.execute(sa_select(Convocatoria).where(
+                                (Convocatoria.titulo_convocatoria == conv.titulo) |
+                                (Convocatoria.url_bases_vrip == conv.enlace)
+                            ))
+                            existing_conv = res.scalars().first()
+                            
+                            if existing_conv:
+                                if existing_conv.fecha_cierre != parsed_close_date:
+                                    historial = existing_conv.cambios_cronograma or []
+                                    motivo = "Modificación de cronograma detectada en sincronización."
+                                    historial.append({
+                                        "fecha_anterior": existing_conv.fecha_cierre.isoformat() if existing_conv.fecha_cierre else None,
+                                        "fecha_nueva": parsed_close_date.isoformat(),
+                                        "motivo": motivo,
+                                        "fecha_cambio": datetime.now(timezone.utc).isoformat()
+                                    })
+                                    existing_conv.cambios_cronograma = historial
+                                    existing_conv.fecha_cierre = parsed_close_date
+                                if conv.fecha_inicio:
+                                    try:
+                                        parsed_start_date = date.fromisoformat(conv.fecha_inicio)
+                                        if existing_conv.fecha_inicio_inscripcion != parsed_start_date:
+                                            existing_conv.fecha_inicio_inscripcion = parsed_start_date
+                                    except ValueError:
+                                        pass
+                                existing_conv.url_bases_vrip = conv.enlace
+                                existing_conv.estado_convocatoria = estado_resuelto
+                                report["VRIP"]["resueltos"] += 1
+                                report["VRIP"]["registros"].append({
+                                    "tipo": "Convocatoria",
+                                    "id": str(existing_conv.id_convocatoria) if existing_conv.id_convocatoria else conv.titulo,
+                                    "titulo": conv.titulo,
+                                    "estado": "Actualizado"
+                                })
+                                
+                                # Log audit event for updated convocatoria
+                                from app.models.domain import LogAuditoria
+                                import uuid as _uuid
+                                user_uuid = _uuid.UUID(job.id_usuario) if job.id_usuario else None
+                                audit_log = LogAuditoria(
+                                    tipo_evento="SYNC_VRIP",
+                                    entidad_afectada="convocatoria",
+                                    pk_entidad=str(existing_conv.id_convocatoria) if existing_conv.id_convocatoria else conv.titulo[:100],
+                                    valor_nuevo={
+                                        "titulo": conv.titulo,
+                                        "fecha_cierre": parsed_close_date.isoformat(),
+                                        "estado": estado_resuelto,
+                                        "accion": "UPDATE"
+                                    },
+                                    id_usuario=user_uuid,
+                                    resultado="Exito",
+                                    detalle_error=f"Convocatoria actualizada por sync VRIP. Job: {job_id}"
+                                )
+                                db.add(audit_log)
+                            else:
+                                new_conv = Convocatoria(
+                                    titulo_convocatoria=conv.titulo,
+                                    entidad_emisora="VRIP-UNMSM",
+                                    fecha_inicio_inscripcion=date.fromisoformat(conv.fecha_inicio) if conv.fecha_inicio else date.today(),
+                                    fecha_cierre=parsed_close_date,
+                                    url_bases_vrip=conv.enlace,
+                                    cambios_cronograma=[],
+                                    estado_convocatoria=estado_resuelto
+                                )
+                                db.add(new_conv)
+                                report["VRIP"]["resueltos"] += 1
+                                report["VRIP"]["registros"].append({
+                                    "tipo": "Convocatoria",
+                                    "id": conv.titulo,
+                                    "titulo": conv.titulo,
+                                    "estado": "Nuevo"
+                                })
+                                
+                                # Log audit event for new convocatoria
+                                from app.models.domain import LogAuditoria
+                                import uuid as _uuid
+                                user_uuid = _uuid.UUID(job.id_usuario) if job.id_usuario else None
+                                audit_log = LogAuditoria(
+                                    tipo_evento="SYNC_VRIP",
+                                    entidad_afectada="convocatoria",
+                                    pk_entidad=conv.titulo[:100],
+                                    valor_nuevo={
+                                        "titulo": conv.titulo,
+                                        "fecha_cierre": parsed_close_date.isoformat(),
+                                        "estado": estado_resuelto,
+                                        "accion": "INSERT"
+                                    },
+                                    id_usuario=user_uuid,
+                                    resultado="Exito",
+                                    detalle_error=f"Nueva convocatoria ingresada por sync VRIP. Job: {job_id}"
+                                )
+                                db.add(audit_log)
+                        except Exception as e:
+                            logger.warning(f"[Sync/VRIP] Error procesando convocatoria: {e}")
+                            report["VRIP"]["errores"] += 1
 
-                # Reconciliar proyectos
-                proyectos_lista = vrip_data.get("proyectos", [])
-                job.add_log("INFO", f"VRIP: Reconciliando {len(proyectos_lista)} proyectos a través del motor CMR...")
-                for proy in proyectos_lista:
-                    cmr_input = _map_vrip_proyecto_to_cmr(proy)
-                    if not cmr_input:
-                        report["VRIP"]["errores"] += 1
-                        continue
+                    # Reconciliar proyectos
+                    proyectos_lista = vrip_data.get("proyectos", [])
+                    job.add_log("INFO", f"VRIP: Reconciliando {len(proyectos_lista)} proyectos a través del motor CMR...")
+                    for proy in proyectos_lista:
+                        cmr_input = _map_vrip_proyecto_to_cmr(proy)
+                        if not cmr_input:
+                            report["VRIP"]["errores"] += 1
+                            continue
 
-                    report["VRIP"]["procesados"] += 1
-                    try:
-                        res = await db.execute(sa_select(Proyecto).where(Proyecto.codigo_proyecto == cmr_input.codigo_proyecto))
-                        existing = res.scalars().first()
-                        current_db = {k: v for k, v in existing.__dict__.items() if k != '_sa_instance_state'} if existing else None
-
-                        merged, quarantine, reason = rules_engine.reconcile_proyecto(current_db, cmr_input, "VRIP")
-
-                        if quarantine:
-                            await persister.persist_quarantine(db, "proyecto", cmr_input.codigo_proyecto, ["VRIP"], merged, reason)
-                            report["VRIP"]["cuarentena"] += 1
-                            report["VRIP"]["registros"].append({
-                                "tipo": "Proyecto",
-                                "id": cmr_input.codigo_proyecto,
-                                "titulo": merged.get("titulo_proyecto", ""),
-                                "estado": "En Cuarentena"
-                            })
-                        else:
-                            await persister.persist_resolved(db, "proyecto", cmr_input.codigo_proyecto, merged, "VRIP")
-                            report["VRIP"]["resueltos"] += 1
-                            report["VRIP"]["registros"].append({
-                                "tipo": "Proyecto",
-                                "id": cmr_input.codigo_proyecto,
-                                "titulo": merged.get("titulo_proyecto", ""),
-                                "estado": "Resuelto"
-                            })
-                    except Exception as e:
-                        logger.warning(f"[Sync/VRIP] Error reconciliando proyecto: {e}")
-                        report["VRIP"]["errores"] += 1
-
-                report["VRIP"]["convocatorias_extraidas"] = vrip_data.get("convocatorias", 0)
-                job.add_log("SUCCESS", "VRIP: Sincronización y reconciliación de VRIP completada.")
-
-            except Exception as e:
-                logger.error(f"[Sync/VRIP] Fallo general: {e}")
-                job.add_log("ERROR", f"VRIP: Fallo general en el proceso: {str(e)}")
-                report["VRIP"]["errores"] += 1
-
-        # ---- CYBERTESIS ----
-        if "CYBERTESIS" in request.sources:
-            try:
-                job.add_log("INFO", "Cybertesis: Iniciando extracción de tesis...")
-                cyb_data = await asyncio.to_thread(_run_cybertesis, request.filters, padron_list, job)
-
-                # Instanciar cliente RENACYT único para este bucle de sincronización
-                renacyt_client = None
-                if _ren_ok and RenacytConnector:
-                    try:
-                        renacyt_client = RenacytConnector(verify_ssl=False)
-                        renacyt_client.rate_limit_delay = 0.1
-                    except Exception:
-                        pass
-
-                tesis_lista = cyb_data.get("tesis", [])
-                job.add_log("INFO", f"Cybertesis: Reconciliando asesores de {len(tesis_lista)} tesis en motor CMR...")
-                for tesis in tesis_lista:
-                    # Cada asesor de la tesis es un registro para reconciliar
-                    for asesor_nombre in (tesis.asesores or []):
+                        report["VRIP"]["procesados"] += 1
                         try:
-                            cmr_input = AsesorTesisInput(
-                                asesor_texto=asesor_nombre,
-                                url_cybertesis=str(tesis.url_repositorio),
-                                titulo_tesis=tesis.titulo,
-                                autor_estudiante_texto=", ".join(tesis.autores) if tesis.autores else None,
-                            )
-                            report["CYBERTESIS"]["procesados"] += 1
-                            merged, quarantine, reason = await rules_engine.reconcile_asesor_tesis(
-                                padron_dict, cmr_input, renacyt_client
-                            )
+                            res = await db.execute(sa_select(Proyecto).where(Proyecto.codigo_proyecto == cmr_input.codigo_proyecto))
+                            existing = res.scalars().first()
+                            current_db = {k: v for k, v in existing.__dict__.items() if k != '_sa_instance_state'} if existing else None
+
+                            merged, quarantine, reason = rules_engine.reconcile_proyecto(current_db, cmr_input, "VRIP")
 
                             if quarantine:
-                                await persister.persist_quarantine(
-                                    db, "tesis", str(tesis.url_repositorio), ["Cybertesis"], merged, reason
-                                )
-                                report["CYBERTESIS"]["cuarentena"] += 1
-                                report["CYBERTESIS"]["registros"].append({
-                                    "tipo": "AsesorTesis",
-                                    "id": str(tesis.url_repositorio),
-                                    "titulo": merged.get("titulo_tesis", ""),
+                                await persister.persist_quarantine(db, "proyecto", cmr_input.codigo_proyecto, ["VRIP"], merged, reason)
+                                report["VRIP"]["cuarentena"] += 1
+                                report["VRIP"]["registros"].append({
+                                    "tipo": "Proyecto",
+                                    "id": cmr_input.codigo_proyecto,
+                                    "titulo": merged.get("titulo_proyecto", ""),
                                     "estado": "En Cuarentena"
                                 })
                             else:
-                                await persister.persist_resolved(
-                                    db, "tesis", str(tesis.url_repositorio), merged, "Cybertesis"
-                                )
-                                report["CYBERTESIS"]["resueltos"] += 1
-                                report["CYBERTESIS"]["registros"].append({
-                                    "tipo": "AsesorTesis",
-                                    "id": str(tesis.url_repositorio),
-                                    "titulo": merged.get("titulo_tesis", ""),
+                                await persister.persist_resolved(db, "proyecto", cmr_input.codigo_proyecto, merged, "VRIP")
+                                report["VRIP"]["resueltos"] += 1
+                                report["VRIP"]["registros"].append({
+                                    "tipo": "Proyecto",
+                                    "id": cmr_input.codigo_proyecto,
+                                    "titulo": merged.get("titulo_proyecto", ""),
                                     "estado": "Resuelto"
                                 })
                         except Exception as e:
-                            logger.warning(f"[Sync/Cybertesis] Error procesando asesor: {e}")
-                            report["CYBERTESIS"]["errores"] += 1
+                            logger.warning(f"[Sync/VRIP] Error reconciliando proyecto: {e}")
+                            report["VRIP"]["errores"] += 1
 
-                job.add_log("SUCCESS", "Cybertesis: Reconciliación de tesis completada.")
+                    report["VRIP"]["convocatorias_extraidas"] = vrip_data.get("convocatorias", 0)
+                    job.add_log("SUCCESS", "VRIP: Sincronización y reconciliación de VRIP completada.")
+                    await job.save_to_db(db)
 
-            except Exception as e:
-                logger.error(f"[Sync/Cybertesis] Fallo general: {e}")
-                job.add_log("ERROR", f"Cybertesis: Fallo general en el proceso: {str(e)}")
-                report["CYBERTESIS"]["errores"] += 1
+                except Exception as e:
+                    logger.error(f"[Sync/VRIP] Fallo general: {e}")
+                    job.add_log("ERROR", f"VRIP: Fallo general en el proceso: {str(e)}")
+                    report["VRIP"]["errores"] += 1
+                    await job.save_to_db(db)
 
-        # ---- RENACYT ----
-        if "RENACYT" in request.sources:
-            try:
-                job.add_log("INFO", "RENACYT: Iniciando extracción de investigadores...")
-                ren_data = await _run_renacyt(request.filters, padron_list, job)
+            # ---- CYBERTESIS ----
+            if "CYBERTESIS" in request.sources:
+                try:
+                    job.add_log("INFO", "Cybertesis: Iniciando extracción de tesis...")
+                    await job.save_to_db(db)
+                    cyb_data = await asyncio.to_thread(_run_cybertesis, request.filters, padron_list, job)
 
-                from app.models.domain import Investigador as InvModel
-                from sqlalchemy.future import select as sa_select
+                    # Instanciar cliente RENACYT único para este bucle de sincronización
+                    renacyt_client = None
+                    if _ren_ok and RenacytConnector:
+                        try:
+                            renacyt_client = RenacytConnector(verify_ssl=False, rate_limit_delay=settings.RENACYT_RATE_LIMIT_SECONDS)
+                        except Exception:
+                            pass
 
-                registros_ren = ren_data.get("registros", [])
-                job.add_log("INFO", f"RENACYT: Reconciliando {len(registros_ren)} investigadores en motor CMR...")
-                for rec in registros_ren:
-                    cmr_input = _map_renacyt_to_cmr(rec)
-                    if not cmr_input:
-                        report["RENACYT"]["errores"] += 1
-                        continue
-
-                    report["RENACYT"]["procesados"] += 1
-                    try:
-                        res = await db.execute(sa_select(InvModel).where(InvModel.dni == cmr_input.dni))
-                        existing = res.scalars().first()
-                        current_db = {k: v for k, v in existing.__dict__.items() if k != '_sa_instance_state'} if existing else None
-
-                        merged, quarantine, reason = rules_engine.reconcile_investigador(current_db, cmr_input, "RENACYT")
-
-                        if quarantine:
-                            await persister.persist_quarantine(db, "investigador", cmr_input.dni, ["RENACYT"], merged, reason)
-                            report["RENACYT"]["cuarentena"] += 1
-                            report["RENACYT"]["registros"].append({
-                                "tipo": "Investigador",
-                                "id": cmr_input.dni,
-                                "titulo": f"{merged.get('nombres', '')} {merged.get('apellidos', '')}".strip(),
-                                "estado": "En Cuarentena"
+                    tesis_lista = cyb_data.get("tesis", [])
+                    job.add_log("INFO", f"Cybertesis: Reconciliando asesores de {len(tesis_lista)} tesis en motor CMR...")
+                    for tesis in tesis_lista:
+                        if not tesis.asesores:
+                            # Tesis sin asesores: enviar a cuarentena por datos incompletos
+                            report["CYBERTESIS"]["procesados"] += 1
+                            report["CYBERTESIS"]["cuarentena"] += 1
+                            report["CYBERTESIS"]["registros"].append({
+                                "tipo": "AsesorTesis",
+                                "id": str(tesis.url_repositorio),
+                                "titulo": tesis.titulo or "Sin Título",
+                                "estado": "En Cuarentena (Sin Asesores)"
                             })
-                        else:
-                            await persister.persist_resolved(db, "investigador", cmr_input.dni, merged, "RENACYT")
-                            report["RENACYT"]["resueltos"] += 1
-                            report["RENACYT"]["registros"].append({
-                                "tipo": "Investigador",
-                                "id": cmr_input.dni,
-                                "titulo": f"{merged.get('nombres', '')} {merged.get('apellidos', '')}".strip(),
-                                "estado": "Resuelto"
-                            })
-                    except Exception as e:
-                        logger.warning(f"[Sync/RENACYT] Error reconciliando investigador {cmr_input.dni}: {e}")
-                        report["RENACYT"]["errores"] += 1
+                            await persister.persist_quarantine(
+                                db,
+                                entidad="tesis",
+                                llave_sugerida=str(tesis.url_repositorio),
+                                fuentes=["Cybertesis"],
+                                conflicto={
+                                    "url_cybertesis": str(tesis.url_repositorio),
+                                    "titulo_tesis": tesis.titulo,
+                                    "autor_estudiante_texto": ", ".join(tesis.autores) if tesis.autores else None,
+                                    "asesor_texto": None
+                                },
+                                motivo="Tesis sin asesores registrados en Cybertesis. Requiere revisión manual."
+                            )
+                            continue
 
-                job.add_log("SUCCESS", "RENACYT: Reconciliación de investigadores completada.")
+                        # Cada asesor de la tesis es un registro para reconciliar
+                        for asesor_nombre in (tesis.asesores or []):
+                            try:
+                                cmr_input = AsesorTesisInput(
+                                    asesor_texto=asesor_nombre,
+                                    url_cybertesis=str(tesis.url_repositorio),
+                                    titulo_tesis=tesis.titulo,
+                                    autor_estudiante_texto=", ".join(tesis.autores) if tesis.autores else None,
+                                )
+                                report["CYBERTESIS"]["procesados"] += 1
+                                merged, quarantine, reason = await rules_engine.reconcile_asesor_tesis(
+                                    padron_dict, cmr_input, renacyt_client
+                                )
 
-            except Exception as e:
-                logger.error(f"[Sync/RENACYT] Fallo general: {e}")
-                job.add_log("ERROR", f"RENACYT: Fallo general en el proceso: {str(e)}")
-                report["RENACYT"]["errores"] += 1
+                                if quarantine:
+                                    await persister.persist_quarantine(
+                                        db, "tesis", str(tesis.url_repositorio), ["Cybertesis"], merged, reason
+                                    )
+                                    report["CYBERTESIS"]["cuarentena"] += 1
+                                    report["CYBERTESIS"]["registros"].append({
+                                        "tipo": "AsesorTesis",
+                                        "id": str(tesis.url_repositorio),
+                                        "titulo": merged.get("titulo_tesis", ""),
+                                        "estado": "En Cuarentena"
+                                    })
+                                else:
+                                    await persister.persist_resolved(
+                                        db, "tesis", str(tesis.url_repositorio), merged, "Cybertesis"
+                                    )
+                                    report["CYBERTESIS"]["resueltos"] += 1
+                                    report["CYBERTESIS"]["registros"].append({
+                                        "tipo": "AsesorTesis",
+                                        "id": str(tesis.url_repositorio),
+                                        "titulo": merged.get("titulo_tesis", ""),
+                                        "estado": "Resuelto"
+                                    })
+                            except Exception as e:
+                                logger.warning(f"[Sync/Cybertesis] Error procesando asesor: {e}")
+                                report["CYBERTESIS"]["errores"] += 1
 
-    job.status = "completed"
-    job.report = report
-    job.finished_at = datetime.now(timezone.utc).isoformat()
-    job.add_log("SUCCESS", "Sincronización global finalizada con éxito.")
-    logger.info(f"[Sync] Job {job_id} completado. Reporte: {report}")
+                    job.add_log("SUCCESS", "Cybertesis: Reconciliación de tesis completada.")
+                    await job.save_to_db(db)
+
+                except Exception as e:
+                    logger.error(f"[Sync/Cybertesis] Fallo general: {e}")
+                    job.add_log("ERROR", f"Cybertesis: Fallo general en el proceso: {str(e)}")
+                    report["CYBERTESIS"]["errores"] += 1
+                    await job.save_to_db(db)
+
+            # ---- RENACYT ----
+            if "RENACYT" in request.sources:
+                try:
+                    job.add_log("INFO", "RENACYT: Iniciando extracción de investigadores...")
+                    await job.save_to_db(db)
+                    ren_data = await _run_renacyt(request.filters, padron_list, job)
+
+                    from app.models.domain import Investigador as InvModel
+                    from sqlalchemy.future import select as sa_select
+
+                    registros_ren = ren_data.get("registros", [])
+                    job.add_log("INFO", f"RENACYT: Reconciliando {len(registros_ren)} investigadores en motor CMR...")
+                    for rec in registros_ren:
+                        cmr_input = _map_renacyt_to_cmr(rec)
+                        if not cmr_input:
+                            report["RENACYT"]["errores"] += 1
+                            continue
+
+                        report["RENACYT"]["procesados"] += 1
+                        try:
+                            res = await db.execute(sa_select(InvModel).where(InvModel.dni == cmr_input.dni))
+                            existing = res.scalars().first()
+                            current_db = {k: v for k, v in existing.__dict__.items() if k != '_sa_instance_state'} if existing else None
+
+                            merged, quarantine, reason = rules_engine.reconcile_investigador(current_db, cmr_input, "RENACYT")
+
+                            if quarantine:
+                                await persister.persist_quarantine(db, "investigador", cmr_input.dni, ["RENACYT"], merged, reason)
+                                report["RENACYT"]["cuarentena"] += 1
+                                report["RENACYT"]["registros"].append({
+                                    "tipo": "Investigador",
+                                    "id": cmr_input.dni,
+                                    "titulo": f"{merged.get('nombres', '')} {merged.get('apellidos', '')}".strip(),
+                                    "estado": "En Cuarentena"
+                                })
+                            else:
+                                await persister.persist_resolved(db, "investigador", cmr_input.dni, merged, "RENACYT")
+                                report["RENACYT"]["resueltos"] += 1
+                                report["RENACYT"]["registros"].append({
+                                    "tipo": "Investigador",
+                                    "id": cmr_input.dni,
+                                    "titulo": f"{merged.get('nombres', '')} {merged.get('apellidos', '')}".strip(),
+                                    "estado": "Resuelto"
+                                })
+                        except Exception as e:
+                            logger.warning(f"[Sync/RENACYT] Error reconciliando investigador {cmr_input.dni}: {e}")
+                            report["RENACYT"]["errores"] += 1
+
+                    job.add_log("SUCCESS", "RENACYT: Reconciliación de investigadores completada.")
+                    await job.save_to_db(db)
+
+                except Exception as e:
+                    logger.error(f"[Sync/RENACYT] Fallo general: {e}")
+                    job.add_log("ERROR", f"RENACYT: Fallo general en el proceso: {str(e)}")
+                    report["RENACYT"]["errores"] += 1
+                    await job.save_to_db(db)
+
+            # Final success save
+            job.status = "completed"
+            job.report = report
+            job.finished_at = datetime.now(timezone.utc).isoformat()
+            job.add_log("SUCCESS", "Sincronización global finalizada con éxito.")
+            await job.save_to_db(db)
+            logger.info(f"[Sync] Job {job_id} completado. Reporte: {report}")
+
+    except Exception as e:
+        logger.error(f"[Sync] Fallo crítico en el background execution de job {job_id}: {e}", exc_info=True)
+        job.status = "failed"
+        job.error = str(e)
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        job.add_log("ERROR", f"Fallo crítico: {str(e)}")
+        async with AsyncSessionLocal() as db:
+            await job.save_to_db(db)
+    finally:
+        _sync_jobs.pop(job_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -700,6 +831,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
 async def run_sync(
     request: SyncRequest,
     background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_staff),
 ):
     if not _cmr_ok:
@@ -716,9 +848,36 @@ async def run_sync(
             detail=f"Fuentes inválidas: {invalid}. Opciones válidas: {list(valid_sources)}",
         )
 
+    # C3.2 check active job in DB
+    from app.models.domain import SyncJob
+    active_stmt = select(SyncJob).where(SyncJob.status.in_(["queued", "running"])).limit(1)
+    active_res = await db.execute(active_stmt)
+    active_job = active_res.scalars().first()
+    if active_job:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Ya hay una sincronización activa en curso.",
+                "job_id": str(active_job.job_id),
+                "status": active_job.status
+            }
+        )
+
     import uuid
     job_id = str(uuid.uuid4())
-    _sync_jobs[job_id] = SyncJobState(job_id=job_id, sources=request.sources)
+    user_id = current_user.get("id_usuario") if isinstance(current_user, dict) else None
+    
+    job = SyncJobState(
+        job_id=job_id,
+        sources=request.sources,
+        filters=request.filters.model_dump(),
+        id_usuario=str(user_id) if user_id else None
+    )
+    _sync_jobs[job_id] = job
+    
+    # Persist initially to DB as queued
+    await job.save_to_db(db)
+    
     background_tasks.add_task(_run_sync_job, job_id, request)
 
     return {
@@ -778,30 +937,94 @@ async def get_sources_health():
 )
 async def get_sync_status(
     job_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_staff),
 ):
     job = _sync_jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job no encontrado.")
-
-    payload = {
-        "job_id": job.job_id,
-        "status": job.status,
-        "sources": job.sources,
-        "started_at": job.started_at,
-        "finished_at": job.finished_at,
-        "progress_logs": job.progress_logs,
-    }
-
-    if job.status == "completed":
-        payload["report"] = job.report
-    elif job.status == "failed":
-        payload["error"] = job.error
+    if job:
+        payload = {
+            "job_id": job.job_id,
+            "status": job.status,
+            "sources": job.sources,
+            "started_at": job.started_at,
+            "finished_at": job.finished_at,
+            "progress_logs": job.progress_logs,
+        }
+        if job.status == "completed":
+            payload["report"] = job.report
+        elif job.status == "failed":
+            payload["error"] = job.error
+    else:
+        # Check database
+        from app.models.domain import SyncJob
+        import uuid as _uuid
+        try:
+            uuid_obj = _uuid.UUID(job_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="ID de job inválido.")
+            
+        result = await db.execute(select(SyncJob).where(SyncJob.job_id == uuid_obj))
+        db_job = result.scalars().first()
+        if not db_job:
+            raise HTTPException(status_code=404, detail="Job no encontrado.")
+            
+        payload = {
+            "job_id": str(db_job.job_id),
+            "status": db_job.status,
+            "sources": db_job.sources,
+            "started_at": db_job.started_at.isoformat() if db_job.started_at else None,
+            "finished_at": db_job.finished_at.isoformat() if db_job.finished_at else None,
+            "progress_logs": db_job.progress_logs,
+        }
+        if db_job.status == "completed":
+            payload["report"] = db_job.report
+        elif db_job.status == "failed":
+            payload["error"] = db_job.error_message
 
     return {
         "success": True,
         "data": payload,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.delete(
+    "/jobs/cleanup",
+    summary="Limpiar jobs antiguos",
+    description="Elimina de la base de datos los jobs completados o fallidos con más de N días de antigüedad."
+)
+async def cleanup_old_jobs(
+    days_old: int = 30,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_staff)
+):
+    from app.models.domain import SyncJob
+    from datetime import datetime, timezone, timedelta
+    
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days_old)
+    
+    # Query to count first
+    select_stmt = select(SyncJob).where(
+        SyncJob.status.in_(["completed", "failed"]),
+        SyncJob.created_at < cutoff
+    )
+    result = await db.execute(select_stmt)
+    jobs_to_delete = result.scalars().all()
+    count = len(jobs_to_delete)
+    
+    if count > 0:
+        from sqlalchemy import delete as sa_delete
+        delete_stmt = sa_delete(SyncJob).where(
+            SyncJob.status.in_(["completed", "failed"]),
+            SyncJob.created_at < cutoff
+        )
+        await db.execute(delete_stmt)
+        await db.commit()
+        
+    return {
+        "success": True,
+        "message": f"Se eliminaron {count} jobs antiguos con más de {days_old} días.",
+        "deleted_count": count
     }
 
 
@@ -964,6 +1187,27 @@ async def resolve_quarantine(
         db.add(item)
         await db.commit()
 
+        # Log audit event for quarantine resolution
+        from app.models.domain import LogAuditoria
+        import uuid as _uuid
+        user_uuid = _uuid.UUID(current_user.get("id_usuario")) if isinstance(current_user, dict) and current_user.get("id_usuario") else None
+        audit_log = LogAuditoria(
+            tipo_evento="UPDATE",
+            entidad_afectada="reconciliacion_pendientes",
+            pk_entidad=str(id_pendiente),
+            valor_nuevo={
+                "accion": payload.action,
+                "nuevo_estado": item.estado,
+                "motivo_rechazo": payload.motivo_rechazo,
+                "dni_corregido": payload.dni_corregido,
+            },
+            id_usuario=user_uuid,
+            resultado="Exito",
+            detalle_error=f"Cuarentena resuelta manualmente por administrador. Acción: {payload.action}"
+        )
+        db.add(audit_log)
+        await db.commit()
+
     except Exception as e:
         await db.rollback()
         logger.error(f"[Quarantine] Error resolviendo id={id_pendiente}: {e}")
@@ -981,4 +1225,25 @@ async def resolve_quarantine(
             ),
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post(
+    "/quarantine/retry-advisors",
+    summary="Re-procesar asesores de tesis en cuarentena en segundo plano",
+    status_code=status.HTTP_202_ACCEPTED
+)
+async def retry_quarantine_advisors(
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_staff)
+):
+    from app.db.session import AsyncSessionLocal
+    from sgpi_cmr.api.reconciliation import run_retry_advisors_background
+    user_id = current_user.get("id_usuario") if isinstance(current_user, dict) else None
+    
+    background_tasks.add_task(run_retry_advisors_background, AsyncSessionLocal, str(user_id) if user_id else None)
+    
+    return {
+        "message": "Re-intento masivo de matching de asesores iniciado en segundo plano.",
+        "status": "Running"
     }

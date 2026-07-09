@@ -16,6 +16,7 @@ export interface SyncFilters {
   year_end?: number;
   degree?: string | null;
   expanded_search?: boolean;
+  max_docentes_cybertesis?: number;
 }
 
 export interface SyncRequest {

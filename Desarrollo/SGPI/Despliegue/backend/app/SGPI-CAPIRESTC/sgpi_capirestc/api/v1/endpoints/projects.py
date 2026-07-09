@@ -848,3 +848,39 @@ async def verify_deliverable_cybertesis(
     )
     
     return db_obj
+
+@router.patch("/{codigo}/protect", response_model=ProyectoResponse)
+async def toggle_proyecto_protection(
+    codigo: str,
+    protect: bool = Query(..., description="Establece si el proyecto está protegido manualmente"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    p = await db.get(Proyecto, codigo)
+    if not p:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+        
+    valor_anterior = {"protegido_manualmente": p.protegido_manualmente}
+    p.protegido_manualmente = protect
+    
+    try:
+        db.add(p)
+        await db.commit()
+        await db.refresh(p)
+        
+        background_tasks.add_task(
+            log_audit_event,
+            db=None,
+            tipo_evento="UPDATE",
+            entidad_afectada="proyecto",
+            pk_entidad=codigo,
+            valor_anterior=valor_anterior,
+            valor_nuevo={"protegido_manualmente": protect},
+            id_usuario=current_user.get("sub") if current_user else None,
+        )
+        return p
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error al cambiar protección manual del proyecto: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Error al cambiar protección del proyecto: {str(e)}")

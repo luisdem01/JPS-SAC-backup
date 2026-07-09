@@ -31,6 +31,7 @@ interface CybertesisFilters {
   yearEnd: string;
   degree: string;         // '' = todos | 'pregrado' | 'maestria' | 'doctorado'
   byDocentes: boolean;    // también buscar por docentes en BD
+  maxDocentes: string;    // límite de docentes a consultar
 }
 interface RenacytFilters {
   enabled: boolean;
@@ -60,6 +61,7 @@ const INITIAL: FormState = {
     yearEnd: currentYear,
     degree: '',
     byDocentes: true,
+    maxDocentes: '100',
   },
   renacyt: {
     enabled: true,
@@ -344,10 +346,11 @@ export default function SincronizacionDeFuentesPage() {
       filters.vrip_query   = form.vrip.query.trim() || undefined;
     }
     if (form.cybertesis.enabled) {
-      filters.year_start     = form.cybertesis.yearStart ? parseInt(form.cybertesis.yearStart) : undefined;
-      filters.year_end       = form.cybertesis.yearEnd   ? parseInt(form.cybertesis.yearEnd)   : undefined;
-      filters.degree         = form.cybertesis.degree    || undefined;
-      filters.by_docentes    = form.cybertesis.byDocentes;
+      filters.year_start              = form.cybertesis.yearStart ? parseInt(form.cybertesis.yearStart) : undefined;
+      filters.year_end                = form.cybertesis.yearEnd   ? parseInt(form.cybertesis.yearEnd)   : undefined;
+      filters.degree                  = form.cybertesis.degree    || undefined;
+      filters.by_docentes             = form.cybertesis.byDocentes;
+      filters.max_docentes_cybertesis = form.cybertesis.maxDocentes ? parseInt(form.cybertesis.maxDocentes) : undefined;
     }
     if (form.renacyt.enabled) {
       filters.renacyt_mode = form.renacyt.mode;
@@ -543,6 +546,20 @@ export default function SincronizacionDeFuentesPage() {
                 Buscar también por docentes registrados en la BD
               </span>
             </label>
+
+            {form.cybertesis.byDocentes && (
+              <Field label="Límite de docentes a consultar">
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  className={inputCls}
+                  value={form.cybertesis.maxDocentes}
+                  onChange={(e) => setCybertesis({ maxDocentes: e.target.value })}
+                  disabled={running}
+                />
+              </Field>
+            )}
 
             <p className="text-[11px] text-on-surface-variant font-sans bg-slate-50 rounded px-2.5 py-2">
               <strong>Extrae:</strong> tesis de FISI-UNMSM con título, autores, asesores, URL, grado y año. Permite vincular asesorías con investigadores.

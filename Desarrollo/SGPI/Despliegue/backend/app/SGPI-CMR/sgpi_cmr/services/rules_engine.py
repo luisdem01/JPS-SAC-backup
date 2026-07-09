@@ -27,12 +27,9 @@ class ReconciliationRulesEngine:
     """
 
     def _is_manual_override(self, current_record: Dict[str, Any], field_name: str) -> bool:
-        # Aquí se asume que en algún lado podríamos tener la meta-data de si fue edición manual.
-        # Por ahora, si el campo ya existe y viene de una edición manual, asumimos True.
-        # Para el prototipo, asumimos que si no es nulo, no se debe pisar ciegamente a menos que
-        # la fuente ganadora tenga precedencia sobre la fuente actual.
-        # TODO: Integrar lógica real de 'origen_dato' cuando el modelo soporte meta-datos de fuentes.
-        return False 
+        if not current_record:
+            return False
+        return bool(current_record.get("protegido_manualmente", False))
 
     def reconcile_investigador(self, current: Optional[Dict[str, Any]], incoming: InvestigadorInput, fuente: str) -> Tuple[Dict[str, Any], bool, str]:
         """
@@ -42,6 +39,10 @@ class ReconciliationRulesEngine:
         if not current:
             # Nuevo registro, insertarlo tal cual
             return incoming_dict, False, ""
+
+        # Si está protegido manualmente, no se sobreescribe nada
+        if self._is_manual_override(current, None):
+            return current, False, ""
 
         merged = current.copy()
         requires_quarantine = False
@@ -71,6 +72,10 @@ class ReconciliationRulesEngine:
         if not current:
             return incoming_dict, False, ""
 
+        # Si está protegido manualmente, no se sobreescribe nada
+        if self._is_manual_override(current, None):
+            return current, False, ""
+
         merged = current.copy()
         
         # Regla: VRIP gana a RAIS pero solo en campos críticos
@@ -86,6 +91,10 @@ class ReconciliationRulesEngine:
         incoming_dict = incoming.model_dump(exclude_unset=True, exclude_none=True)
         if not current:
             return incoming_dict, False, ""
+
+        # Si está protegido manualmente, no se sobreescribe nada
+        if self._is_manual_override(current, None):
+            return current, False, ""
 
         merged = current.copy()
         
