@@ -78,6 +78,20 @@ const ChevronDown = () => (
   </svg>
 );
 
+const ChevronLeft = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 18 9 12 15 6"/>
+  </svg>
+);
+
+const ChevronRight = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="9 18 15 12 9 6"/>
+  </svg>
+);
+
 const LinkIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -104,6 +118,55 @@ const EmptyIcon = () => (
     <polyline points="10 9 9 9 8 9"/>
   </svg>
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paginación
+// ─────────────────────────────────────────────────────────────────────────────
+
+function Pagination({ page, pages, onChange }: {
+  page: number; pages: number; onChange: (p: number) => void;
+}) {
+  const items: (number | '...')[] = [];
+  if (pages <= 7) {
+    for (let i = 1; i <= pages; i++) items.push(i);
+  } else {
+    items.push(1, 2, 3);
+    if (page > 5) items.push('...');
+    if (page > 3 && page < pages - 2) items.push(page);
+    if (page < pages - 3) items.push('...');
+    items.push(pages - 1, pages);
+  }
+
+  return (
+    <div className="flex items-center gap-1" role="navigation" aria-label="Paginación">
+      <button onClick={() => onChange(page - 1)} disabled={page === 1}
+        className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant hover:bg-surface-container disabled:opacity-40 transition-colors"
+        aria-label="Página anterior">
+        <ChevronLeft />
+      </button>
+      {items.map((item, i) =>
+        item === '...' ? (
+          <span key={`ellipsis-${i}`} className="w-8 text-center font-sans text-[13px] text-on-surface-variant">…</span>
+        ) : (
+          <button key={item} onClick={() => onChange(item)}
+            className={`w-8 h-8 flex items-center justify-center rounded font-sans text-[13px] transition-colors
+              ${page === item
+                ? 'bg-[#001631] text-white font-bold'
+                : 'border border-outline-variant hover:bg-surface-container text-on-surface'}`}
+            aria-current={page === item ? 'page' : undefined}
+            aria-label={`Ir a página ${item}`}>
+            {item}
+          </button>
+        )
+      )}
+      <button onClick={() => onChange(page + 1)} disabled={page === pages}
+        className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant hover:bg-surface-container disabled:opacity-40 transition-colors"
+        aria-label="Página siguiente">
+        <ChevronRight />
+      </button>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Badge de fuente
@@ -185,6 +248,7 @@ export default function PublicacionesTesisPage() {
   const [tempIndexacion,setTempIndexacion]= useState<string>('todas');
   const [producciones,  setProducciones]  = useState<RegistroProduccion[]>([]);
   const [isLoading,     setIsLoading]     = useState(true);
+  const [page,          setPage]          = useState(1);
 
   // ── Cargar datos ───────────────────────────────────────────────────────────
   const cargar = useCallback(async (f: FiltrosProduccion) => {
@@ -192,6 +256,7 @@ export default function PublicacionesTesisPage() {
     try {
       const data = await getProducciones(f);
       setProducciones(data);
+      setPage(1);
     } finally {
       setIsLoading(false);
     }
@@ -214,6 +279,15 @@ export default function PublicacionesTesisPage() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleFiltrar();
   };
+
+  const handlePage = (p: number) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const totalItems = producciones.length;
+  const totalPages = Math.ceil(totalItems / 10);
+  const paginatedProducciones = producciones.slice((page - 1) * 10, page * 10);
 
   // ── Contador de pendientes ─────────────────────────────────────────────────
   const pendientesCount = producciones.filter((p) => p.estado === 'pendiente').length;
@@ -391,105 +465,118 @@ export default function PublicacionesTesisPage() {
 
         {/* ── Tabla ─────────────────────────────────────────────────────────────── */}
         {!isLoading && producciones.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse" role="table">
-              <thead>
-                <tr className="border-b border-outline-variant bg-surface-container-low">
-                  {[
-                    'Título de la Producción',
-                    'Asesor / Grupo de Inv. Detectado',
-                    'Fecha',
-                    'Fuente de Origen',
-                    'Estado de Validación',
-                    'Acciones',
-                  ].map((h) => (
-                    <th key={h}
-                      className="px-5 py-3 text-left font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant">
-                {producciones.map((prod) => (
-                  <tr key={prod.id}
-                    className={`transition-colors hover:bg-surface-container-low ${prod.estado === 'pendiente' ? 'bg-[#fffef7]' : ''}`}>
-
-                    {/* Título */}
-                    <td className="px-5 py-3 max-w-[280px]">
-                      <p className="font-sans font-semibold text-[13px] text-on-surface leading-[18px] line-clamp-2">
-                        {prod.titulo}
-                      </p>
-                      {prod.tipo === 'articulo' && prod.doi && (
-                        <p className="font-sans text-[11px] text-on-surface-variant mt-0.5">
-                          DOI: <span className="font-mono">{prod.doi}</span>
-                        </p>
-                      )}
-                      {prod.tipo === 'tesis' && (
-                        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-[#f0fdf4] text-[#166534]">
-                          {prod.tipoTesis ?? 'Tesis'}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Autor */}
-                    <td className="px-5 py-3 font-sans text-[13px] text-on-surface-variant whitespace-nowrap">
-                      {prod.autores}
-                    </td>
-
-                    {/* Fecha */}
-                    <td className="px-5 py-3 font-sans text-[13px] text-on-surface-variant whitespace-nowrap">
-                      {formatFecha(prod.fecha)}
-                    </td>
-
-                    {/* Fuente */}
-                    <td className="px-5 py-3">
-                      <FuenteBadge fuente={prod.fuente} />
-                    </td>
-
-                    {/* Estado */}
-                    <td className="px-5 py-3">
-                      <EstadoBadge estado={prod.estado} />
-                    </td>
-
-                    {/* Acciones */}
-                    <td className="px-5 py-3">
-                      {prod.estado === 'pendiente' ? (
-                        <button
-                          onClick={() => router.push(`/publicaciones/${prod.id}`)}
-                          className="
-                            inline-flex items-center gap-1.5
-                            px-3 py-1.5 rounded
-                            font-sans font-semibold text-[12px] text-on-surface
-                            border border-outline-variant
-                            hover:bg-surface-container hover:border-primary
-                            transition-colors duration-100
-                          "
-                          aria-label={`Vincular y confirmar: ${prod.titulo}`}
-                        >
-                          <LinkIcon /> Vincular
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => router.push(`/publicaciones/${prod.id}`)}
-                          className="
-                            w-8 h-8 flex items-center justify-center rounded
-                            text-on-surface-variant
-                            hover:bg-surface-container hover:text-on-surface
-                            transition-colors duration-100
-                          "
-                          aria-label={`Ver detalles: ${prod.titulo}`}
-                        >
-                          <EyeIcon />
-                        </button>
-                      )}
-                    </td>
-
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse" role="table">
+                <thead>
+                  <tr className="border-b border-outline-variant bg-surface-container-low">
+                    {[
+                      'Título de la Producción',
+                      'Asesor / Grupo de Inv. Detectado',
+                      'Fecha',
+                      'Fuente de Origen',
+                      'Estado de Validación',
+                      'Acciones',
+                    ].map((h) => (
+                      <th key={h}
+                        className={`px-5 py-3 text-left font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest ${
+                          h === 'Asesor / Grupo de Inv. Detectado' || h === 'Título de la Producción' ? '' : 'whitespace-nowrap'
+                        }`}>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-outline-variant">
+                  {paginatedProducciones.map((prod) => (
+                    <tr key={prod.id}
+                      className={`transition-colors hover:bg-surface-container-low ${prod.estado === 'pendiente' ? 'bg-[#fffef7]' : ''}`}>
+
+                      {/* Título */}
+                      <td className="px-5 py-3">
+                        <p className="font-sans font-semibold text-[13px] text-on-surface leading-[18px] line-clamp-2">
+                          {prod.titulo}
+                        </p>
+                        {prod.tipo === 'articulo' && prod.doi && (
+                          <p className="font-sans text-[11px] text-on-surface-variant mt-0.5">
+                            DOI: <span className="font-mono">{prod.doi}</span>
+                          </p>
+                        )}
+                        {prod.tipo === 'tesis' && (
+                          <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-[#f0fdf4] text-[#166534]">
+                            {prod.tipoTesis ?? 'Tesis'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Asesor / Grupo */}
+                      <td className="px-5 py-3 font-sans text-[13px] text-on-surface-variant max-w-[220px] break-words">
+                        {prod.autores}
+                      </td>
+
+                      {/* Fecha */}
+                      <td className="px-5 py-3 font-sans text-[13px] text-on-surface-variant whitespace-nowrap">
+                        {formatFecha(prod.fecha)}
+                      </td>
+
+                      {/* Fuente */}
+                      <td className="px-5 py-3">
+                        <FuenteBadge fuente={prod.fuente} />
+                      </td>
+
+                      {/* Estado */}
+                      <td className="px-5 py-3">
+                        <EstadoBadge estado={prod.estado} />
+                      </td>
+
+                      {/* Acciones */}
+                      <td className="px-5 py-3">
+                        {prod.estado === 'pendiente' ? (
+                          <button
+                            onClick={() => router.push(`/publicaciones/${prod.id}`)}
+                            className="
+                              inline-flex items-center gap-1.5
+                              px-3 py-1.5 rounded
+                              font-sans font-semibold text-[12px] text-on-surface
+                              border border-outline-variant
+                              hover:bg-surface-container hover:border-primary
+                              transition-colors duration-100
+                            "
+                            aria-label={`Vincular y confirmar: ${prod.titulo}`}
+                          >
+                            <LinkIcon /> Vincular
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => router.push(`/publicaciones/${prod.id}`)}
+                            className="
+                              w-8 h-8 flex items-center justify-center rounded
+                              text-on-surface-variant
+                              hover:bg-surface-container hover:text-on-surface
+                              transition-colors duration-100
+                            "
+                            aria-label={`Ver detalles: ${prod.titulo}`}
+                          >
+                            <EyeIcon />
+                          </button>
+                        )}
+                      </td>
+
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer paginación */}
+            <div className="flex items-center justify-between px-5 py-3 border-t border-outline-variant bg-surface-container-low">
+              <p className="font-sans text-[12px] text-on-surface-variant">
+                Mostrando {((page - 1) * 10) + 1}–{Math.min(page * 10, totalItems)} de{' '}
+                <span className="font-semibold">{totalItems}</span> registros
+              </p>
+              <Pagination page={page} pages={totalPages} onChange={handlePage} />
+            </div>
+          </>
         )}
 
       </div>
