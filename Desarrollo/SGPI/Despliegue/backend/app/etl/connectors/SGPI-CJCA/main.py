@@ -20,10 +20,14 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Habilitar CORS
+# Habilitar CORS restrictivo basado en variables de entorno
+import os
+allowed_origins_str = os.getenv("VRIP_ALLOWED_ORIGINS") or os.getenv("FRONTEND_ORIGINS") or "http://localhost:3000,http://localhost:3001"
+allowed_origins = [orig.strip() for orig in allowed_origins_str.split(",") if orig.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

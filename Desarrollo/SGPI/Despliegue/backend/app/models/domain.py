@@ -38,6 +38,7 @@ class Investigador(Base):
     tiene_deuda_pi = Column(Boolean, default=False)
     correo = Column(String(255))
     is_external = Column(Boolean, default=False)
+    protegido_manualmente = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     historial_puntaje = relationship("HistorialPuntaje", backref="investigador", cascade="all, delete-orphan", lazy="selectin")
@@ -95,6 +96,7 @@ class Proyecto(Base):
     fecha_informe_final = Column(Date)
     estado_proyecto = Column(String(50), nullable=False, default='Aprobado')
     observaciones = Column(Text)
+    protegido_manualmente = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -284,3 +286,17 @@ class HistorialPuntaje(Base):
     puntaje_otros = Column(Numeric(10, 2), default=0.0)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+class SyncJob(Base):
+    __tablename__ = 'sync_job'
+    job_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sources = Column(JSON, nullable=False)
+    filters = Column(JSON, nullable=False, default=dict)
+    status = Column(String(20), nullable=False, default='queued')
+    started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    finished_at = Column(DateTime(timezone=True))
+    error_message = Column(Text)
+    report = Column(JSON)
+    progress_logs = Column(JSON, nullable=False, default=list)
+    id_usuario = Column(UUID(as_uuid=True), ForeignKey('usuario.id_usuario', ondelete='SET NULL'))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

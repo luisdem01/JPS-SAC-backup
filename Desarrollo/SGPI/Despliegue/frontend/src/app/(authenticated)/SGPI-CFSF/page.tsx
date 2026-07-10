@@ -31,10 +31,14 @@ interface CybertesisFilters {
   yearEnd: string;
   degree: string;         // '' = todos | 'pregrado' | 'maestria' | 'doctorado'
   byDocentes: boolean;    // también buscar por docentes en BD
+  maxDocentes: string;    // límite de docentes a consultar
+  onlyReconcileLocal: boolean; // solo buscar asesores registrados en BD local
 }
 interface RenacytFilters {
   enabled: boolean;
   mode: 'update' | 'expanded' | 'both'; // update=solo DNIs en BD, expanded=UNMSM, both=ambos
+  maxUpdate: string;   // límite de investigadores existentes a actualizar ('' = todos)
+  maxNuevos: string;   // límite de nuevos investigadores a descubrir ('' = sin límite)
 }
 
 interface FormState {
@@ -60,10 +64,14 @@ const INITIAL: FormState = {
     yearEnd: currentYear,
     degree: '',
     byDocentes: true,
+    maxDocentes: '100',
+    onlyReconcileLocal: true,
   },
   renacyt: {
     enabled: true,
     mode: 'both',
+    maxUpdate: '',
+    maxNuevos: '50',
   },
 };
 
@@ -73,7 +81,7 @@ function nowTime() {
   return new Date().toLocaleTimeString('es-PE', { hour12: false });
 }
 function addLog(prev: LogEntry[], level: LogLevel, text: string): LogEntry[] {
-  return [...prev.slice(-39), { time: nowTime(), level, text }];
+  return [...prev.slice(-199), { time: nowTime(), level, text }];
 }
 function healthToStatus(h?: SourceHealth): 'online' | 'unavailable' | 'loading' {
   if (!h) return 'unavailable';
@@ -258,31 +266,9 @@ export default function SincronizacionDeFuentesPage() {
     }
   }, [logs]);
 
-  // Carga inicial de salud
-  useEffect(() => {
-    let cancelled = false;
-    syncService.getSourcesHealth()
-      .then((d) => { if (!cancelled) setHealthData(d); })
-      .catch(() => {
-        if (!cancelled)
-          setLogs((p) => addLog(p, 'WARN', 'No se pudo verificar el estado de los conectores en el servidor.'));
-      })
-      .finally(() => { if (!cancelled) setHealthLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
-
   // ── Polling ───────────────────────────────────────────────────────────────
   const pollJob = useCallback((id: string) => {
-    let attempts = 0;
-    const MAX = 360;
     const iv = setInterval(async () => {
-      attempts++;
-      if (attempts > MAX) {
-        clearInterval(iv);
-        setRunning(false);
-        setLogs((p) => addLog(p, 'WARN', 'Tiempo de espera agotado. El job puede seguir en el servidor.'));
-        return;
-      }
       try {
         const st = await syncService.getJobStatus(id);
         
@@ -305,6 +291,11 @@ export default function SincronizacionDeFuentesPage() {
           setLogs((p) => addLog(p, 'SUCCESS', '✓ Sincronización completada. Redirigiendo a resultados…'));
           setTimeout(() => router.push('/sincronizacion/resultados'), 1500);
         }
+        if (st.status === 'stopped') {
+          clearInterval(iv);
+          setRunning(false);
+          setLogs((p) => addLog(p, 'WARN', 'Sincronización detenida por el usuario.'));
+        }
         if (st.status === 'failed') {
           clearInterval(iv);
           setRunning(false);
@@ -313,8 +304,46 @@ export default function SincronizacionDeFuentesPage() {
       } catch {
         setLogs((p) => addLog(p, 'WARN', 'Error temporal consultando estado — reintentando…'));
       }
-    }, 5000);
+    }, 2000);
   }, [router]);
+
+  // Carga inicial de salud y chequeo de job activo
+  useEffect(() => {
+    let cancelled = false;
+    
+    // Verificar salud de conectores
+    syncService.getSourcesHealth()
+      .then((d) => { if (!cancelled) setHealthData(d); })
+      .catch(() => {
+        if (!cancelled)
+          setLogs((p) => addLog(p, 'WARN', 'No se pudo verificar el estado de los conectores en el servidor.'));
+      })
+      .finally(() => { if (!cancelled) setHealthLoading(false); });
+
+    // Verificar si hay una sincronización activa
+    syncService.getActiveJob()
+      .then((res) => {
+        if (cancelled) return;
+        if (res.success && res.data) {
+          const activeJob = res.data;
+          setJobId(activeJob.job_id);
+          setRunning(true);
+          if (activeJob.progress_logs && activeJob.progress_logs.length > 0) {
+            setLogs([
+              { time: '--:--:--', level: 'INFO', text: 'Sistema listo. Configure los conectores y sus filtros, luego ejecute la sincronización.' },
+              ...activeJob.progress_logs
+            ]);
+          }
+          setLogs((p) => addLog(p, 'INFO', `Sincronización activa detectada en el servidor [${activeJob.job_id.slice(0, 8)}…]. Monitoreando...`));
+          pollJob(activeJob.job_id);
+        }
+      })
+      .catch((e) => {
+        console.error('Error al consultar job activo:', e);
+      });
+
+    return () => { cancelled = true; };
+  }, [pollJob]);
 
   // ── Lanzar sincronización ─────────────────────────────────────────────────
   const handleRun = async () => {
@@ -344,13 +373,21 @@ export default function SincronizacionDeFuentesPage() {
       filters.vrip_query   = form.vrip.query.trim() || undefined;
     }
     if (form.cybertesis.enabled) {
-      filters.year_start     = form.cybertesis.yearStart ? parseInt(form.cybertesis.yearStart) : undefined;
-      filters.year_end       = form.cybertesis.yearEnd   ? parseInt(form.cybertesis.yearEnd)   : undefined;
-      filters.degree         = form.cybertesis.degree    || undefined;
-      filters.by_docentes    = form.cybertesis.byDocentes;
+      filters.year_start              = form.cybertesis.yearStart ? parseInt(form.cybertesis.yearStart) : undefined;
+      filters.year_end                = form.cybertesis.yearEnd   ? parseInt(form.cybertesis.yearEnd)   : undefined;
+      filters.degree                  = form.cybertesis.degree    || undefined;
+      filters.by_docentes             = form.cybertesis.byDocentes;
+      filters.max_docentes_cybertesis = form.cybertesis.maxDocentes ? parseInt(form.cybertesis.maxDocentes) : undefined;
+      filters.only_reconcile_local    = form.cybertesis.onlyReconcileLocal;
     }
     if (form.renacyt.enabled) {
       filters.renacyt_mode = form.renacyt.mode;
+      if (form.renacyt.maxUpdate.trim()) {
+        filters.renacyt_max_update = parseInt(form.renacyt.maxUpdate);
+      }
+      if (form.renacyt.maxNuevos.trim()) {
+        filters.renacyt_max_new = parseInt(form.renacyt.maxNuevos);
+      }
     }
 
     try {
@@ -363,6 +400,23 @@ export default function SincronizacionDeFuentesPage() {
       const msg = e instanceof ApiClientError ? e.message : 'No se pudo conectar al servidor.';
       setErrorMsg(msg);
       setLogs((p) => addLog(p, 'ERROR', `Error al lanzar: ${msg}`));
+    }
+  };
+
+  // ── Detener sincronización ────────────────────────────────────────────────
+  const handleStop = async () => {
+    if (!jobId) return;
+    try {
+      setLogs((p) => addLog(p, 'INFO', 'Solicitando detención de la sincronización...'));
+      const res = await syncService.stopJob(jobId);
+      if (res.success) {
+        setLogs((p) => addLog(p, 'SUCCESS', 'Detención solicitada con éxito. Esperando respuesta...'));
+      } else {
+        setLogs((p) => addLog(p, 'WARN', `Mensaje del servidor: ${res.message}`));
+      }
+    } catch (e) {
+      const msg = e instanceof ApiClientError ? e.message : 'No se pudo conectar al servidor.';
+      setLogs((p) => addLog(p, 'ERROR', `Error al detener: ${msg}`));
     }
   };
 
@@ -394,6 +448,15 @@ export default function SincronizacionDeFuentesPage() {
             >
               Revisar Cuarentena
             </Button>
+            {running && (
+              <Button
+                variant="danger"
+                size="lg"
+                onClick={handleStop}
+              >
+                Detener Sincronización
+              </Button>
+            )}
             <Button
               variant="primary"
               size="lg"
@@ -544,6 +607,33 @@ export default function SincronizacionDeFuentesPage() {
               </span>
             </label>
 
+            {form.cybertesis.byDocentes && (
+              <Field label="Límite de docentes a consultar">
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  className={inputCls}
+                  value={form.cybertesis.maxDocentes}
+                  onChange={(e) => setCybertesis({ maxDocentes: e.target.value })}
+                  disabled={running}
+                />
+              </Field>
+            )}
+
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-[#001631] cursor-pointer"
+                checked={form.cybertesis.onlyReconcileLocal}
+                onChange={(e) => setCybertesis({ onlyReconcileLocal: e.target.checked })}
+                disabled={running}
+              />
+              <span className="font-sans text-[12px] text-emerald-700 font-semibold">
+                Sincronización estricta (reconciliar solo docentes locales de la BD)
+              </span>
+            </label>
+
             <p className="text-[11px] text-on-surface-variant font-sans bg-slate-50 rounded px-2.5 py-2">
               <strong>Extrae:</strong> tesis de FISI-UNMSM con título, autores, asesores, URL, grado y año. Permite vincular asesorías con investigadores.
             </p>
@@ -604,6 +694,40 @@ export default function SincronizacionDeFuentesPage() {
             <p className="text-[11px] text-on-surface-variant font-sans bg-slate-50 rounded px-2.5 py-2">
               <strong>Extrae:</strong> nivel RENACYT (I–VII), código CTI Vitae, ORCID, grado académico e institución principal. Sin filtro de año (registro activo por reglamento).
             </p>
+
+            {/* Límites de cantidad */}
+            <div className="grid grid-cols-2 gap-3 border-t border-[#f1f5f9] pt-3 mt-1">
+              {(form.renacyt.mode === 'update' || form.renacyt.mode === 'both') && (
+                <Field label="Máx. existentes a actualizar">
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    className={inputCls}
+                    placeholder="Todos (sin límite)"
+                    value={form.renacyt.maxUpdate}
+                    onChange={(e) => setRenacyt({ maxUpdate: e.target.value })}
+                    disabled={running}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 font-sans">~1s por investigador</p>
+                </Field>
+              )}
+              {(form.renacyt.mode === 'expanded' || form.renacyt.mode === 'both') && (
+                <Field label="Máx. nuevos a descubrir">
+                  <input
+                    type="number"
+                    min="1"
+                    max="5000"
+                    className={inputCls}
+                    placeholder="Sin límite"
+                    value={form.renacyt.maxNuevos}
+                    onChange={(e) => setRenacyt({ maxNuevos: e.target.value })}
+                    disabled={running}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 font-sans">50 = ~1 pág. RENACYT</p>
+                </Field>
+              )}
+            </div>
           </ConnectorCard>
         </div>
 

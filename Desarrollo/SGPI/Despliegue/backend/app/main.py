@@ -81,6 +81,25 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     """Abre/cierra el pool de conexiones junto con la aplicación."""
     # startup
+    try:
+        from app.db.session import AsyncSessionLocal
+        from app.models.domain import SyncJob
+        from sqlalchemy import update
+        from datetime import datetime as dt, timezone as tz
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(SyncJob)
+                .where(SyncJob.status.in_(["queued", "running"]))
+                .values(
+                    status="failed",
+                    error_message="Servidor reiniciado. El job fue interrumpido.",
+                    finished_at=dt.now(tz.utc),
+                )
+            )
+            await db.commit()
+    except Exception as e:
+        logger.error(f"Error reseteando estados de sync_job en el startup: {e}")
+
     yield
     # shutdown — libera todas las conexiones del pool
     await engine.dispose()

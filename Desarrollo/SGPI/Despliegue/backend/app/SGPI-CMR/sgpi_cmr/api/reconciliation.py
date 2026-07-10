@@ -17,6 +17,7 @@ except ImportError:
     RenacytConnector = None
 
 from app.db.session import get_db
+from app.core.config import settings
 from app.core.security import require_staff
 from app.models.domain import Investigador, Proyecto, Publicacion, ReconciliacionPendiente
 from sgpi_cmr.schemas.incoming import BulkInvestigadorPayload, BulkProyectoPayload, BulkPublicacionPayload, BulkAsesorTesisPayload, AsesorTesisInput
@@ -160,8 +161,7 @@ async def reconcile_asesores_tesis(
     renacyt_client = None
     if RenacytConnector:
         try:
-            renacyt_client = RenacytConnector(verify_ssl=False)
-            renacyt_client.rate_limit_delay = 0.1
+            renacyt_client = RenacytConnector(verify_ssl=False, rate_limit_delay=settings.RENACYT_RATE_LIMIT_SECONDS)
         except Exception:
             pass
 
@@ -186,57 +186,7 @@ async def reconcile_asesores_tesis(
     return {"message": "Lote de tesis procesado", "stats": stats}
 
 
-# ==========================================
-# ENDPOINTS DE ADMINISTRACIÓN (CUARENTENA)
-# ==========================================
-
-@router.get("/quarantine", summary="Obtener registros en cuarentena")
-async def get_quarantine_items(
-    estado: str = "Pendiente",
-    entidad: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_staff)
-):
-    stmt = select(ReconciliacionPendiente)
-    if estado != "todos":
-        stmt = stmt.where(ReconciliacionPendiente.estado == estado)
-    if entidad:
-        stmt = stmt.where(ReconciliacionPendiente.entidad_afectada == entidad)
-        
-    result = await db.execute(stmt)
-    items = result.scalars().all()
-    
-    return [
-        {
-            "id_pendiente": item.id_pendiente,
-            "entidad_afectada": item.entidad_afectada,
-            "llave_primaria_sugerida": item.llave_primaria_sugerida,
-            "fuentes_involucradas": item.fuentes_involucradas,
-            "datos_conflicto": item.datos_conflicto,
-            "motivo_cuarentena": item.motivo_cuarentena,
-            "estado": item.estado,
-            "fecha_registro": item.fecha_registro
-        }
-        for item in items
-    ]
-
-@router.post("/quarantine/{id_pendiente}/resolve", summary="Resolver un item de cuarentena")
-async def resolve_quarantine_item(
-    id_pendiente: int, 
-    action: str, 
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_staff)
-):
-    if action not in ["aprobar", "rechazar"]:
-        raise HTTPException(status_code=400, detail="Acción inválida. Usa 'aprobar' o 'rechazar'.")
-        
-    try:
-        await persister.resolve_quarantine_item(db, id_pendiente, action)
-        return {"message": f"Item {id_pendiente} fue {action}do con éxito."}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# Endpoints de administración de cuarentena movidos a sync.py
 
 
 async def run_retry_advisors_background(db_session_factory, user_id: str):
@@ -267,8 +217,7 @@ async def run_retry_advisors_background(db_session_factory, user_id: str):
             renacyt_client = None
             if RenacytConnector:
                 try:
-                    renacyt_client = RenacytConnector(verify_ssl=False)
-                    renacyt_client.rate_limit_delay = 0.3
+                    renacyt_client = RenacytConnector(verify_ssl=False, rate_limit_delay=settings.RENACYT_RATE_LIMIT_SECONDS)
                 except Exception as ex:
                     logger.error(f"Error instanciando RenacytConnector: {ex}")
             
@@ -334,17 +283,4 @@ async def run_retry_advisors_background(db_session_factory, user_id: str):
             logger.error(f"Error crítico en la tarea en background: {e}", exc_info=True)
 
 
-@router.post("/quarantine/retry-advisors", summary="Re-procesar asesores de tesis en cuarentena en segundo plano", status_code=status.HTTP_202_ACCEPTED)
-async def retry_quarantine_advisors(
-    background_tasks: BackgroundTasks,
-    current_user: dict = Depends(require_staff)
-):
-    from app.db.session import AsyncSessionLocal
-    user_id = current_user.get("id_usuario") if isinstance(current_user, dict) else None
-    
-    background_tasks.add_task(run_retry_advisors_background, AsyncSessionLocal, str(user_id) if user_id else None)
-    
-    return {
-        "message": "Re-intento masivo de matching de asesores iniciado en segundo plano.",
-        "status": "Running"
-    }
+# Endpoint /quarantine/retry-advisors movido a sync.py

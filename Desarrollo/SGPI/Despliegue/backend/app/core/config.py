@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # -------------------------------------------------------------------------
+    # Rate Limiting de conectores (segundos)
+    # -------------------------------------------------------------------------
+    RENACYT_RATE_LIMIT_SECONDS: float = 0.5
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -16,6 +16,10 @@ export interface SyncFilters {
   year_end?: number;
   degree?: string | null;
   expanded_search?: boolean;
+  max_docentes_cybertesis?: number;
+  only_reconcile_local?: boolean;
+  renacyt_max_update?: number;   // límite de investigadores existentes a actualizar
+  renacyt_max_new?: number;      // límite de nuevos investigadores a descubrir
 }
 
 export interface SyncRequest {
@@ -45,7 +49,7 @@ export interface SyncSourceReport {
 
 export interface SyncJobStatusData {
   job_id: string;
-  status: 'queued' | 'running' | 'completed' | 'failed';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'stopped';
   sources: SyncSourceId[];
   started_at: string;
   finished_at?: string;
@@ -113,7 +117,7 @@ export const syncService = {
 
   /** Consulta el estado actual de un job de sincronización. */
   getJobStatus(jobId: string): Promise<SyncJobStatusData> {
-    return apiClient.get<SyncJobStatusData>(`/sync/${jobId}/status`);
+    return apiClient.get<SyncJobStatusData>(`/sync/${jobId}/status`, { skipCache: true });
   },
 
   /** Verifica qué conectores están disponibles en el servidor. */
@@ -153,5 +157,15 @@ export const syncService = {
       `/sync/quarantine/${id}/resolve`,
       payload
     );
+  },
+
+  /** Detiene una sincronización activa en curso. */
+  stopJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    return apiClient.post<{ success: boolean; message: string }>(`/sync/${jobId}/stop`);
+  },
+
+  /** Obtiene el job de sincronización activo actualmente. */
+  getActiveJob(): Promise<{ success: boolean; data: SyncJobStatusData | null }> {
+    return apiClient.get<{ success: boolean; data: SyncJobStatusData | null }>('/sync/active/job');
   },
 };

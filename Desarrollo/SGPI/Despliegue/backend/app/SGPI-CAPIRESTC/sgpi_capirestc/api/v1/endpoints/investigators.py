@@ -722,3 +722,39 @@ async def update_investigador(
         await db.rollback()
         logger.error(f"Error al actualizar investigador: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Error al actualizar investigador: {str(e)}")
+
+@router.patch("/{dni}/protect", response_model=InvestigadorResponse)
+async def toggle_investigador_protection(
+    dni: str,
+    protect: bool = Query(..., description="Establece si el investigador está protegido manualmente"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    inv = await db.get(Investigador, dni)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investigador no encontrado")
+        
+    valor_anterior = {"protegido_manualmente": inv.protegido_manualmente}
+    inv.protegido_manualmente = protect
+    
+    try:
+        db.add(inv)
+        await db.commit()
+        await db.refresh(inv)
+        
+        background_tasks.add_task(
+            log_audit_event,
+            db=None,
+            tipo_evento="UPDATE",
+            entidad_afectada="investigador",
+            pk_entidad=dni,
+            valor_anterior=valor_anterior,
+            valor_nuevo={"protegido_manualmente": protect},
+            id_usuario=current_user.get("sub") if current_user else None,
+        )
+        return inv
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error al cambiar protección manual del investigador: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Error al cambiar protección del investigador: {str(e)}")
