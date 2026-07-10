@@ -110,6 +110,7 @@ class SyncFilters(BaseModel):
     degree: Optional[str] = None           # "pregrado" | "maestria" | "doctorado" | None
     by_docentes: bool = True
     max_docentes_cybertesis: int = 100
+    only_reconcile_local: bool = False
     
     # RENACYT
     renacyt_mode: Optional[str] = None         # "update" | "expanded" | "both"
@@ -178,6 +179,7 @@ class SyncJobState:
         await db.commit()
 
 _sync_jobs: Dict[str, SyncJobState] = {}
+_sync_tasks: Dict[str, asyncio.Task] = {}
 
 # ---------------------------------------------------------------------------
 # Mappers: convierte modelos de conectores → schemas CMR
@@ -459,24 +461,23 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
     if not job:
         return
 
-    job.status = "running"
-    job.add_log("INFO", "Iniciando ejecución en segundo plano...")
-    async with AsyncSessionLocal() as db:
-        await job.save_to_db(db)
-
-    report = {s: {"procesados": 0, "resueltos": 0, "cuarentena": 0, "errores": 0, "registros": []} for s in request.sources}
-
-    if not _cmr_ok:
-        job.status = "failed"
-        job.error = "El módulo CMR no está disponible. Imposible reconciliar."
-        job.add_log("ERROR", "Fallo: El módulo CMR no está disponible en el servidor.")
-        job.finished_at = datetime.now(timezone.utc).isoformat()
+    try:
+        job.status = "running"
+        job.add_log("INFO", "Iniciando ejecución en segundo plano...")
         async with AsyncSessionLocal() as db:
             await job.save_to_db(db)
-        _sync_jobs.pop(job_id, None)
-        return
 
-    try:
+        report = {s: {"procesados": 0, "resueltos": 0, "cuarentena": 0, "errores": 0, "registros": []} for s in request.sources}
+
+        if not _cmr_ok:
+            job.status = "failed"
+            job.error = "El módulo CMR no está disponible. Imposible reconciliar."
+            job.add_log("ERROR", "Fallo: El módulo CMR no está disponible en el servidor.")
+            job.finished_at = datetime.now(timezone.utc).isoformat()
+            async with AsyncSessionLocal() as db:
+                await job.save_to_db(db)
+            return
+
         async with AsyncSessionLocal() as db:
             # Pre-cargar padrón de investigadores para fuzzy matching y búsquedas
             try:
@@ -683,8 +684,31 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                             pass
 
                     tesis_lista = cyb_data.get("tesis", [])
-                    job.add_log("INFO", f"Cybertesis: Reconciliando asesores de {len(tesis_lista)} tesis en motor CMR...")
-                    for tesis in tesis_lista:
+                    total_tesis = len(tesis_lista)
+                    job.add_log("INFO", f"Cybertesis: Reconciliando asesores de {total_tesis} tesis en motor CMR...")
+                    await job.save_to_db(db)
+
+                    for idx, tesis in enumerate(tesis_lista):
+                        if request.filters.only_reconcile_local:
+                            has_local_advisor = False
+                            from sgpi_cmr.services.name_normalizer import normalizer
+                            for asesor_nombre in (tesis.asesores or []):
+                                try:
+                                    match = normalizer.find_best_match(asesor_nombre, padron_dict)
+                                    if match:
+                                        has_local_advisor = True
+                                        break
+                                except Exception:
+                                    pass
+                            if not has_local_advisor:
+                                continue
+
+                        # Log progress periodically
+                        if idx % 25 == 0 or idx == total_tesis - 1:
+                            porcentaje = int((idx + 1) * 100 / total_tesis)
+                            job.add_log("INFO", f"Cybertesis: Reconciliando tesis {idx + 1}/{total_tesis} ({porcentaje}%)...")
+                            await job.save_to_db(db)
+
                         if not tesis.asesores:
                             # Tesis sin asesores: enviar a cuarentena por datos incompletos
                             report["CYBERTESIS"]["procesados"] += 1
@@ -713,6 +737,19 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                         # Cada asesor de la tesis es un registro para reconciliar
                         for asesor_nombre in (tesis.asesores or []):
                             try:
+                                # Pre-check matching against local padrón to log RENACYT query
+                                match = None
+                                from sgpi_cmr.services.name_normalizer import normalizer
+                                try:
+                                    match = normalizer.find_best_match(asesor_nombre, padron_dict)
+                                except Exception:
+                                    pass
+
+                                if not match:
+                                    # Not found locally, will query RENACYT
+                                    job.add_log("INFO", f"Cybertesis: Consultando asesor '{asesor_nombre}' en RENACYT (Tesis {idx + 1}/{total_tesis})...")
+                                    await job.save_to_db(db)
+
                                 cmr_input = AsesorTesisInput(
                                     asesor_texto=asesor_nombre,
                                     url_cybertesis=str(tesis.url_repositorio),
@@ -824,6 +861,13 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
             await job.save_to_db(db)
             logger.info(f"[Sync] Job {job_id} completado. Reporte: {report}")
 
+    except asyncio.CancelledError:
+        logger.info(f"[Sync] Job {job_id} fue cancelado por el usuario.")
+        job.status = "stopped"
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        job.add_log("WARN", "Sincronización cancelada por el usuario.")
+        async with AsyncSessionLocal() as db:
+            await job.save_to_db(db)
     except Exception as e:
         logger.error(f"[Sync] Fallo crítico en el background execution de job {job_id}: {e}", exc_info=True)
         job.status = "failed"
@@ -834,6 +878,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
             await job.save_to_db(db)
     finally:
         _sync_jobs.pop(job_id, None)
+        _sync_tasks.pop(job_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -902,7 +947,8 @@ async def run_sync(
     
     # Desacoplar la ejecución usando asyncio.create_task para evitar que Starlette/uvicorn
     # mantengan la conexión del request HTTP abierta o interfieran con la respuesta.
-    asyncio.create_task(_run_sync_job(job_id, request))
+    task = asyncio.create_task(_run_sync_job(job_id, request))
+    _sync_tasks[job_id] = task
 
     return {
         "success": True,
@@ -913,6 +959,64 @@ async def run_sync(
             "message": "Sincronización iniciada en background. Consulta el estado con GET /sync/{job_id}/status.",
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post(
+    "/{job_id}/stop",
+    summary="Detener sincronización activa",
+    description="Detiene una sincronización activa en curso cancelando la tarea asíncrona.",
+)
+async def stop_sync(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_staff),
+):
+    task = _sync_tasks.get(job_id)
+    job = _sync_jobs.get(job_id)
+    
+    if not task or not job:
+        # Buscar en base de datos si de pronto ya terminó
+        from app.models.domain import SyncJob
+        import uuid as _uuid
+        try:
+            uuid_obj = _uuid.UUID(job_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="ID de job inválido.")
+            
+        result = await db.execute(select(SyncJob).where(SyncJob.job_id == uuid_obj))
+        db_job = result.scalars().first()
+        if not db_job:
+            raise HTTPException(status_code=404, detail="Job no encontrado.")
+        if db_job.status in ["completed", "failed", "stopped"]:
+            return {
+                "success": False,
+                "message": f"El job ya finalizó con estado: {db_job.status}",
+                "status": db_job.status
+            }
+        
+        # Si estaba en queued/running pero no en memoria (e.g. reinicio)
+        db_job.status = "stopped"
+        db_job.finished_at = datetime.now(timezone.utc)
+        
+        progress = list(db_job.progress_logs or [])
+        progress.append({
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "level": "WARN",
+            "text": "Sincronización marcada como detenida (no estaba activa en memoria)."
+        })
+        db_job.progress_logs = progress
+        await db.commit()
+        return {
+            "success": True,
+            "message": "Sincronización marcada como detenida."
+        }
+
+    # Cancelar la tarea asíncrona
+    task.cancel()
+    return {
+        "success": True,
+        "message": "Sincronización cancelada correctamente."
     }
 
 
@@ -950,6 +1054,50 @@ async def get_sources_health():
                 "status": "online" if _cmr_ok else "critical_error",
             },
         },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get(
+    "/active/job",
+    summary="Obtener job activo",
+    description="Retorna el job que se encuentra actualmente en cola o en ejecución, si existe.",
+)
+async def get_active_job(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_staff),
+):
+    active_job = None
+    # 1. Buscar primero en memoria
+    for jid, job in _sync_jobs.items():
+        if job.status in ["queued", "running"]:
+            active_job = {
+                "job_id": job.job_id,
+                "status": job.status,
+                "sources": job.sources,
+                "started_at": job.started_at,
+                "progress_logs": job.progress_logs,
+            }
+            break
+
+    if not active_job:
+        # 2. Si no está en memoria, buscar en la BD
+        from app.models.domain import SyncJob
+        stmt = select(SyncJob).where(SyncJob.status.in_(["queued", "running"])).limit(1)
+        res = await db.execute(stmt)
+        db_job = res.scalars().first()
+        if db_job:
+            active_job = {
+                "job_id": str(db_job.job_id),
+                "status": db_job.status,
+                "sources": db_job.sources,
+                "started_at": db_job.started_at.isoformat() if db_job.started_at else None,
+                "progress_logs": db_job.progress_logs,
+            }
+
+    return {
+        "success": True,
+        "data": active_job,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

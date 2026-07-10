@@ -32,6 +32,7 @@ interface CybertesisFilters {
   degree: string;         // '' = todos | 'pregrado' | 'maestria' | 'doctorado'
   byDocentes: boolean;    // también buscar por docentes en BD
   maxDocentes: string;    // límite de docentes a consultar
+  onlyReconcileLocal: boolean; // solo buscar asesores registrados en BD local
 }
 interface RenacytFilters {
   enabled: boolean;
@@ -64,6 +65,7 @@ const INITIAL: FormState = {
     degree: '',
     byDocentes: true,
     maxDocentes: '100',
+    onlyReconcileLocal: true,
   },
   renacyt: {
     enabled: true,
@@ -264,31 +266,9 @@ export default function SincronizacionDeFuentesPage() {
     }
   }, [logs]);
 
-  // Carga inicial de salud
-  useEffect(() => {
-    let cancelled = false;
-    syncService.getSourcesHealth()
-      .then((d) => { if (!cancelled) setHealthData(d); })
-      .catch(() => {
-        if (!cancelled)
-          setLogs((p) => addLog(p, 'WARN', 'No se pudo verificar el estado de los conectores en el servidor.'));
-      })
-      .finally(() => { if (!cancelled) setHealthLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
-
   // ── Polling ───────────────────────────────────────────────────────────────
   const pollJob = useCallback((id: string) => {
-    let attempts = 0;
-    const MAX = 360;
     const iv = setInterval(async () => {
-      attempts++;
-      if (attempts > MAX) {
-        clearInterval(iv);
-        setRunning(false);
-        setLogs((p) => addLog(p, 'WARN', 'Tiempo de espera agotado. El job puede seguir en el servidor.'));
-        return;
-      }
       try {
         const st = await syncService.getJobStatus(id);
         
@@ -311,6 +291,11 @@ export default function SincronizacionDeFuentesPage() {
           setLogs((p) => addLog(p, 'SUCCESS', '✓ Sincronización completada. Redirigiendo a resultados…'));
           setTimeout(() => router.push('/sincronizacion/resultados'), 1500);
         }
+        if (st.status === 'stopped') {
+          clearInterval(iv);
+          setRunning(false);
+          setLogs((p) => addLog(p, 'WARN', 'Sincronización detenida por el usuario.'));
+        }
         if (st.status === 'failed') {
           clearInterval(iv);
           setRunning(false);
@@ -321,6 +306,44 @@ export default function SincronizacionDeFuentesPage() {
       }
     }, 2000);
   }, [router]);
+
+  // Carga inicial de salud y chequeo de job activo
+  useEffect(() => {
+    let cancelled = false;
+    
+    // Verificar salud de conectores
+    syncService.getSourcesHealth()
+      .then((d) => { if (!cancelled) setHealthData(d); })
+      .catch(() => {
+        if (!cancelled)
+          setLogs((p) => addLog(p, 'WARN', 'No se pudo verificar el estado de los conectores en el servidor.'));
+      })
+      .finally(() => { if (!cancelled) setHealthLoading(false); });
+
+    // Verificar si hay una sincronización activa
+    syncService.getActiveJob()
+      .then((res) => {
+        if (cancelled) return;
+        if (res.success && res.data) {
+          const activeJob = res.data;
+          setJobId(activeJob.job_id);
+          setRunning(true);
+          if (activeJob.progress_logs && activeJob.progress_logs.length > 0) {
+            setLogs([
+              { time: '--:--:--', level: 'INFO', text: 'Sistema listo. Configure los conectores y sus filtros, luego ejecute la sincronización.' },
+              ...activeJob.progress_logs
+            ]);
+          }
+          setLogs((p) => addLog(p, 'INFO', `Sincronización activa detectada en el servidor [${activeJob.job_id.slice(0, 8)}…]. Monitoreando...`));
+          pollJob(activeJob.job_id);
+        }
+      })
+      .catch((e) => {
+        console.error('Error al consultar job activo:', e);
+      });
+
+    return () => { cancelled = true; };
+  }, [pollJob]);
 
   // ── Lanzar sincronización ─────────────────────────────────────────────────
   const handleRun = async () => {
@@ -355,6 +378,7 @@ export default function SincronizacionDeFuentesPage() {
       filters.degree                  = form.cybertesis.degree    || undefined;
       filters.by_docentes             = form.cybertesis.byDocentes;
       filters.max_docentes_cybertesis = form.cybertesis.maxDocentes ? parseInt(form.cybertesis.maxDocentes) : undefined;
+      filters.only_reconcile_local    = form.cybertesis.onlyReconcileLocal;
     }
     if (form.renacyt.enabled) {
       filters.renacyt_mode = form.renacyt.mode;
@@ -376,6 +400,23 @@ export default function SincronizacionDeFuentesPage() {
       const msg = e instanceof ApiClientError ? e.message : 'No se pudo conectar al servidor.';
       setErrorMsg(msg);
       setLogs((p) => addLog(p, 'ERROR', `Error al lanzar: ${msg}`));
+    }
+  };
+
+  // ── Detener sincronización ────────────────────────────────────────────────
+  const handleStop = async () => {
+    if (!jobId) return;
+    try {
+      setLogs((p) => addLog(p, 'INFO', 'Solicitando detención de la sincronización...'));
+      const res = await syncService.stopJob(jobId);
+      if (res.success) {
+        setLogs((p) => addLog(p, 'SUCCESS', 'Detención solicitada con éxito. Esperando respuesta...'));
+      } else {
+        setLogs((p) => addLog(p, 'WARN', `Mensaje del servidor: ${res.message}`));
+      }
+    } catch (e) {
+      const msg = e instanceof ApiClientError ? e.message : 'No se pudo conectar al servidor.';
+      setLogs((p) => addLog(p, 'ERROR', `Error al detener: ${msg}`));
     }
   };
 
@@ -407,6 +448,15 @@ export default function SincronizacionDeFuentesPage() {
             >
               Revisar Cuarentena
             </Button>
+            {running && (
+              <Button
+                variant="danger"
+                size="lg"
+                onClick={handleStop}
+              >
+                Detener Sincronización
+              </Button>
+            )}
             <Button
               variant="primary"
               size="lg"
@@ -570,6 +620,19 @@ export default function SincronizacionDeFuentesPage() {
                 />
               </Field>
             )}
+
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-[#001631] cursor-pointer"
+                checked={form.cybertesis.onlyReconcileLocal}
+                onChange={(e) => setCybertesis({ onlyReconcileLocal: e.target.checked })}
+                disabled={running}
+              />
+              <span className="font-sans text-[12px] text-emerald-700 font-semibold">
+                Sincronización estricta (reconciliar solo docentes locales de la BD)
+              </span>
+            </label>
 
             <p className="text-[11px] text-on-surface-variant font-sans bg-slate-50 rounded px-2.5 py-2">
               <strong>Extrae:</strong> tesis de FISI-UNMSM con título, autores, asesores, URL, grado y año. Permite vincular asesorías con investigadores.
