@@ -195,7 +195,7 @@ class ParserFactory:
     @staticmethod
     def get_parser(filename: str):
         filename_lower = filename.lower()
-        if 'proyectos' in filename_lower and '2018-2025' in filename_lower:
+        if 'proyectos' in filename_lower:
             return ProyectosParser()
         elif 'ii-fisi' in filename_lower:
             return IIFISIParser()
