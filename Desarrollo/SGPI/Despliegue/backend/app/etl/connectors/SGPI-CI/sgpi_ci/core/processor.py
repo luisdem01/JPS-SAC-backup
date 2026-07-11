@@ -138,6 +138,22 @@ class EtlProcessor:
             db_match = match_local_db(name_str)
             if db_match:
                 logger.info(f"Coincidencia local en BD para '{name_str}': DNI {db_match.get('dni')}")
+                dni = db_match.get('dni')
+                
+                # Nueva lógica: Usar el Padrón como diccionario de DNIs para buscar en RENACYT
+                if dni and renacyt_client and hasattr(renacyt_client, 'search_by_dni'):
+                    try:
+                        logger.info(f"Enriqueciendo DNI {dni} ('{name_str}') con RENACYT...")
+                        ren_match = await renacyt_client.search_by_dni(dni)
+                        if ren_match:
+                            logger.info(f"¡Éxito! Perfil enriquecido desde RENACYT para DNI {dni}.")
+                            return ren_match
+                        else:
+                            logger.info(f"RENACYT no encontró perfil calificado para DNI {dni}. Usando datos básicos del padrón.")
+                    except Exception as e:
+                        logger.warning(f"Error al buscar DNI {dni} en RENACYT: {e}. Usando datos básicos.")
+
+                # Fallback: Datos básicos del padrón (No Clasificado si no se encontró en RENACYT)
                 return {
                     "numero_documento": db_match.get("dni"),
                     "nombres": db_match.get("nombres"),

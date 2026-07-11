@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import { PageHeader } from '@/SGPI-CFU/components/shared';
@@ -13,6 +14,11 @@ export default function CuarentenaPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<QuarantineListData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Filtros
   const [estado, setEstado] = useState('Pendiente');
@@ -39,6 +45,17 @@ export default function CuarentenaPage() {
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [dniMap, setDniMap] = useState<Record<number, string>>({});
   const [modalItem, setModalItem] = useState<QuarantineItem | null>(null);
+
+  // Cierra el modal con tecla Esc
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && modalItem) {
+        setModalItem(null);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalItem]);
 
   const handleResolve = async (id: number, action: 'aprobar' | 'rechazar', requireDni: boolean) => {
     const dni = dniMap[id];
@@ -167,13 +184,20 @@ export default function CuarentenaPage() {
                         {item.estado === 'Pendiente' ? (
                           <div className="flex flex-col gap-2">
                             {isTesis && (
-                              <input
-                                type="text"
-                                placeholder="DNI del asesor"
-                                className="h-8 px-2 text-[12px] border border-slate-300 rounded"
-                                value={dniMap[item.id_pendiente] || ''}
-                                onChange={(e) => setDniMap(prev => ({ ...prev, [item.id_pendiente]: e.target.value }))}
-                              />
+                              <div className="flex flex-col gap-1.5">
+                                {item.datos_conflicto.asesor_texto && (
+                                  <div className="text-[11px] text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-100">
+                                    <span className="font-semibold">Asesor:</span> {String(item.datos_conflicto.asesor_texto)}
+                                  </div>
+                                )}
+                                <input
+                                  type="text"
+                                  placeholder="DNI del asesor"
+                                  className="h-8 px-2 text-[12px] border border-slate-300 rounded"
+                                  value={dniMap[item.id_pendiente] || ''}
+                                  onChange={(e) => setDniMap(prev => ({ ...prev, [item.id_pendiente]: e.target.value }))}
+                                />
+                              </div>
                             )}
                             <div className="flex gap-2">
                               <Button
@@ -218,8 +242,8 @@ export default function CuarentenaPage() {
       )}
 
       {/* Modal de Detalles del Payload */}
-      {modalItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+      {mounted && modalItem && createPortal(
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-black bg-opacity-50 p-4">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col border border-slate-200">
             <div className="px-5 py-3.5 border-b border-slate-200 flex justify-between items-center bg-slate-50">
               <div>
@@ -241,7 +265,8 @@ export default function CuarentenaPage() {
               <Button variant="secondary" size="md" onClick={() => setModalItem(null)}>Cerrar Modal</Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </MainLayout>
   );

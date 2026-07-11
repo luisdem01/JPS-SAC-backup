@@ -177,6 +177,7 @@ class ReconciliationRulesEngine:
             else:
                 return incoming_dict, True, "Rechazado automáticamente: Esta investigación o su asesor corresponden a otra especialidad o facultad (no pertenecen a ninguna de las carreras de la FISI)."
         else:
-            return incoming_dict, True, "No se pudo identificar al asesor automáticamente en el padrón local de la FISI ni en RENACYT. Por favor, ingrese el DNI del asesor para aprobar este registro."
+            asesor_nombre = incoming_dict.get('asesor_texto', 'desconocido')
+            return incoming_dict, True, f"No se pudo identificar al asesor '{asesor_nombre}' automáticamente en el padrón local de la FISI ni en RENACYT. Por favor, ingrese el DNI del asesor para aprobar este registro."
 
 rules_engine = ReconciliationRulesEngine()

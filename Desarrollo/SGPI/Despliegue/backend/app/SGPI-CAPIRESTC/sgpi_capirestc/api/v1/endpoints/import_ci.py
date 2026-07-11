@@ -127,10 +127,27 @@ async def _run_sgpi_ci(job_id: str, file_path: str, id_usuario: Optional[str] = 
 
             # Detectar si la API de RENACYT estuvo offline/caída
             detalle_conflictos = resultado.get("detalle_conflictos", [])
-            for c in detalle_conflictos:
-                if c.get("tipo") == "ERROR_API_RENACYT":
-                    job.api_renacyt_offline = True
-                    break
+            
+            # --- NUEVA LÓGICA: Imprimir errores detallados en el terminal ---
+            if detalle_conflictos:
+                logger.warning(f"--- DETALLE DE ERRORES ({len(detalle_conflictos)}) EN EL ARCHIVO {job.filename} ---")
+                for c in detalle_conflictos:
+                    if c.get("tipo") == "ERROR_API_RENACYT":
+                        job.api_renacyt_offline = True
+                    
+                    # Imprimir cada error específico en consola para el usuario
+                    tipo_err = c.get('tipo', 'DESCONOCIDO')
+                    msg_err = c.get('mensaje', 'Sin detalle')
+                    # Extraer algún dato útil de identificación si es posible (ej. título o docente)
+                    dato = c.get('dato', {})
+                    if isinstance(dato, dict):
+                        identificador = dato.get('titulo') or dato.get('titulo_tesis') or dato.get('docente_nombre') or dato.get('nombre_grupo') or str(dato)[:50]
+                    else:
+                        identificador = str(dato)[:50]
+                        
+                    logger.warning(f"  -> [OMITIDO] {tipo_err} | Registro: '{identificador}' | Motivo: {msg_err}")
+                logger.warning("-----------------------------------------------------------------")
+            # -----------------------------------------------------------------
 
             logger.info(f"Job {job_id} completado exitosamente: {job.created} creados, {job.errors} errores.")
 
