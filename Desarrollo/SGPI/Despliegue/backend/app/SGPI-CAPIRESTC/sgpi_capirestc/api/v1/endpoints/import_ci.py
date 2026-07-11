@@ -43,6 +43,7 @@ class ImportJobState:
         self.created    = 0             
         self.updated    = 0             
         self.error_msg: Optional[str] = None
+        self.detalle_conflictos: list = []
         self.api_renacyt_offline = False
         self.started_at = datetime.now(timezone.utc).isoformat()
         self.finished_at: Optional[str] = None
@@ -125,8 +126,9 @@ async def _run_sgpi_ci(job_id: str, file_path: str, id_usuario: Optional[str] = 
             job.errors = resultado.get("conflictos_inconsistencias", 0)
             job.processed = sum(resultado.get("entidades_extraidas", {}).values())
 
-            # Detectar si la API de RENACYT estuvo offline/caída
+            # Detectar si la API de RENACYT estuvo offline/caída y guardar detalles
             detalle_conflictos = resultado.get("detalle_conflictos", [])
+            job.detalle_conflictos = detalle_conflictos
             
             # --- NUEVA LÓGICA: Imprimir errores detallados en el terminal ---
             if detalle_conflictos:
@@ -232,6 +234,7 @@ async def get_import_status(job_id: str):
             "updated":  job.updated,
             "errors":   job.errors,
             "api_renacyt_offline": job.api_renacyt_offline,
+            "detalle_conflictos": job.detalle_conflictos,
         }
 
     if job.status == "failed" and job.error_msg:
