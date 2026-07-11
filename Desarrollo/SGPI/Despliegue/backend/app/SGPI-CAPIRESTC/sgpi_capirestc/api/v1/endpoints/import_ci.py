@@ -55,6 +55,10 @@ class ImportJobState:
         self.finished_at: Optional[str] = None
         # Bandera de cancelación (capa defensiva secundaria para el bucle interno)
         self.cancel_requested: bool = False
+        # Detalle de registros guardados por entidad (para el log detallado del frontend)
+        self.detalle_extraccion: Dict[str, list] = {}
+        # Conteos por entidad: {investigadores: {insertados, actualizados, fallidos}, ...}
+        self.resultados_db_detalle: Dict[str, dict] = {}
         self.logs = [
             {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -129,20 +133,27 @@ async def _run_sgpi_ci(job_id: str, file_path: str, id_usuario: Optional[str] = 
             job.add_log("Procesamiento finalizado con éxito.", 100)
             
             # Extraer métricas reales de los resultados devueltos por SupabaseUploader
+            # Las RPCs ahora retornan {insertados, actualizados, fallidos} con distinción precisa
             db_res = resultado.get("resultados_db", {})
-            total_inserted = 0
+            total_insertados  = 0
+            total_actualizados = 0
             for entity, items in db_res.items():
-                if isinstance(items, list):
-                    total_inserted += len(items)
-                elif isinstance(items, dict):
-                    if "procesados" in items:
-                        total_inserted += items.get("procesados", 0)
-                    else:
-                        total_inserted += len(items.get("data", []))
+                if isinstance(items, dict):
+                    total_insertados   += items.get("insertados",   0)
+                    total_actualizados += items.get("actualizados", 0)
+                elif isinstance(items, list):
+                    # fallback legacy: si por algún motivo llega lista, contar como insertados
+                    total_insertados += len(items)
 
-            job.created = total_inserted
-            job.errors = resultado.get("conflictos_inconsistencias", 0)
+            job.created = total_insertados
+            job.updated = total_actualizados
+            job.errors  = resultado.get("conflictos_inconsistencias", 0)
             job.processed = sum(resultado.get("entidades_extraidas", {}).values())
+
+            # Guardar detalle de registros guardados para el log detallado del frontend
+            job.detalle_extraccion = resultado.get("detalle_extraccion", {})
+            # Guardar conteos por entidad para el desglose en el log
+            job.resultados_db_detalle = resultado.get("resultados_db", {})
 
             # Detectar si la API de RENACYT estuvo offline/caída durante el proceso
             detalle_conflictos = resultado.get("detalle_conflictos", [])
@@ -251,6 +262,8 @@ async def get_import_status(job_id: str):
             "updated":  job.updated,
             "errors":   job.errors,
             "api_renacyt_offline": job.api_renacyt_offline,
+            "detalle_extraccion":    job.detalle_extraccion,
+            "resultados_db_detalle": job.resultados_db_detalle,
         }
 
     if job.status == "failed" and job.error_msg:

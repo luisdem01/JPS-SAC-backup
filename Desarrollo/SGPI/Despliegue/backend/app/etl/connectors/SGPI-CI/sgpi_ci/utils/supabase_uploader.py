@@ -154,7 +154,7 @@ class SupabaseUploader:
             """
         settings.validate()
 
-        totals: Dict[str, int] = {"procesados": 0, "fallidos": 0}
+        totals: Dict[str, int] = {"insertados": 0, "actualizados": 0, "fallidos": 0}
 
         chunks = [
             records[i : i + chunk_size]
@@ -194,8 +194,9 @@ class SupabaseUploader:
                 data = response.json()
 
                 if data and isinstance(data, dict):
-                    totals["procesados"]  += data.get("procesados", 0)
-                    totals["fallidos"]    += data.get("fallidos", 0)
+                    totals["insertados"]   += data.get("insertados",   0)
+                    totals["actualizados"] += data.get("actualizados", 0)
+                    totals["fallidos"]     += data.get("fallidos",     0)
 
             except Exception as e:
                 # [EX4]: Cada chunk es una llamada RPC independiente.

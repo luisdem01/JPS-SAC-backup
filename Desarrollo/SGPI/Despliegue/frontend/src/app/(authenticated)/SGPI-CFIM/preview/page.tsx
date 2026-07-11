@@ -142,7 +142,9 @@ export default function ImportPreviewPage() {
       nuevos:      (summary as any)?.created   ?? 0,
       actualizados:(summary as any)?.updated   ?? 0,
       errores:     (summary as any)?.errors    ?? 0,
-      apiRenacytOffline: (summary as any)?.api_renacyt_offline ?? false,
+      apiRenacytOffline:    (summary as any)?.api_renacyt_offline    ?? false,
+      detalleExtraccion:    (summary as any)?.detalle_extraccion    ?? {},
+      resultadosDbDetalle:  (summary as any)?.resultados_db_detalle ?? {},
     };
     sessionStorage.setItem('import_results', JSON.stringify(results));
     
