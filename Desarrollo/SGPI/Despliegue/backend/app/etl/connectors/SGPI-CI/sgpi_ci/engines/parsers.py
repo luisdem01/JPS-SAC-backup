@@ -30,6 +30,11 @@ class ProyectosParser:
         # Limpiar nombres de columnas (quitar saltos de linea)
         df.columns = [str(c).replace('\n', ' ').strip() for c in df.columns]
         
+        # Llenar celdas combinadas (merged cells)
+        for col in ['Código Proyecto', 'Resolución Rectoral', 'Nombre del Proyecto', 'Tipo', 'Año', 'Grupo de Investigación']:
+            if col in df.columns:
+                df[col] = df[col].ffill()
+        
         proyectos = []
         for _, row in df.iterrows():
             codigo = str(row.get('Código Proyecto', '')).strip()
@@ -69,6 +74,11 @@ class IIFISIParser:
             h_row = find_header_row(file_path, 'Proyectos con Financiamiento')
             df_p = pd.read_excel(file_path, sheet_name='Proyectos con Financiamiento', skiprows=h_row)
             df_p.columns = [str(c).replace('\n', ' ').strip() for c in df_p.columns]
+            
+            # Llenar celdas combinadas (merged cells)
+            for col in ['Codigo del Proyecto', 'Título del Proyecto', 'Resolucion Rectoral', 'Grupo de Investigación']:
+                if col in df_p.columns:
+                    df_p[col] = df_p[col].ffill()
             
             for _, row in df_p.iterrows():
                 codigo = str(row.get('Codigo del Proyecto', '')).strip()
@@ -129,6 +139,9 @@ class IIFISIParser:
             df_t = pd.read_excel(file_path, sheet_name='TESIS', skiprows=h_row)
             df_t.columns = [str(c).replace('\n', ' ').strip() for c in df_t.columns]
             
+            if 'Título de la Tesis' in df_t.columns:
+                df_t['Título de la Tesis'] = df_t['Título de la Tesis'].ffill()
+            
             for _, row in df_t.iterrows():
                 titulo = str(row.get('Título de la Tesis', '')).strip()
                 if not titulo or titulo == 'nan': continue
@@ -170,6 +183,12 @@ class GIDocentesParser:
         header_row = find_header_row(file_path)
         df = pd.read_excel(file_path, skiprows=header_row)
         df.columns = [str(c).replace('\n', ' ').strip() for c in df.columns]
+        
+        # Llenar celdas combinadas (merged cells) hacia abajo
+        if 'Nombre de Grupo de Investigación' in df.columns:
+            df['Nombre de Grupo de Investigación'] = df['Nombre de Grupo de Investigación'].ffill()
+        if 'Nombre Corto' in df.columns:
+            df['Nombre Corto'] = df['Nombre Corto'].ffill()
         
         miembros_grupo = []
         for _, row in df.iterrows():

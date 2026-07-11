@@ -101,7 +101,7 @@ class SupabaseUploader:
             "Content-Type": "application/json",
             "Prefer": "resolution=ignore-duplicates"
         }
-        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/linea_investigacion"
+        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/linea_investigacion?on_conflict=nombre"
         try:
             payload = {"nombre": nombre, "estado": estado}
             response = requests.post(url, headers=headers, json=payload)
@@ -118,7 +118,7 @@ class SupabaseUploader:
             "Content-Type": "application/json",
             "Prefer": "resolution=ignore-duplicates"
         }
-        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/departamento_academico"
+        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/departamento_academico?on_conflict=nombre"
         try:
             payload = {"nombre": nombre, "estado": estado}
             response = requests.post(url, headers=headers, json=payload)

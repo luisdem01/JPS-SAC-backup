@@ -184,6 +184,7 @@ async function request<T>(
       headers,
       body:   body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
+      cache:  'no-store',
     });
 
     clearTimeout(timeoutId);

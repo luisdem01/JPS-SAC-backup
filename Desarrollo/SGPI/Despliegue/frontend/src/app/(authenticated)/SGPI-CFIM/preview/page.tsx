@@ -156,11 +156,18 @@ export default function ImportPreviewPage() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleCancel = useCallback(() => {
+  const handleCancel = useCallback(async () => {
+    if (meta?.jobId) {
+      try {
+        await importEndpoints.stopJob(meta.jobId);
+      } catch (err) {
+        console.error('Error al cancelar el trabajo en el backend:', err);
+      }
+    }
     reset();
     sessionStorage.removeItem('import_meta');
     router.push('/importacion');
-  }, [reset, router]);
+  }, [reset, router, meta]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
@@ -280,7 +287,7 @@ export default function ImportPreviewPage() {
               </div>
 
               {/* Columna Derecha: Timeline animado */}
-              <div className="md:col-span-7 flex flex-col bg-surface-container-lowest border border-outline-variant rounded overflow-hidden min-h-[300px] h-[340px] md:h-auto">
+              <div className="md:col-span-7 flex flex-col bg-surface-container-lowest border border-outline-variant rounded overflow-hidden min-h-[340px] md:min-h-[50vh] md:max-h-[75vh]">
                 
                 {/* Header de consola */}
                 <div className="px-4 py-2.5 bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
@@ -296,11 +303,11 @@ export default function ImportPreviewPage() {
                 </div>
 
                 {/* Contenedor de logs */}
-                <div className="relative flex-1 overflow-hidden">
+                <div className="relative flex-1 bg-surface-container-lowest">
                   <div
                     ref={consoleRef}
                     onScroll={handleConsoleScroll}
-                    className="h-full overflow-y-auto p-4 flex flex-col gap-3 scroll-smooth"
+                    className="absolute inset-0 overflow-y-auto p-4 pb-8 flex flex-col gap-3 scroll-smooth"
                   >
                     {logs && logs.length > 0 ? (
                       logs.map((log, idx) => {
@@ -309,7 +316,7 @@ export default function ImportPreviewPage() {
                         return (
                           <div
                             key={idx}
-                            className={`flex items-start gap-3 p-3 rounded border transition-all duration-300 ${
+                            className={`flex items-start shrink-0 gap-3 p-3 rounded border transition-all duration-300 ${
                               isLast
                                 ? 'bg-[#eff6ff] border-[#bfdbfe] animate-sweep-in log-shimmer-sweep'
                                 : 'bg-surface-container-low/40 border-transparent opacity-80 hover:opacity-100'

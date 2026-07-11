@@ -29,6 +29,12 @@ except ImportError:
 import re
 import unicodedata
 
+
+class ImportCancelledError(Exception):
+    """Excepción lanzada cuando el usuario cancela la importación en curso."""
+    pass
+
+
 class EtlProcessor:
     def __init__(self, file_path: str, id_usuario: Optional[str] = None):
         self.file_path = file_path
@@ -37,16 +43,16 @@ class EtlProcessor:
         self.failed_rows: List[Dict[str, Any]] = []
         self.id_usuario = id_usuario
 
-    async def process(self, upload_to_db: bool = True, on_progress: Optional[Any] = None) -> Dict[str, Any]:
+    async def process(self, upload_to_db: bool = True, on_progress: Optional[Any] = None, is_cancelled: Optional[Any] = None) -> Dict[str, Any]:
         """Orquesta la extracción, enriquecimiento y carga."""
         import asyncio
         start_time = time.time()
         log_connector_status("SGPI-CI", "START", 0.0, details=f"Iniciando procesamiento del archivo {self.filename}")
 
-        def update_progress(msg: str, progress_val: int):
+        def update_progress(msg: str, progress_val: int, processed_count: int = None, error_count: int = None):
             if on_progress:
                 try:
-                    on_progress(msg, progress_val)
+                    on_progress(msg, progress_val, processed_count=processed_count, error_count=error_count)
                 except Exception as ex:
                     logger.warning(f"Error in progress callback: {ex}")
             logger.info(f"[{self.filename}] {msg} ({progress_val}%)")
@@ -92,9 +98,59 @@ class EtlProcessor:
         investigadores_db = await asyncio.to_thread(self.uploader.fetch_investigadores)
         
         # Instanciar el conector una sola vez y bajar el delay
-        renacyt_client = RenacytConnector(verify_ssl=False) if RenacytConnector else None
+        # Se pasa cancel_check para que el conector verifique cancelación antes de cada petición HTTP
+        renacyt_client = RenacytConnector(verify_ssl=False, cancel_check=is_cancelled) if RenacytConnector else None
         if renacyt_client:
             renacyt_client.rate_limit_delay = 0.1
+
+        # ---------------------------------------------------------------------------
+        # PRE-FLIGHT CHECK: Verificar disponibilidad de RENACYT antes de comenzar
+        # Si la API no responde en RENACYT_PREFLIGHT_TIMEOUT segundos, se desactiva
+        # el conector y se avisa al usuario en vez de quedar colgado por 15-20 min.
+        # ---------------------------------------------------------------------------
+        RENACYT_PREFLIGHT_TIMEOUT = 8  # segundos máximos para el chequeo inicial
+        if renacyt_client and unique_names:
+            update_progress("Verificando disponibilidad del servidor RENACYT (CONCYTEC)...", 28)
+            try:
+                _probe_name = next(iter(unique_names))
+                _probe_clean = re.sub(r'^(Dr\.|Mg\.|Mag\.|Ing\.|Lic\.)\s*', '', _probe_name, flags=re.IGNORECASE).strip()
+                _probe_words = [w for w in _probe_clean.split() if len(w) > 2]
+                _probe_query = _probe_words[-1] if _probe_words else _probe_clean
+                await asyncio.wait_for(
+                    renacyt_client.search_by_name(_probe_query, page_size=1),
+                    timeout=RENACYT_PREFLIGHT_TIMEOUT
+                )
+                update_progress("Servidor RENACYT disponible. Iniciando enriquecimiento de datos...", 29)
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"[{self.filename}] Pre-flight RENACYT TIMEOUT ({RENACYT_PREFLIGHT_TIMEOUT}s). "
+                    "El servidor de CONCYTEC no respondió. Se procederá sin enriquecimiento RENACYT."
+                )
+                update_progress(
+                    f"⚠️ AVISO: El servidor RENACYT (CONCYTEC) no respondió en {RENACYT_PREFLIGHT_TIMEOUT} segundos. "
+                    "Se omitirá la consulta a RENACYT y los investigadores no podrán resolverse por DNI en este proceso.",
+                    29
+                )
+                self.failed_rows.append({
+                    "tipo": "ERROR_API_RENACYT",
+                    "mensaje": f"El servidor de RENACYT (CONCYTEC) no respondió al pre-chequeo "
+                               f"en {RENACYT_PREFLIGHT_TIMEOUT} segundos. La API parece estar caída o muy lenta. "
+                               "Los investigadores no pudieron ser enriquecidos con datos de RENACYT en esta importación.",
+                    "dato": "pre-flight-check"
+                })
+                renacyt_client = None  # Desactivar para no intentar más llamadas
+            except Exception as e_preflight:
+                logger.error(f"[{self.filename}] Pre-flight RENACYT ERROR: {e_preflight}. Se procederá sin RENACYT.")
+                update_progress(
+                    f"⚠️ AVISO: Error al contactar el servidor RENACYT: {str(e_preflight)[:120]}. Se omitirá el enriquecimiento RENACYT.",
+                    29
+                )
+                self.failed_rows.append({
+                    "tipo": "ERROR_API_RENACYT",
+                    "mensaje": f"Error al contactar el servidor RENACYT: {str(e_preflight)}",
+                    "dato": "pre-flight-check"
+                })
+                renacyt_client = None
 
         try:
             from app.core.cache import cache_get, cache_set, normalize_query
@@ -133,7 +189,7 @@ class EtlProcessor:
                     return inv
             return None
 
-        async def robust_renacyt_search(name_str: str):
+        async def robust_renacyt_search(name_str: str, _is_cancelled=None):
             # 1. Comprobación local en memoria (Base de Datos)
             db_match = match_local_db(name_str)
             if db_match:
@@ -181,6 +237,10 @@ class EtlProcessor:
 
             if not renacyt_client:
                 return None
+
+            # --- Verificar cancelación antes de cualquier llamada a RENACYT ---
+            if _is_cancelled and _is_cancelled():
+                raise ImportCancelledError("Importación cancelada por el usuario.")
                 
             # Limpiamos comas y guiones para separar bien las palabras (ej. "Herrera-quispe")
             clean_str = name_str.replace(',', ' ').replace('-', ' ')
@@ -201,8 +261,14 @@ class EtlProcessor:
                             if matches >= len(original_parts) - 1:
                                 match = r
                                 break
+                except ImportCancelledError:
+                    raise  # Propagar cancelación sin suprimirla
                 except Exception as e:
                     logger.warning(f"Error en search_by_fullname para '{name_str}', usando fallback: {e}")
+
+            # --- Verificar cancelación antes del fallback ---
+            if _is_cancelled and _is_cancelled():
+                raise ImportCancelledError("Importación cancelada por el usuario.")
 
             # 3.2. Fallback secuencial original: Búsqueda por apellidos (más preciso)
             if not match and extract_lastnames and hasattr(renacyt_client, 'search_by_lastname'):
@@ -217,8 +283,14 @@ class EtlProcessor:
                                 if matches >= len(original_parts) - 1:
                                     match = r
                                     break
+                except ImportCancelledError:
+                    raise  # Propagar cancelación sin suprimirla
                 except Exception:
                     pass
+
+            # --- Verificar cancelación antes del segundo fallback ---
+            if _is_cancelled and _is_cancelled():
+                raise ImportCancelledError("Importación cancelada por el usuario.")
 
             # 3.3. Fallback secuencial original: Búsqueda por nombre iterativa
             if not match:
@@ -230,6 +302,9 @@ class EtlProcessor:
                 candidates.append(words[0])
 
                 for cand in candidates:
+                    # --- Verificar cancelación antes de cada búsqueda individual ---
+                    if _is_cancelled and _is_cancelled():
+                        raise ImportCancelledError("Importación cancelada por el usuario.")
                     try:
                         res = await renacyt_client.search_by_name(cand, page_size=100)
                         if res and res.get('total', 0) > 0 and res.get('data'):
@@ -241,6 +316,8 @@ class EtlProcessor:
                                     break
                             if match:
                                 break
+                    except ImportCancelledError:
+                        raise  # Propagar cancelación sin suprimirla
                     except Exception:
                         pass
 
@@ -281,11 +358,20 @@ class EtlProcessor:
                 except Exception as cache_err:
                     logger.warning(f"Error al escribir en caché de Redis en ETL: {cache_err}")
 
-            return match
+            if match:
+                logger.info(f"[ÉXITO] Se encontró a '{name_str}' en RENACYT (DNI: {match.get('numero_documento', 'N/A')}).")
+            else:
+                logger.warning(f"[FALLO] No se encontró a '{name_str}' en RENACYT tras intentar todas las combinaciones.")
 
+            return match
 
         total_names = len(unique_names)
         for index, name in enumerate(unique_names, 1):
+            # Verificar cancelación al inicio de cada iteración
+            if is_cancelled and is_cancelled():
+                logger.info(f"[{self.filename}] Importación cancelada por el usuario en el paso de enriquecimiento RENACYT.")
+                raise ImportCancelledError("Importación cancelada por el usuario.")
+
             if not name or not search_by_name:
                 continue
             
@@ -293,10 +379,10 @@ class EtlProcessor:
             search_name = re.sub(r'^(Dr\.|Mg\.|Mag\.|Ing\.|Lic\.)\s*', '', name, flags=re.IGNORECASE).strip()
             
             pct = 30 + int((index / total_names) * 45) if total_names > 0 else 75
-            update_progress(f"Buscando en RENACYT: {search_name} ({index}/{total_names})", pct)
+            update_progress(f"Buscando en RENACYT: {search_name} ({index}/{total_names})", pct, processed_count=len(name_to_dni), error_count=len(self.failed_rows))
             
             try:
-                match = await robust_renacyt_search(search_name)
+                match = await robust_renacyt_search(search_name, _is_cancelled=is_cancelled)
                 if match:
                     dni = str(match.get('numero_documento', ''))
                     
@@ -330,6 +416,8 @@ class EtlProcessor:
                         "mensaje": f"No se encontró DNI para el docente '{name}' en RENACYT.",
                         "dato": name
                     })
+            except ImportCancelledError:
+                raise  # No atrapar la cancelación — dejar que detenga el bucle
             except Exception as e:
                 self.failed_rows.append({
                     "tipo": "ERROR_API_RENACYT",
@@ -508,20 +596,33 @@ class EtlProcessor:
         # 4. Carga (Supabase)
         resultados_db = {}
         if upload_to_db:
+            # Verificar cancelación antes de comenzar la carga a la BD
+            if is_cancelled and is_cancelled():
+                logger.info(f"[{self.filename}] Importación cancelada por el usuario antes de la carga a la base de datos.")
+                raise ImportCancelledError("Importación cancelada por el usuario.")
+
             update_progress("Guardando cambios en la base de datos...", 90)
             if investigadores_validos:
                 update_progress("Guardando nuevos investigadores y datos de RENACYT...", 92)
                 resultados_db['investigadores'] = await asyncio.to_thread(self.uploader.upload, 'importar_ci_investigadores', investigadores_validos, id_usuario=self.id_usuario)
             if proyectos_validos:
+                if is_cancelled and is_cancelled():
+                    raise ImportCancelledError("Importación cancelada por el usuario.")
                 update_progress("Guardando proyectos de investigación...", 94)
                 resultados_db['proyectos'] = await asyncio.to_thread(self.uploader.upload, 'importar_ci_proyectos', proyectos_validos, id_usuario=self.id_usuario)
             if grupos_validos:
+                if is_cancelled and is_cancelled():
+                    raise ImportCancelledError("Importación cancelada por el usuario.")
                 update_progress("Guardando grupos de investigación...", 96)
                 resultados_db['grupos'] = await asyncio.to_thread(self.uploader.upload, 'importar_ci_grupos', grupos_validos, id_usuario=self.id_usuario)
             if publicaciones_validas:
+                if is_cancelled and is_cancelled():
+                    raise ImportCancelledError("Importación cancelada por el usuario.")
                 update_progress("Guardando publicaciones científicas...", 98)
                 resultados_db['publicaciones'] = await asyncio.to_thread(self.uploader.upload, 'importar_ci_publicaciones', publicaciones_validas, id_usuario=self.id_usuario)
             if tesis_validas:
+                if is_cancelled and is_cancelled():
+                    raise ImportCancelledError("Importación cancelada por el usuario.")
                 update_progress("Guardando tesis de grado y posgrado...", 99)
                 resultados_db['tesis'] = await asyncio.to_thread(self.uploader.upload, 'importar_ci_tesis', tesis_validas, id_usuario=self.id_usuario)
 
