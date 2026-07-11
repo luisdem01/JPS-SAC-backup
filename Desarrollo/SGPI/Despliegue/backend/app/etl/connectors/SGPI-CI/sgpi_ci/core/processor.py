@@ -201,8 +201,23 @@ class EtlProcessor:
             padron_match = match_padron_fisi(name_str)
             if padron_match:
                 logger.info(f"Coincidencia en Padrón FISI Maestro para '{name_str}': DNI {padron_match.get('dni')}")
+                dni_padron = padron_match.get("dni")
+                
+                # Intentar enriquecer usando el DNI del Padrón FISI
+                if dni_padron and renacyt_client and hasattr(renacyt_client, 'search_by_dni'):
+                    try:
+                        logger.info(f"Enriqueciendo DNI {dni_padron} del Padrón FISI ('{name_str}') con RENACYT...")
+                        ren_match = await renacyt_client.search_by_dni(dni_padron)
+                        if ren_match:
+                            logger.info(f"Perfil enriquecido desde RENACYT para DNI {dni_padron}.")
+                            return ren_match
+                        else:
+                            logger.info(f"RENACYT no encontró perfil calificado para DNI {dni_padron} del Padrón FISI. Usando datos básicos del padrón.")
+                    except Exception as e:
+                        logger.warning(f"Error al buscar DNI {dni_padron} en RENACYT: {e}. Usando datos básicos.")
+
                 return {
-                    "numero_documento": padron_match.get("dni"),
+                    "numero_documento": dni_padron,
                     "nombres": padron_match.get("nombre_completo", ""),
                     "apellido_paterno": "",
                     "apellido_materno": "",
