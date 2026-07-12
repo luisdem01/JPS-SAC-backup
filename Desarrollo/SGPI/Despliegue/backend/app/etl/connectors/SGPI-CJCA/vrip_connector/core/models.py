@@ -11,6 +11,7 @@ class ConvocatoriaModel(BaseModel):
     enlace: str = Field(..., description="Link de descarga directa de directivas/bases o convocatoria")
     dias_restantes: Optional[int] = Field(None, description="Días hasta el cierre respecto a la fecha actual")
     fecha_inicio: Optional[str] = Field(None, description="Fecha de inicio parseada en formato YYYY-MM-DD")
+    cronograma_detallado: Optional[List[dict]] = Field(None, description="Cronograma detallado de actividades")
 
 
 class ProyectoModel(BaseModel):

@@ -550,6 +550,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                         pass
                                 existing_conv.url_bases_vrip = conv.enlace
                                 existing_conv.estado_convocatoria = estado_resuelto
+                                existing_conv.cronograma_detallado = conv.cronograma_detallado
                                 report["VRIP"]["resueltos"] += 1
                                 report["VRIP"]["registros"].append({
                                     "tipo": "Convocatoria",
@@ -585,6 +586,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                     fecha_cierre=parsed_close_date,
                                     url_bases_vrip=conv.enlace,
                                     cambios_cronograma=[],
+                                    cronograma_detallado=conv.cronograma_detallado,
                                     estado_convocatoria=estado_resuelto
                                 )
                                 db.add(new_conv)
@@ -1334,9 +1336,13 @@ async def resolve_quarantine(
     if item.estado != "Pendiente":
         raise HTTPException(status_code=409, detail=f"El registro ya fue procesado: '{item.estado}'.")
 
+    registros_resueltos = 0
     try:
         if payload.action == "aprobar":
+            registros_resueltos = 1
             merged_data = dict(item.datos_conflicto)
+            asesor_texto_original = merged_data.get("asesor_texto")
+            
             if payload.dni_corregido:
                 merged_data["dni_asesor"] = payload.dni_corregido
                 merged_data.pop("dni_asesor_reconciliado", None)
@@ -1347,8 +1353,63 @@ async def resolve_quarantine(
                 llave_pk=item.llave_primaria_sugerida,
                 merged_data=merged_data,
                 fuente_ganadora="Resolución Manual Admin",
+                auto_commit=False
             )
             item.estado = "Aprobado"
+            
+            # --- RESOLUCIÓN MASIVA PARA TESIS CON EL MISMO ASESOR ---
+            if payload.dni_corregido and item.entidad_afectada == "tesis" and asesor_texto_original:
+                asesor_texto_lower = asesor_texto_original.strip().lower()
+                stmt = select(ReconciliacionPendiente).where(
+                    ReconciliacionPendiente.estado == "Pendiente",
+                    ReconciliacionPendiente.entidad_afectada == "tesis",
+                    ReconciliacionPendiente.id_pendiente != id_pendiente
+                )
+                res = await db.execute(stmt)
+                otros_pendientes = res.scalars().all()
+                
+                from datetime import datetime as _dt, timezone as _tz
+                for otro in otros_pendientes:
+                    otro_datos = dict(otro.datos_conflicto) if otro.datos_conflicto else {}
+                    otro_asesor = otro_datos.get("asesor_texto", "")
+                    
+                    if otro_asesor.strip().lower() == asesor_texto_lower:
+                        otro_datos["dni_asesor"] = payload.dni_corregido
+                        otro_datos.pop("dni_asesor_reconciliado", None)
+                        
+                        await persister.persist_resolved(
+                            db,
+                            entidad=otro.entidad_afectada,
+                            llave_pk=otro.llave_primaria_sugerida,
+                            merged_data=otro_datos,
+                            fuente_ganadora="Resolución Manual Admin (Masiva)",
+                            auto_commit=False
+                        )
+                        otro.estado = "Aprobado"
+                        otro.fecha_revision = _dt.now(_tz.utc)
+                        db.add(otro)
+                        
+                        # Log auditoría para la resolución masiva en reconciliacion_pendientes
+                        from app.models.domain import LogAuditoria
+                        import uuid as _uuid
+                        user_uuid = _uuid.UUID(current_user.get("id_usuario")) if isinstance(current_user, dict) and current_user.get("id_usuario") else None
+                        
+                        audit_log_masivo = LogAuditoria(
+                            tipo_evento="UPDATE",
+                            entidad_afectada="reconciliacion_pendientes",
+                            pk_entidad=str(otro.id_pendiente),
+                            valor_nuevo={
+                                "accion": "aprobar (masivo)",
+                                "nuevo_estado": "Aprobado",
+                                "dni_corregido": payload.dni_corregido,
+                            },
+                            id_usuario=user_uuid,
+                            resultado="Exito",
+                            detalle_error=f"Cuarentena resuelta automáticamente por resolución masiva del administrador."
+                        )
+                        db.add(audit_log_masivo)
+                        
+                        registros_resueltos += 1
         else:
             item.estado = "Rechazado"
             if payload.motivo_rechazo:
@@ -1391,7 +1452,7 @@ async def resolve_quarantine(
             "id_pendiente": id_pendiente,
             "estado": item.estado,
             "message": (
-                "Registro aprobado e integrado a la base de datos."
+                f"Registro aprobado e integrado a la base de datos. (Se resolvieron {registros_resueltos} tesis automáticamente)"
                 if payload.action == "aprobar"
                 else "Registro rechazado correctamente."
             ),

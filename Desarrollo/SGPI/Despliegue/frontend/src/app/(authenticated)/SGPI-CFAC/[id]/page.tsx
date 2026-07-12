@@ -545,6 +545,27 @@ export default function ConvocatoriaDetailPage() {
         </div>
       )}
 
+      {/* ── Cronograma Detallado ─────────────────────────────────────────────── */}
+      {conv.cronogramaDetallado && conv.cronogramaDetallado.length > 0 && (
+        <div className="bg-surface-container-lowest border border-outline-variant rounded shadow-level-1 overflow-hidden mt-6">
+          <div className="px-5 pt-4 pb-2 border-b border-outline-variant">
+            <h2 className="font-sans font-bold text-[13px] text-on-surface">Cronograma Detallado</h2>
+          </div>
+          <div className="divide-y divide-outline-variant">
+            {conv.cronogramaDetallado.map((hito, idx) => (
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-3 hover:bg-surface-container-low transition-colors gap-2">
+                <span className="font-sans text-[13px] text-on-surface-variant flex-1 leading-tight">
+                  {hito.actividad}
+                </span>
+                <span className="font-sans text-[13px] text-on-surface font-medium whitespace-nowrap text-right">
+                  {hito.fecha_detalle}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Archivos de Evidencia (paso 13 / estado final) ───────────────────── */}
       {tieneEvidencias && (
         <div className="bg-surface-container-lowest border border-outline-variant rounded shadow-level-1 overflow-hidden">

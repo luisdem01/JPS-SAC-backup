@@ -160,6 +160,7 @@ class VripConvocatoriasExtractor(BaseExtractor):
                 deadline_original = "Ver cronograma" if cronograma_link else "Ver bases"
                 parsed_deadline = None
                 parsed_start_date = None
+                parsed_cronograma_detallado = None
 
                 # If there's an explicit date in the Elementor container text, let's extract it!
                 container_text = c.get_text(" ", strip=True)
@@ -187,6 +188,11 @@ class VripConvocatoriasExtractor(BaseExtractor):
                             try:
                                 parser = HeuristicCronogramaParser(default_year=target_year)
                                 cronograma = parser.parse(tmp_pdf_path)
+
+                                parsed_cronograma_detallado = [
+                                    {"actividad": act.actividad, "fecha_detalle": act.fecha_detalle}
+                                    for act in cronograma.actividades
+                                ]
 
                                 # Buscar la fecha de inicio en las actividades (registro, postulación, inscripción, recepción)
                                 for act in cronograma.actividades:
@@ -238,6 +244,7 @@ class VripConvocatoriasExtractor(BaseExtractor):
                         enlace=enlace_publico,
                         dias_restantes=calculate_days_remaining(parsed_deadline) if parsed_deadline else None,
                         fecha_inicio=parsed_start_date.isoformat() if parsed_start_date else None,
+                        cronograma_detallado=parsed_cronograma_detallado,
                     )
                 )
 

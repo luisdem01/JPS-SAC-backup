@@ -359,6 +359,7 @@ class ConvocatoriaBase(BaseModel):
     fecha_cierre: Optional[date] = None
     url_bases_vrip: Optional[str] = None
     estado_convocatoria: Optional[str] = 'Abierta'
+    cronograma_detallado: Optional[List[dict]] = None
 
 class ConvocatoriaCreate(ConvocatoriaBase):
     pass

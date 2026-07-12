@@ -93,6 +93,7 @@ CREATE TABLE convocatoria (
     fecha_cierre             DATE,
     url_bases_vrip           VARCHAR(255),
     cambios_cronograma       JSONB,                -- Historial de modificaciones de fechas (CU12)
+    cronograma_detallado     JSONB,                -- Detalle completo del cronograma de actividades
     estado_convocatoria      VARCHAR(50)  DEFAULT 'Abierta',
     created_at               TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );

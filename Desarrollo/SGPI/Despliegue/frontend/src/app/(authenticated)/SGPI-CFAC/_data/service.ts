@@ -62,6 +62,7 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
     fechaCierre: c.fecha_cierre || new Date().toISOString().split('T')[0],
     fuente: 'VRIP',
     ultimaSync: c.created_at,
+    cronogramaDetallado: c.cronograma_detallado,
     evidencias: (c.evidencias || []).map((e: any) => ({
       id: String(e.id_evidencia),
       fileName: e.nombre_archivo,
@@ -112,6 +113,7 @@ export async function getConvocatoriaById(id: string): Promise<Convocatoria | nu
       fechaCierre: res.fecha_cierre || new Date().toISOString().split('T')[0],
       fuente: 'VRIP',
       ultimaSync: res.created_at,
+      cronogramaDetallado: res.cronograma_detallado,
       evidencias: (res.evidencias || []).map((e: any) => ({
         id: String(e.id_evidencia),
         fileName: e.nombre_archivo,

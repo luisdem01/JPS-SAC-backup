@@ -46,6 +46,7 @@ export interface Convocatoria {
   ultimaSync:            string;
   descripcion?:          string;
   cronogramaModificado?: boolean;
+  cronogramaDetallado?:  { actividad: string; fecha_detalle: string }[];
   evidencias:            Evidencia[];
 }
 
