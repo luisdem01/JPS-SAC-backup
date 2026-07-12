@@ -80,6 +80,7 @@ export function ExportFlow({ context, result, onClose }: { context: string, resu
   let pdfColumns = ['Columna', 'Valor'];
   let pdfData = [['Contexto', context], ['Estado', 'Generado']];
   let pdfFilters: Record<string, any> = {};
+  let pdfColWidths: number[] | undefined = undefined;
 
   if (context.startsWith('ficha_grupo_') && result) {
     pdfTitle = `Ficha Consolidada de Grupo`;
@@ -130,6 +131,7 @@ export function ExportFlow({ context, result, onClose }: { context: string, resu
     switch (result.params.tipo) {
       case 'actividades':
         pdfColumns = ["Nombre del Docente", "DNI", "Departamento", "Hrs Proyectos", "Hrs Asesorías", "Total Carga"];
+        pdfColWidths = [0.30, 0.12, 0.28, 0.10, 0.10, 0.10];
         pdfData = result.registros.map((r: any) => [
           r.nombre,
           r.dni,
@@ -180,6 +182,7 @@ export function ExportFlow({ context, result, onClose }: { context: string, resu
         doc_type: 'report',
         columns: pdfColumns,
         data: pdfData,
+        col_widths: pdfColWidths,
       };
 
       const response = await fetch(url, {
@@ -248,6 +251,7 @@ export function ExportFlow({ context, result, onClose }: { context: string, resu
           doc_type: 'report',
           columns: pdfColumns,
           data: pdfData,
+          col_widths: pdfColWidths,
         };
       } else {
         url = `${API_URL}/api/v1/reports/export/excel`;

@@ -30,6 +30,131 @@ const AlertCircleIcon = () => (
   </svg>
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Parser y visualización de errores de columnas faltantes
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MissingColumn {
+  name: string;
+  suggestion?: string;
+}
+
+interface ColumnValidationError {
+  sheet: string;
+  missing: MissingColumn[];
+  found: string[];
+}
+
+function parseColumnValidationError(error: string): ColumnValidationError | null {
+  if (!error.includes('Columnas requeridas no encontradas')) return null;
+
+  // Extraer hoja/contexto del encabezado: "[ProyectosParser] Columnas..."
+  const sheetMatch = error.match(/\[([^\]]+)\]/);
+  const rawSheet = sheetMatch?.[1] ?? '';
+  // Convertir nombre técnico a legible
+  const sheetLabel = rawSheet
+    .replace('ProyectosParser', 'Proyectos de Investigación')
+    .replace('IIFISIParser / Proyectos con Financiamiento', 'Hoja: Proyectos con Financiamiento')
+    .replace('IIFISIParser / Publicación de artículos', 'Hoja: Publicación de Artículos')
+    .replace('IIFISIParser / TESIS', 'Hoja: Tesis')
+    .replace('GICoordinadoresParser', 'Coordinadores de Grupos de Investigación')
+    .replace('GIDocentesParser', 'Docentes en Grupos de Investigación');
+
+  // Extraer columnas faltantes y sugerencias
+  const missing: MissingColumn[] = [];
+  const missingRegex = /✗ '([^']+)'(?:.*?→ ¿Quiso decir: '([^']+)')?/g;
+  let m;
+  while ((m = missingRegex.exec(error)) !== null) {
+    missing.push({ name: m[1], suggestion: m[2] });
+  }
+
+  // Extraer columnas encontradas
+  const foundMatch = error.match(/Columnas encontradas: \[([^\]]*)\]/);
+  const found = foundMatch
+    ? foundMatch[1].split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean)
+    : [];
+
+  return { sheet: sheetLabel, missing, found };
+}
+
+function ColumnValidationErrorCard({ error }: { error: string }) {
+  const parsed = parseColumnValidationError(error);
+
+  if (!parsed) {
+    // Error genérico — mostrar como antes
+    return (
+      <div className="flex items-start gap-3 px-5 py-4 bg-[#fff1f1] border border-[#fca5a5] rounded w-full max-w-[580px]">
+        <span className="text-error shrink-0 mt-0.5"><AlertCircleIcon /></span>
+        <p className="font-sans text-[13px] leading-[20px] text-error">
+          <span className="font-bold">Error al procesar la importación.</span>{' '}{error}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full max-w-[620px] rounded-lg border border-[#fca5a5] overflow-hidden shadow-sm">
+      {/* Cabecera */}
+      <div className="flex items-center gap-3 px-5 py-4 bg-[#fff1f1] border-b border-[#fca5a5]">
+        <span className="text-error shrink-0"><AlertCircleIcon /></span>
+        <div>
+          <p className="font-sans font-bold text-[14px] text-[#991b1b]">
+            El archivo no tiene el formato esperado
+          </p>
+          <p className="font-sans text-[12px] text-[#b91c1c] mt-0.5">
+            Sección revisada: <span className="font-semibold">{parsed.sheet}</span>
+          </p>
+        </div>
+      </div>
+
+      {/* Columnas faltantes */}
+      <div className="px-5 py-4 bg-white border-b border-[#fee2e2]">
+        <p className="font-sans text-[13px] font-semibold text-[#374151] mb-3">
+          Las siguientes columnas no se encontraron en el archivo:
+        </p>
+        <ul className="flex flex-col gap-2">
+          {parsed.missing.map((col) => (
+            <li key={col.name} className="flex items-start gap-2.5">
+              <span className="mt-0.5 shrink-0 text-[#dc2626]">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </span>
+              <div>
+                <span className="font-mono text-[12px] font-bold text-[#1f2937] bg-[#f3f4f6] px-1.5 py-0.5 rounded">
+                  {col.name}
+                </span>
+                {col.suggestion && (
+                  <span className="font-sans text-[12px] text-[#6b7280] ml-2">
+                    ¿El título de esta columna es{' '}
+                    <span className="font-semibold text-[#1d4ed8] font-mono bg-[#eff6ff] px-1 rounded">
+                      {col.suggestion}
+                    </span>
+                    ? Corrija el nombre en el archivo.
+                  </span>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Instrucción */}
+      <div className="px-5 py-3 bg-[#fffbeb] flex items-start gap-2">
+        <span className="shrink-0 mt-0.5 text-[#d97706]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </span>
+        <p className="font-sans text-[12px] text-[#92400e] leading-[18px]">
+          Abra el archivo Excel y verifique que los títulos de columna estén escritos exactamente como se indica arriba, sin tildes cambiadas, espacios extra ni abreviaciones.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 const InfoCircleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -137,12 +262,14 @@ export default function ImportPreviewPage() {
     if (!isSuccess || !meta) return;
 
     const results = {
-      entity:      meta.entity,
-      fileName:    meta.fileName,
-      nuevos:      (summary as any)?.created   ?? 0,
-      actualizados:(summary as any)?.updated   ?? 0,
-      errores:     (summary as any)?.errors    ?? 0,
+      entity:         meta.entity,
+      fileName:       meta.fileName,
+      nuevos:         (summary as any)?.created   ?? 0,
+      actualizados:   (summary as any)?.updated   ?? 0,
+      errores:        (summary as any)?.errors    ?? 0,
       apiRenacytOffline: (summary as any)?.api_renacyt_offline ?? false,
+      enCuarentena:   (summary as any)?.en_cuarentena   ?? 0,
+      detalleSinDni:  (summary as any)?.detalle_sin_dni ?? [],
     };
     sessionStorage.setItem('import_results', JSON.stringify(results));
     
@@ -389,13 +516,7 @@ export default function ImportPreviewPage() {
         {/* ── Estado: Error ───────────────────────────────────────────────────── */}
         {!isRunning && error && (
           <div className="px-6 py-10 flex flex-col items-center gap-5">
-            <div className="flex items-start gap-3 px-5 py-4 bg-[#fff1f1] border border-[#fca5a5] rounded w-full max-w-[520px]">
-              <span className="text-error"><AlertCircleIcon /></span>
-              <p className="font-sans text-[13px] leading-[20px] text-error">
-                <span className="font-bold">Error al procesar la importación.</span>{' '}
-                {error}
-              </p>
-            </div>
+            <ColumnValidationErrorCard error={error} />
             <div className="flex gap-3">
               <Button
                 id="btn-reintentar"

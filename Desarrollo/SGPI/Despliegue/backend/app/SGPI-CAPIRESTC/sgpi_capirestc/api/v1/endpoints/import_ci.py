@@ -44,6 +44,8 @@ class ImportJobState:
         self.updated    = 0             
         self.error_msg: Optional[str] = None
         self.api_renacyt_offline = False
+        self.en_cuarentena = 0
+        self.detalle_sin_dni: list = []
         self.started_at = datetime.now(timezone.utc).isoformat()
         self.finished_at: Optional[str] = None
         self.logs = [
@@ -132,6 +134,9 @@ async def _run_sgpi_ci(job_id: str, file_path: str, id_usuario: Optional[str] = 
                     job.api_renacyt_offline = True
                     break
 
+            job.en_cuarentena = resultado.get("en_cuarentena", 0)
+            job.detalle_sin_dni = resultado.get("detalle_sin_dni", [])
+
             logger.info(f"Job {job_id} completado exitosamente: {job.created} creados, {job.errors} errores.")
 
     except Exception as e:
@@ -215,6 +220,8 @@ async def get_import_status(job_id: str):
             "updated":  job.updated,
             "errors":   job.errors,
             "api_renacyt_offline": job.api_renacyt_offline,
+            "en_cuarentena": job.en_cuarentena,
+            "detalle_sin_dni": job.detalle_sin_dni,
         }
 
     if job.status == "failed" and job.error_msg:
