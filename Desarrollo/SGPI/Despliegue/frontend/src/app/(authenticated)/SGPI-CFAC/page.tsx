@@ -194,6 +194,26 @@ function AlertaCard({ convocatoria: c, onVerDetalles, onGestionarEvidencia }: Al
         {c.entidad && (
           <p className="font-sans text-[11px] text-on-surface-variant">{c.entidad}</p>
         )}
+        
+        {/* Vista previa del cronograma detallado (BUG-012) */}
+        {c.cronogramaDetallado && c.cronogramaDetallado.length > 0 && (
+          <div className="mt-2 bg-surface-container-low border border-outline-variant rounded p-2 text-[11px]">
+            <p className="font-bold mb-1 text-on-surface">Cronograma (Próximos Hitos):</p>
+            <ul className="space-y-1">
+              {c.cronogramaDetallado.slice(0, 3).map((h, i) => (
+                <li key={i} className="flex justify-between gap-2">
+                  <span className="text-on-surface-variant truncate" title={h.actividad}>{h.actividad}</span>
+                  <span className="font-medium text-on-surface whitespace-nowrap">{h.fecha_detalle}</span>
+                </li>
+              ))}
+              {c.cronogramaDetallado.length > 3 && (
+                <li className="text-primary text-center mt-1 cursor-pointer font-medium hover:underline" onClick={onVerDetalles}>
+                  Ver {c.cronogramaDetallado.length - 3} hitos más...
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Acciones */}

@@ -40,7 +40,7 @@ export default function CuarentenaPage() {
   const [dniMap, setDniMap] = useState<Record<number, string>>({});
   const [modalItem, setModalItem] = useState<QuarantineItem | null>(null);
 
-  const handleResolve = async (id: number, action: 'aprobar' | 'rechazar', requireDni: boolean) => {
+  const handleResolve = async (id: number, action: 'aprobar' | 'rechazar', requireDni: boolean, massResolve: boolean = false) => {
     const dni = dniMap[id];
     if (action === 'aprobar' && requireDni && !dni) {
       alert('Debes ingresar un DNI válido para aprobar esta tesis.');
@@ -52,6 +52,7 @@ export default function CuarentenaPage() {
       await syncService.resolveQuarantine(id, {
         action,
         dni_corregido: action === 'aprobar' && requireDni ? dni : undefined,
+        resolucion_masiva: massResolve,
       });
       await fetchList();
     } catch (e) {
@@ -175,20 +176,31 @@ export default function CuarentenaPage() {
                                 onChange={(e) => setDniMap(prev => ({ ...prev, [item.id_pendiente]: e.target.value }))}
                               />
                             )}
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <Button
                                 variant="primary"
                                 size="sm"
                                 loading={resolvingId === item.id_pendiente}
-                                onClick={() => handleResolve(item.id_pendiente, 'aprobar', isTesis)}
+                                onClick={() => handleResolve(item.id_pendiente, 'aprobar', isTesis, false)}
                               >
                                 Aprobar
                               </Button>
+                              {isTesis && (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                                  loading={resolvingId === item.id_pendiente}
+                                  onClick={() => handleResolve(item.id_pendiente, 'aprobar', isTesis, true)}
+                                >
+                                  Resolución Masiva
+                                </Button>
+                              )}
                               <Button
                                 variant="secondary"
                                 size="sm"
                                 disabled={resolvingId === item.id_pendiente}
-                                onClick={() => handleResolve(item.id_pendiente, 'rechazar', false)}
+                                onClick={() => handleResolve(item.id_pendiente, 'rechazar', false, false)}
                               >
                                 Rechazar
                               </Button>

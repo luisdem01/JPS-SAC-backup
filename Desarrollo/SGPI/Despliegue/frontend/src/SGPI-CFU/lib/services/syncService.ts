@@ -97,6 +97,7 @@ export interface QuarantineResolvePayload {
   action: 'aprobar' | 'rechazar';
   dni_corregido?: string;
   motivo_rechazo?: string;
+  resolucion_masiva?: boolean;
 }
 
 export interface QuarantineResolveResult {

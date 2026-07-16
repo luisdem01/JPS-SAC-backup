@@ -1210,6 +1210,7 @@ class QuarantineResolveRequest(BaseModel):
     action: str                          # "aprobar" | "rechazar"
     dni_corregido: Optional[str] = None  # DNI del asesor corregido manualmente
     motivo_rechazo: Optional[str] = None
+    resolucion_masiva: Optional[bool] = False
 
 
 @router.get(
@@ -1358,7 +1359,7 @@ async def resolve_quarantine(
             item.estado = "Aprobado"
             
             # --- RESOLUCIÓN MASIVA PARA TESIS CON EL MISMO ASESOR ---
-            if payload.dni_corregido and item.entidad_afectada == "tesis" and asesor_texto_original:
+            if payload.resolucion_masiva and payload.dni_corregido and item.entidad_afectada == "tesis" and asesor_texto_original:
                 asesor_texto_lower = asesor_texto_original.strip().lower()
                 stmt = select(ReconciliacionPendiente).where(
                     ReconciliacionPendiente.estado == "Pendiente",
