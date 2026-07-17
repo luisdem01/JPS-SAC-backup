@@ -23,6 +23,9 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
+import unicodedata
+import re
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +39,19 @@ from app.core.faculty_config import FISI_KEYWORDS, CYBERTESIS_QUERIES
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+def _normalize_name(name: str) -> str:
+    if not name: return ""
+    n = unicodedata.normalize('NFKD', name).encode('ASCII', 'ignore').decode('utf-8')
+    n = n.lower().replace('.', '').replace(',', '')
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+def _is_same_advisor(name1: str, name2: str) -> bool:
+    if not name1 or not name2: return False
+    n1 = _normalize_name(name1)
+    n2 = _normalize_name(name2)
+    return n1 in n2 or n2 in n1
 
 # ---------------------------------------------------------------------------
 # Inyección de paths para los conectores externos (carpetas con guiones)
@@ -1244,8 +1260,30 @@ async def list_quarantine(
     result = await db.execute(stmt)
     items = result.scalars().all()
 
+    # Calculate masiva counts for tesis
+    masiva_counts = {}
+    if any(i.entidad_afectada == 'tesis' and i.estado == 'Pendiente' for i in items):
+        # Fetch all pending tesis to calculate counts
+        stmt_all_tesis = select(ReconciliacionPendiente).where(
+            ReconciliacionPendiente.estado == 'Pendiente',
+            ReconciliacionPendiente.entidad_afectada == 'tesis'
+        )
+        res_all = await db.execute(stmt_all_tesis)
+        all_pend_tesis = res_all.scalars().all()
+
+        for item in items:
+            if item.entidad_afectada == 'tesis' and item.estado == 'Pendiente':
+                item_asesor = (item.datos_conflicto or {}).get("asesor_texto", "")
+                count = 0
+                for otro in all_pend_tesis:
+                    if otro.id_pendiente != item.id_pendiente:
+                        otro_asesor = (otro.datos_conflicto or {}).get("asesor_texto", "")
+                        if _is_same_advisor(otro_asesor, item_asesor):
+                            count += 1
+                masiva_counts[item.id_pendiente] = count
+
     def serialize(item):
-        return {
+        base = {
             "id_pendiente": item.id_pendiente,
             "entidad_afectada": item.entidad_afectada,
             "llave_primaria_sugerida": item.llave_primaria_sugerida,
@@ -1256,6 +1294,9 @@ async def list_quarantine(
             "fecha_registro": item.fecha_registro.isoformat() if item.fecha_registro else None,
             "fecha_revision": item.fecha_revision.isoformat() if item.fecha_revision else None,
         }
+        if item.id_pendiente in masiva_counts:
+            base["related_count"] = masiva_counts[item.id_pendiente]
+        return base
 
     return {
         "success": True,
@@ -1360,7 +1401,6 @@ async def resolve_quarantine(
             
             # --- RESOLUCIÓN MASIVA PARA TESIS CON EL MISMO ASESOR ---
             if payload.resolucion_masiva and payload.dni_corregido and item.entidad_afectada == "tesis" and asesor_texto_original:
-                asesor_texto_lower = asesor_texto_original.strip().lower()
                 stmt = select(ReconciliacionPendiente).where(
                     ReconciliacionPendiente.estado == "Pendiente",
                     ReconciliacionPendiente.entidad_afectada == "tesis",
@@ -1374,7 +1414,7 @@ async def resolve_quarantine(
                     otro_datos = dict(otro.datos_conflicto) if otro.datos_conflicto else {}
                     otro_asesor = otro_datos.get("asesor_texto", "")
                     
-                    if otro_asesor.strip().lower() == asesor_texto_lower:
+                    if _is_same_advisor(otro_asesor, asesor_texto_original):
                         otro_datos["dni_asesor"] = payload.dni_corregido
                         otro_datos.pop("dni_asesor_reconciliado", None)
                         

@@ -83,6 +83,7 @@ export interface QuarantineItem {
   estado: 'Pendiente' | 'Aprobado' | 'Rechazado';
   fecha_registro: string | null;
   fecha_revision: string | null;
+  related_count?: number;
 }
 
 export interface QuarantineListData {
