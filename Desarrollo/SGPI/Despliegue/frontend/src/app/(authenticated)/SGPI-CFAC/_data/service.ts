@@ -75,7 +75,11 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
 
   // Filtro: estado
   if (filtros.estado !== 'Todos') {
-    list = list.filter((c) => c.estado === filtros.estado);
+    if (filtros.estado === 'Por Vencer') {
+      list = list.filter((c) => c.estado === 'Abierta' && diasRestantes(c.fechaCierre) <= 7 && diasRestantes(c.fechaCierre) >= 0);
+    } else {
+      list = list.filter((c) => c.estado === filtros.estado);
+    }
   }
 
   // Filtro: búsqueda de texto

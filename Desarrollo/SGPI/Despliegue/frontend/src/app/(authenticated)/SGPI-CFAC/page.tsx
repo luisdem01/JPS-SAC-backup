@@ -50,21 +50,35 @@ const SEMAFORO = {
     dot:       'bg-[#dc2626]',
     badgeBg:   'bg-[#fff1f2]',
     badgeText: 'text-[#dc2626]',
-    label:     (dias: number) => `VENCE EN ${dias} ${dias === 1 ? 'DÍA' : 'DÍAS'}`,
+    label:     (dias: number) => dias === 0 ? 'VENCE HOY' : `VENCE EN ${dias} ${dias === 1 ? 'DÍA' : 'DÍAS'}`,
   },
   amarillo: {
     border:    'border-l-[4px] border-l-[#d97706]',
     dot:       'bg-[#d97706]',
     badgeBg:   'bg-[#fffbeb]',
     badgeText: 'text-[#b45309]',
-    label:     (dias: number) => `VENCE EN ${dias} DÍAS`,
+    label:     (dias: number) => `VENCE EN ${dias} ${dias === 1 ? 'DÍA' : 'DÍAS'}`,
   },
   verde: {
     border:    'border-l-[4px] border-l-[#16a34a]',
     dot:       'bg-[#16a34a]',
     badgeBg:   'bg-[#f0fdf4]',
     badgeText: 'text-[#166534]',
-    label:     (dias: number) => dias > 60 ? 'VIGENTE' : `VENCE EN ${dias} DÍAS`,
+    label:     (dias: number) => dias > 60 ? 'VIGENTE' : `VENCE EN ${dias} ${dias === 1 ? 'DÍA' : 'DÍAS'}`,
+  },
+  gris: {
+    border:    'border-l-[4px] border-l-[#94a3b8]',
+    dot:       'bg-[#94a3b8]',
+    badgeBg:   'bg-[#f1f5f9]',
+    badgeText: 'text-[#475569]',
+    label:     (_dias: number) => 'CERRADA',
+  },
+  difundido: {
+    border:    'border-l-[4px] border-l-[#16a34a]',
+    dot:       'bg-[#16a34a]',
+    badgeBg:   'bg-[#f0fdf4]',
+    badgeText: 'text-[#166534]',
+    label:     (_dias: number) => 'DIFUSIÓN COMPLETADA',
   },
 } as const;
 
@@ -155,13 +169,23 @@ interface AlertaCardProps {
 
 function AlertaCard({ convocatoria: c, onVerDetalles, onGestionarEvidencia }: AlertaCardProps) {
   const dias      = diasRestantes(c.fechaCierre);
-  const nivel     = c.estado === 'Abierta' || c.estado === 'Por Vencer'
-    ? nivelAlerta(dias)
-    : 'verde';
+  const tieneEvidencias = c.evidencias && c.evidencias.length > 0;
+  
+  let nivel: keyof typeof SEMAFORO;
+  let badgeLabel: string;
+
+  if (tieneEvidencias) {
+    nivel = 'difundido';
+    badgeLabel = SEMAFORO[nivel].label(dias);
+  } else if (c.estado === 'Cerrada' || c.estado === 'Suspendida' || dias < 0) {
+    nivel = 'gris';
+    badgeLabel = dias < 0 && c.estado === 'Abierta' ? 'CERRADA' : c.estado.toUpperCase();
+  } else {
+    nivel = nivelAlerta(dias);
+    badgeLabel = SEMAFORO[nivel].label(dias);
+  }
+
   const semaforo  = SEMAFORO[nivel];
-  const badgeLabel = c.estado === 'Abierta' || c.estado === 'Por Vencer'
-    ? semaforo.label(dias)
-    : c.estado.toUpperCase();
 
   return (
     <div className={`

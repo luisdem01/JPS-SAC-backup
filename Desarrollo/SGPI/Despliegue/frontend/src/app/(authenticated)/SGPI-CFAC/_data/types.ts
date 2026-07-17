@@ -18,7 +18,7 @@ export type EstadoConvocatoria =
   | 'Suspendida';
 
 /** Nivel de urgencia calculado en base a días restantes */
-export type NivelAlerta = 'verde' | 'amarillo' | 'rojo';
+export type NivelAlerta = 'verde' | 'amarillo' | 'rojo' | 'gris' | 'difundido';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Entidades
