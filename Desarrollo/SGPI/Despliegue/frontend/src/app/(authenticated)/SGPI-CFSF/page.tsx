@@ -75,6 +75,21 @@ const INITIAL: FormState = {
   },
 };
 
+// Intenta cargar el borrador de localStorage
+function getSavedForm(): FormState {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('sgpi_sync_draft');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // Fallback a inicial en caso de error
+      }
+    }
+  }
+  return INITIAL;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function nowTime() {
@@ -245,7 +260,7 @@ const selectCls = inputCls + " cursor-pointer";
 
 export default function SincronizacionDeFuentesPage() {
   const router = useRouter();
-  const [form, setForm]           = useState<FormState>(INITIAL);
+  const [form, setForm]           = useState<FormState>(getSavedForm);
   const [healthData, setHealthData] = useState<SourcesHealthData | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
   const [running, setRunning]     = useState(false);
@@ -255,6 +270,11 @@ export default function SincronizacionDeFuentesPage() {
     { time: '--:--:--', level: 'INFO', text: 'Sistema listo. Configure los conectores y sus filtros, luego ejecute la sincronización.' },
   ]);
   const logContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-guardado en localStorage
+  useEffect(() => {
+    localStorage.setItem('sgpi_sync_draft', JSON.stringify(form));
+  }, [form]);
 
   // Auto-scroll al final del log (solo del contenedor de la consola)
   useEffect(() => {
@@ -324,10 +344,43 @@ export default function SincronizacionDeFuentesPage() {
     syncService.getActiveJob()
       .then((res) => {
         if (cancelled) return;
-        if (res.success && res.data) {
-          const activeJob = res.data;
+        if (res) {
+          const activeJob = res;
           setJobId(activeJob.job_id);
           setRunning(true);
+          
+          // Restaurar estado del formulario para que sea persistente en la interfaz
+          setForm((prev) => {
+             const vripEnabled = activeJob.sources.includes('VRIP');
+             const cybEnabled = activeJob.sources.includes('CYBERTESIS');
+             const renEnabled = activeJob.sources.includes('RENACYT');
+             const f = activeJob.filters || {};
+             
+             return {
+               vrip: {
+                 enabled: vripEnabled,
+                 year: f.vrip_year?.toString() || prev.vrip.year,
+                 program: f.vrip_program || '',
+                 query: f.vrip_query || '',
+               },
+               cybertesis: {
+                 enabled: cybEnabled,
+                 yearStart: f.year_start?.toString() || '',
+                 yearEnd: f.year_end?.toString() || '',
+                 degree: f.degree || '',
+                 byDocentes: f.by_docentes ?? true,
+                 maxDocentes: f.max_docentes_cybertesis?.toString() || '100',
+                 onlyReconcileLocal: f.only_reconcile_local ?? true,
+               },
+               renacyt: {
+                 enabled: renEnabled,
+                 mode: (f.renacyt_mode as 'update'|'expanded'|'both') || (f.expanded_search ? 'expanded' : 'update'),
+                 maxUpdate: f.renacyt_max_update?.toString() || '',
+                 maxNuevos: f.renacyt_max_new?.toString() || '',
+               }
+             };
+          });
+
           if (activeJob.progress_logs && activeJob.progress_logs.length > 0) {
             setLogs([
               { time: '--:--:--', level: 'INFO', text: 'Sistema listo. Configure los conectores y sus filtros, luego ejecute la sincronización.' },

@@ -170,6 +170,35 @@ class EtlProcessor:
             local_db_by_name[normalize_str(full_name_1)] = inv
             local_db_by_name[normalize_str(full_name_2)] = inv
 
+        import json
+        import os
+        padron_fisi_path = os.path.join(os.path.dirname(__file__), "..", "..", "padron_fisi.json")
+        padron_fisi_db = []
+        if os.path.exists(padron_fisi_path):
+            with open(padron_fisi_path, 'r', encoding='utf-8') as f:
+                padron_fisi_db = json.load(f)
+
+        padron_by_name = {}
+        for inv in padron_fisi_db:
+            padron_by_name[normalize_str(inv.get("nombre_completo", ""))] = inv
+
+        def match_padron_fisi(name_str: str) -> Optional[Dict[str, Any]]:
+            clean_str = name_str.replace(',', ' ').replace('-', ' ')
+            words = [w.strip() for w in clean_str.split() if len(w.strip()) > 2]
+            if not words: return None
+            normalized_parts = [normalize_str(w) for w in words]
+            
+            norm_q = normalize_str(name_str)
+            if norm_q in padron_by_name:
+                return padron_by_name[norm_q]
+                
+            for inv in padron_fisi_db:
+                db_full = normalize_str(inv.get("nombre_completo", ""))
+                matches = sum(1 for p in normalized_parts if p in db_full)
+                if matches >= len(normalized_parts) - 1:
+                    return inv
+            return None
+
         def match_local_db(name_str: str) -> Optional[Dict[str, Any]]:
             clean_str = name_str.replace(',', ' ').replace('-', ' ')
             words = [w.strip() for w in clean_str.split() if len(w.strip()) > 2]
@@ -194,6 +223,22 @@ class EtlProcessor:
             db_match = match_local_db(name_str)
             if db_match:
                 logger.info(f"Coincidencia local en BD para '{name_str}': DNI {db_match.get('dni')}")
+                dni = db_match.get('dni')
+                
+                # Nueva lógica: Usar el Padrón como diccionario de DNIs para buscar en RENACYT
+                if dni and renacyt_client and hasattr(renacyt_client, 'search_by_dni'):
+                    try:
+                        logger.info(f"Enriqueciendo DNI {dni} ('{name_str}') con RENACYT...")
+                        ren_match = await renacyt_client.search_by_dni(dni)
+                        if ren_match:
+                            logger.info(f"¡Éxito! Perfil enriquecido desde RENACYT para DNI {dni}.")
+                            return ren_match
+                        else:
+                            logger.info(f"RENACYT no encontró perfil calificado para DNI {dni}. Usando datos básicos del padrón.")
+                    except Exception as e:
+                        logger.warning(f"Error al buscar DNI {dni} en RENACYT: {e}. Usando datos básicos.")
+
+                # Fallback: Datos básicos del padrón (No Clasificado si no se encontró en RENACYT)
                 return {
                     "numero_documento": db_match.get("dni"),
                     "nombres": db_match.get("nombres"),
@@ -206,6 +251,39 @@ class EtlProcessor:
                     "condicion": db_match.get("estado_renacyt"),
                     "cti_vitae": db_match.get("url_cti_vitae"),
                     "nombre_completo": f"{db_match.get('apellidos', '')}, {db_match.get('nombres', '')}"
+                }
+
+            # 1.5 Comprobación en el Padrón Maestro FISI (JSON Local)
+            padron_match = match_padron_fisi(name_str)
+            if padron_match:
+                logger.info(f"Coincidencia en Padrón FISI Maestro para '{name_str}': DNI {padron_match.get('dni')}")
+                dni_padron = padron_match.get("dni")
+                
+                # Intentar enriquecer usando el DNI del Padrón FISI
+                if dni_padron and renacyt_client and hasattr(renacyt_client, 'search_by_dni'):
+                    try:
+                        logger.info(f"Enriqueciendo DNI {dni_padron} del Padrón FISI ('{name_str}') con RENACYT...")
+                        ren_match = await renacyt_client.search_by_dni(dni_padron)
+                        if ren_match:
+                            logger.info(f"Perfil enriquecido desde RENACYT para DNI {dni_padron}.")
+                            return ren_match
+                        else:
+                            logger.info(f"RENACYT no encontró perfil calificado para DNI {dni_padron} del Padrón FISI. Usando datos básicos del padrón.")
+                    except Exception as e:
+                        logger.warning(f"Error al buscar DNI {dni_padron} en RENACYT: {e}. Usando datos básicos.")
+
+                return {
+                    "numero_documento": dni_padron,
+                    "nombres": padron_match.get("nombre_completo", ""),
+                    "apellido_paterno": "",
+                    "apellido_materno": "",
+                    "institucion_laboral_principal": "UNIVERSIDAD NACIONAL MAYOR DE SAN MARCOS",
+                    "codigo_registro": "No Clasificado",
+                    "orcid": None,
+                    "nivel": "No Clasificado",
+                    "condicion": "Activo",
+                    "cti_vitae": None,
+                    "nombre_completo": padron_match.get("nombre_completo", "")
                 }
 
             # 2. Comprobación en caché de Redis

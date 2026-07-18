@@ -50,6 +50,7 @@ class ImportJobState:
         self.created    = 0             
         self.updated    = 0             
         self.error_msg: Optional[str] = None
+        self.detalle_conflictos: list = []
         self.api_renacyt_offline = False
         self.en_cuarentena = 0
         self.detalle_sin_dni: list = []
@@ -157,12 +158,30 @@ async def _run_sgpi_ci(job_id: str, file_path: str, id_usuario: Optional[str] = 
             # Guardar conteos por entidad para el desglose en el log
             job.resultados_db_detalle = resultado.get("resultados_db", {})
 
-            # Detectar si la API de RENACYT estuvo offline/caída durante el proceso
+            # Detectar si la API de RENACYT estuvo offline/caída y guardar detalles
             detalle_conflictos = resultado.get("detalle_conflictos", [])
-            for c in detalle_conflictos:
-                if c.get("tipo") == "ERROR_API_RENACYT":
-                    job.api_renacyt_offline = True
-                    break
+            job.detalle_conflictos = detalle_conflictos
+            
+            # --- NUEVA LÓGICA: Imprimir errores detallados en el terminal ---
+            if detalle_conflictos:
+                logger.warning(f"--- DETALLE DE ERRORES ({len(detalle_conflictos)}) EN EL ARCHIVO {job.filename} ---")
+                for c in detalle_conflictos:
+                    if c.get("tipo") == "ERROR_API_RENACYT":
+                        job.api_renacyt_offline = True
+                    
+                    # Imprimir cada error específico en consola para el usuario
+                    tipo_err = c.get('tipo', 'DESCONOCIDO')
+                    msg_err = c.get('mensaje', 'Sin detalle')
+                    # Extraer algún dato útil de identificación si es posible (ej. título o docente)
+                    dato = c.get('dato', {})
+                    if isinstance(dato, dict):
+                        identificador = dato.get('titulo') or dato.get('titulo_tesis') or dato.get('docente_nombre') or dato.get('nombre_grupo') or str(dato)[:50]
+                    else:
+                        identificador = str(dato)[:50]
+                        
+                    logger.warning(f"  -> [OMITIDO] {tipo_err} | Registro: '{identificador}' | Motivo: {msg_err}")
+                logger.warning("-----------------------------------------------------------------")
+            # -----------------------------------------------------------------
 
             job.en_cuarentena = resultado.get("en_cuarentena", 0)
             job.detalle_sin_dni = resultado.get("detalle_sin_dni", [])
@@ -271,6 +290,7 @@ async def get_import_status(job_id: str):
             "detalle_sin_dni": job.detalle_sin_dni,
             "detalle_extraccion":    job.detalle_extraccion,
             "resultados_db_detalle": job.resultados_db_detalle,
+            "detalle_conflictos": job.detalle_conflictos,
         }
 
     if job.status == "failed" and job.error_msg:

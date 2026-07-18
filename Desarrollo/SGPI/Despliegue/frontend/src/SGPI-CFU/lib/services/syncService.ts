@@ -56,6 +56,7 @@ export interface SyncJobStatusData {
   error?: string;
   report?: Record<SyncSourceId, SyncSourceReport>;
   progress_logs?: { time: string; level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR'; text: string; }[];
+  filters?: SyncFilters;
 }
 
 export interface SourceHealth {
@@ -165,7 +166,7 @@ export const syncService = {
   },
 
   /** Obtiene el job de sincronización activo actualmente. */
-  getActiveJob(): Promise<{ success: boolean; data: SyncJobStatusData | null }> {
-    return apiClient.get<{ success: boolean; data: SyncJobStatusData | null }>('/sync/active/job');
+  getActiveJob(): Promise<SyncJobStatusData | null> {
+    return apiClient.get<SyncJobStatusData | null>('/sync/active/job');
   },
 };

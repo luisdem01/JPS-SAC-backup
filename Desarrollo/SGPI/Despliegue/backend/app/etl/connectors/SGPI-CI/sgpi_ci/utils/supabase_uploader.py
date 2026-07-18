@@ -107,7 +107,8 @@ class SupabaseUploader:
             response = requests.post(url, headers=headers, json=payload)
             response.raise_for_status()
         except Exception as e:
-            print(f"Error al registrar línea de investigación '{nombre}': {e}")
+            err_detail = getattr(e.response, 'text', '') if hasattr(e, 'response') else str(e)
+            print(f"Error al registrar línea de investigación '{nombre}': {e} - Detalle: {err_detail}")
 
     def upsert_departamento_academico(self, nombre: str, estado: str = 'Pendiente') -> None:
         """Registra un departamento académico (si no existe, se inserta como Pendiente)."""
@@ -124,7 +125,8 @@ class SupabaseUploader:
             response = requests.post(url, headers=headers, json=payload)
             response.raise_for_status()
         except Exception as e:
-            print(f"Error al registrar departamento académico '{nombre}': {e}")
+            err_detail = getattr(e.response, 'text', '') if hasattr(e, 'response') else str(e)
+            print(f"Error al registrar departamento académico '{nombre}': {e} - Detalle: {err_detail}")
 
 
 

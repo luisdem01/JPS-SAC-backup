@@ -1,0 +1,653 @@
+[
+  {
+    "codigo_docente": "0A5306",
+    "nombre_completo": "AGUILAR ALONSO IGOR JOVINO",
+    "correo": "iaguilara@unmsm.edu.pe",
+    "dni": "32931485",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "091081",
+    "nombre_completo": "ALARCON LOAYZA LUIS ALBERTO",
+    "correo": "lalarconl@unmsm.edu.pe",
+    "dni": "00456684",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "09831E",
+    "nombre_completo": "ALCANTARA LOAYZA CESAR AUGUSTO",
+    "correo": "calcantaral@unmsm.edu.pe",
+    "dni": "09132297",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A9127",
+    "nombre_completo": "ANDRADE MOGOLLON TEODORO MANUEL",
+    "correo": "tandradem@unmsm.edu.pe",
+    "dni": "40896322",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1612",
+    "nombre_completo": "ANGULO CALDERON CESAR AUGUSTO",
+    "correo": "canguloc@unmsm.edu.pe",
+    "dni": "32907109",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "095699",
+    "nombre_completo": "ARMAS CALDERON RAUL MARCELO",
+    "correo": "rarmasc@unmsm.edu.pe",
+    "dni": "07156168",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1982",
+    "nombre_completo": "ARREDONDO CASTILLO GUSTAVO",
+    "correo": "garredondoc@unmsm.edu.pe",
+    "dni": "06058679",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "097543",
+    "nombre_completo": "AVENDAÑO QUIROZ JOHNNY ROBERT",
+    "correo": "javendanoq@unmsm.edu.pe",
+    "dni": "09739286",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1877",
+    "nombre_completo": "BARTRA MORE ARTURO ALEJANDRO",
+    "correo": "abartram@unmsm.edu.pe",
+    "dni": "40233946",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A4524",
+    "nombre_completo": "BAYONA ORE LUZ SUSSY",
+    "correo": "lbayonao@unmsm.edu.pe",
+    "dni": "08602165",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "095702",
+    "nombre_completo": "BUSTAMANTE OLIVERA VICTOR HUGO",
+    "correo": "vbustamanteo@unmsm.edu.pe",
+    "dni": "25655590",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "010162",
+    "nombre_completo": "CABRERA DIAZ JAVIER ELMER",
+    "correo": "jcabrerad@unmsm.edu.pe",
+    "dni": "08692591",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A2417",
+    "nombre_completo": "CALDERON VILCA HUGO DAVID",
+    "correo": "hcalderonv@unmsm.edu.pe",
+    "dni": "01317748",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A2207",
+    "nombre_completo": "CAMARA FIGUEROA ADEGUNDO MARIO",
+    "correo": "adegundo.camara@unmsm.edu.pe",
+    "dni": "09095759",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A7624",
+    "nombre_completo": "CANCHO RODRIGUEZ ERNESTO DAVID",
+    "correo": "ecanchor@unmsm.edu.pe",
+    "dni": "43452411",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "011797",
+    "nombre_completo": "CANEPA PEREZ CARLOS ALBERTO",
+    "correo": "ccanepap@unmsm.edu.pe",
+    "dni": "25522598",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1234",
+    "nombre_completo": "CARRASCO ORE NILO ELOY",
+    "correo": "ncarrascoo@unmsm.edu.pe",
+    "dni": "09342780",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1871",
+    "nombre_completo": "CHAVEZ HERRERA CARLOS ERNESTO",
+    "correo": "cchavezh@unmsm.edu.pe",
+    "dni": "40788722",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "095729",
+    "nombre_completo": "CHAVEZ SOTO JORGE LUIS",
+    "correo": "jchavezs@unmsm.edu.pe",
+    "dni": "08675814",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "017779",
+    "nombre_completo": "CONTRERAS FLORES WALTER PEDRO",
+    "correo": "wcontrerasf@unmsm.edu.pe",
+    "dni": "07743259",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1232",
+    "nombre_completo": "CORAL YGNACIO MARCO ANTONIO",
+    "correo": "mcoraly@unmsm.edu.pe",
+    "dni": "09983907",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1874",
+    "nombre_completo": "CORDERO SANCHEZ HUGO RAFAEL",
+    "correo": "hcorderos@unmsm.edu.pe",
+    "dni": "40512428",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "018686",
+    "nombre_completo": "CORTEZ VASQUEZ AUGUSTO PARCEMON",
+    "correo": "acortezv@unmsm.edu.pe",
+    "dni": "08634618",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "020443",
+    "nombre_completo": "DE LA CRUZ VELEZ DE VILLA PERCY EDWIN",
+    "correo": "pdelacruzv@unmsm.edu.pe",
+    "dni": "08583141",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A06661",
+    "nombre_completo": "DEL MAR ARZOLA JORGE LUIS",
+    "correo": "jdelmara@unmsm.edu.pe",
+    "dni": "08232375",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "02099E",
+    "nombre_completo": "DEL PINO RODRIGUEZ LUZ CORINA",
+    "correo": "ldelpinor@unmsm.edu.pe",
+    "dni": "07406351",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0310",
+    "nombre_completo": "DELGADILLO AVILA DE MAURICIO ROSA SUMACTIKA",
+    "correo": "rdelgadilloa@unmsm.edu.pe",
+    "dni": "06445553",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "09795E",
+    "nombre_completo": "DIAZ MUÑANTE JORGE RAUL",
+    "correo": "jdiazm@unmsm.edu.pe",
+    "dni": "07216161",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1614",
+    "nombre_completo": "ENRIQUEZ MAGUIÑA WILLIAM MARTIN",
+    "correo": "wenriquezm@unmsm.edu.pe",
+    "dni": "06179457",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1611",
+    "nombre_completo": "ESCOBEDO BAILON FRANK EDMUNDO",
+    "correo": "fescobedob@unmsm.edu.pe",
+    "dni": "41671087",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "094315",
+    "nombre_completo": "ESPINOZA DOMINGUEZ ROBERT ELIAS",
+    "correo": "respinozad@unmsm.edu.pe",
+    "dni": "08136325",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0314",
+    "nombre_completo": "ESPINOZA ROBLES ARMANDO DAVID",
+    "correo": "aespinozar@unmsm.edu.pe",
+    "dni": "08633326",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "099589",
+    "nombre_completo": "FERMIN PEREZ FELIX ARMANDO",
+    "correo": "fferminp@unmsm.edu.pe",
+    "dni": "08736347",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1235",
+    "nombre_completo": "GALINDO HUAYLLANI JOSE LUIS",
+    "correo": "jgalindoh@unmsm.edu.pe",
+    "dni": "40420186",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A2067",
+    "nombre_completo": "GAMARRA MORENO JUAN",
+    "correo": "juan.gamarra@unmsm.edu.pe",
+    "dni": "20039857",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1607",
+    "nombre_completo": "GAMBOA CRUZADO JAVIER ARTURO",
+    "correo": "jgamboac@unmsm.edu.pe",
+    "dni": "17906323",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "088013",
+    "nombre_completo": "GIL CALVO RUBEN ALEXANDER",
+    "correo": "rgilc@unmsm.edu.pe",
+    "dni": "07247380",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "030228",
+    "nombre_completo": "GONZALES SUAREZ JUAN CARLOS",
+    "correo": "jgonzaless@unmsm.edu.pe",
+    "dni": "07566359",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0419",
+    "nombre_completo": "GUERRA GRADOS LUIS ANGEL",
+    "correo": "lguerrag1@unmsm.edu.pe",
+    "dni": "15644548",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "097535",
+    "nombre_completo": "GUERRA GUERRA JORGE LEONCIO",
+    "correo": "jguerrag@unmsm.edu.pe",
+    "dni": "08473333",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A5307",
+    "nombre_completo": "GUZMAN MONTEZA YUDI LUCERO",
+    "correo": "yudi.guzman@unmsm.edu.pe",
+    "dni": "16621460",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A6226",
+    "nombre_completo": "HERRERA QUISPE JOSÉ ALFREDO",
+    "correo": "jherreraqu@unmsm.edu.pe",
+    "dni": "40362859",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A5291",
+    "nombre_completo": "HUAPAYA CHUMPITAZ MARIO AGUSTIN",
+    "correo": "mhuapayac@unmsm.edu.pe",
+    "dni": "15386891",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0037",
+    "nombre_completo": "HUAYNA DUEÑAS VDA DE DIAZ ANA MARIA",
+    "correo": "ahuaynad@unmsm.edu.pe",
+    "dni": "06017183",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "088005",
+    "nombre_completo": "LA SERNA PALOMINO NORA BERTHA",
+    "correo": "nlasernap@unmsm.edu.pe",
+    "dni": "07665297",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "095753",
+    "nombre_completo": "LAM ZHING FONG",
+    "correo": "zlam@unmsm.edu.pe",
+    "dni": "000294538",
+    "nacionalidad": "CHINA"
+  },
+  {
+    "codigo_docente": "037605",
+    "nombre_completo": "LEON FERNANDEZ CAYO VICTOR",
+    "correo": "cleonf@unmsm.edu.pe",
+    "dni": "07001405",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A9124",
+    "nombre_completo": "LEZAMA GONZALES PEDRO MARTIN",
+    "correo": "plezamag@unmsm.edu.pe",
+    "dni": "09656793",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0690",
+    "nombre_completo": "LOPEZ VILLANUEVA PABLO EDWIN",
+    "correo": "plopezv@unmsm.edu.pe",
+    "dni": "32920084",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "098329",
+    "nombre_completo": "LUZA MONTERO CESAR",
+    "correo": "cluzam@unmsm.edu.pe",
+    "dni": "06111988",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "099562",
+    "nombre_completo": "MAC DOWALL REYNOSO ERWIN",
+    "correo": "emacdowallr@unmsm.edu.pe",
+    "dni": "06132166",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1873",
+    "nombre_completo": "MACHADO VICENTE JOEL FERNANDO",
+    "correo": "jmachadov@unmsm.edu.pe",
+    "dni": "40476778",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0307",
+    "nombre_completo": "MAGUIÑA PEREZ ROLANDO ALBERTO",
+    "correo": "rmaguinap@unmsm.edu.pe",
+    "dni": "06092844",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "09756A",
+    "nombre_completo": "MAMANI RODRIGUEZ ZORAIDA EMPERATRIZ",
+    "correo": "zmamanir@unmsm.edu.pe",
+    "dni": "09680972",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "096458",
+    "nombre_completo": "MAURICIO SANCHEZ DAVID SANTOS",
+    "correo": "dmauricios@unmsm.edu.pe",
+    "dni": "06445495",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A06655",
+    "nombre_completo": "MELGAREJO SOLIS RONALD ALFONSO",
+    "correo": "ronald.melgarejo@unmsm.edu.pe",
+    "dni": "45286733",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A4525",
+    "nombre_completo": "MENENDEZ MUERAS ROSA",
+    "correo": "rmenendezm@unmsm.edu.pe",
+    "dni": "10246770",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1236",
+    "nombre_completo": "MOLINA NEYRA CESAR ALBERTO",
+    "correo": "cmolinan@unmsm.edu.pe",
+    "dni": "40553679",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1610",
+    "nombre_completo": "MOQUILLAZA HENRIQUEZ SANTIAGO DOMINGO",
+    "correo": "smoquillazah@unmsm.edu.pe",
+    "dni": "08280889",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "095745",
+    "nombre_completo": "MUÑOZ CASILDO NEHIL INDALICIO",
+    "correo": "nmunozc@unmsm.edu.pe",
+    "dni": "09727623",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1876",
+    "nombre_completo": "MURAKAMI DE LA CRUZ DE MOLINA SUMIKO ELIZABETH",
+    "correo": "smurakamid@unmsm.edu.pe",
+    "dni": "10606923",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "087998",
+    "nombre_completo": "NAVARRO DEPAZ CARLOS EDMUNDO",
+    "correo": "cnavarrod@unmsm.edu.pe",
+    "dni": "08482690",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0038",
+    "nombre_completo": "PANTOJA COLLANTES JORGE SANTIAGO",
+    "correo": "jpantojac@unmsm.edu.pe",
+    "dni": "06254022",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "051934",
+    "nombre_completo": "PARIONA QUISPE JAIME RUBEN",
+    "correo": "jparionaq@unmsm.edu.pe",
+    "dni": "06220658",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A5292",
+    "nombre_completo": "PAUCAR CURASMA HERMINIO",
+    "correo": "hpaucarc@unmsm.edu.pe",
+    "dni": "46219937",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A9126",
+    "nombre_completo": "PETRLIK AZABACHE IVAN CARLO",
+    "correo": "ipetrlika@unmsm.edu.pe",
+    "dni": "10140461",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "053449",
+    "nombre_completo": "PIEDRA ISUSQUI JOSE CESAR",
+    "correo": "jpiedrai@unmsm.edu.pe",
+    "dni": "25628915",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "055123",
+    "nombre_completo": "PRO CONCEPCION LUZMILA ELISA",
+    "correo": "lproc@unmsm.edu.pe",
+    "dni": "08862360",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A7565",
+    "nombre_completo": "PRUDENCIO VIDAL JAVIER ANTONIO",
+    "correo": "jprudenciov@unmsm.edu.pe",
+    "dni": "09858276",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A6225",
+    "nombre_completo": "PUELLES BULNES MARIA ELIZABETH",
+    "correo": "mpuellesb@unmsm.edu.pe",
+    "dni": "25614101",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "055867",
+    "nombre_completo": "QUINTO PAZCE DANIEL ALFONSO",
+    "correo": "dquintop@unmsm.edu.pe",
+    "dni": "10372726",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A9125",
+    "nombre_completo": "QUIÑONES NIETO YAMIL ALEXANDER",
+    "correo": "yquinonesn@unmsm.edu.pe",
+    "dni": "42863390",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "059013",
+    "nombre_completo": "RIVAS PEÑA MARCOS HERNAN",
+    "correo": "mrivasp@unmsm.edu.pe",
+    "dni": "09241816",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A5230",
+    "nombre_completo": "RODRIGUEZ RODRIGUEZ CIRO",
+    "correo": "crodriguezro@unmsm.edu.pe",
+    "dni": "06020241",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "08954E",
+    "nombre_completo": "ROMAN CONCHA NORBERTO ULISES",
+    "correo": "nromanc@unmsm.edu.pe",
+    "dni": "08510560",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "08803A",
+    "nombre_completo": "ROMERO NAUPARI PABLO JESÚS",
+    "correo": "promeron@unmsm.edu.pe",
+    "dni": "06182185",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "096237",
+    "nombre_completo": "RUIZ DE LA CRUZ MELO CARLOS AUGUSTO",
+    "correo": "cruizdelacruzm@unmsm.edu.pe",
+    "dni": "08249640",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0182",
+    "nombre_completo": "RUIZ RIVERA MARIA ELENA",
+    "correo": "mruizr@unmsm.edu.pe",
+    "dni": "08960021",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "089575",
+    "nombre_completo": "SALINAS AZAÑA GILBERTO ANIBAL",
+    "correo": "gsalinasa@unmsm.edu.pe",
+    "dni": "08105290",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0716",
+    "nombre_completo": "SOBERO RODRÍGUEZ FANY YEXENIA",
+    "correo": "fsoberor@unmsm.edu.pe",
+    "dni": "20120467",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A06660",
+    "nombre_completo": "SOBREVILLA CABEZUDO MARCO ANTONIO",
+    "correo": "msobrevillac@unmsm.edu.pe",
+    "dni": "46299018",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1419",
+    "nombre_completo": "SOTELO BEDON ADOLFO MARCOS",
+    "correo": "asotelob@unmsm.edu.pe",
+    "dni": "10372605",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1613",
+    "nombre_completo": "SOTO SOTO LUIS",
+    "correo": "lsotos@unmsm.edu.pe",
+    "dni": "22409532",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A9179",
+    "nombre_completo": "TAPIA CARBAJAL JUAN RICARDO",
+    "correo": "jtapiac@unmsm.edu.pe",
+    "dni": "09454245",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "09571E",
+    "nombre_completo": "TRUJILLO TREJO JOHN LEDGARD",
+    "correo": "jtrujillot@unmsm.edu.pe",
+    "dni": "06187585",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1981",
+    "nombre_completo": "UGAZ CACHAY WINSTON IGNACIO",
+    "correo": "wugazc@unmsm.edu.pe",
+    "dni": "40555355",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A06295",
+    "nombre_completo": "USCUCHAGUA FLORES GELBER CHRISTIAN",
+    "correo": "guscuchaguaf@unmsm.edu.pe",
+    "dni": "10645375",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A4523",
+    "nombre_completo": "VALCARCEL ASCENCIOS SERGIO PAULO",
+    "correo": "svalcarcela@unmsm.edu.pe",
+    "dni": "09372597",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "071552",
+    "nombre_completo": "VALVERDE AYALA GIOVANA MELVA",
+    "correo": "gvalverdea@unmsm.edu.pe",
+    "dni": "08536719",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A0039",
+    "nombre_completo": "VEGA HUERTA HUGO FROILAN",
+    "correo": "hvegah@unmsm.edu.pe",
+    "dni": "06147737",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "085774",
+    "nombre_completo": "VERA POMALAZA VIRGINIA",
+    "correo": "vverap@unmsm.edu.pe",
+    "dni": "09813434",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1875",
+    "nombre_completo": "WONG PORTILLO LENIS ROSSI",
+    "correo": "lwongp@unmsm.edu.pe",
+    "dni": "10438282",
+    "nacionalidad": "PERU"
+  },
+  {
+    "codigo_docente": "0A1609",
+    "nombre_completo": "ZAVALETA CAMPOS JORGE LUIS",
+    "correo": "jzavaletac@unmsm.edu.pe",
+    "dni": "09696217",
+    "nacionalidad": "PERU"
+  }
+]

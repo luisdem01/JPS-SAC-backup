@@ -632,7 +632,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                         try:
                             res = await db.execute(sa_select(Proyecto).where(Proyecto.codigo_proyecto == cmr_input.codigo_proyecto))
                             existing = res.scalars().first()
-                            current_db = {k: v for k, v in existing.__dict__.items() if k != '_sa_instance_state'} if existing else None
+                            current_db = {c.name: getattr(existing, c.name) for c in existing.__table__.columns} if existing else None
 
                             merged, quarantine, reason = rules_engine.reconcile_proyecto(current_db, cmr_input, "VRIP")
 
@@ -818,7 +818,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                         try:
                             res = await db.execute(sa_select(InvModel).where(InvModel.dni == cmr_input.dni))
                             existing = res.scalars().first()
-                            current_db = {k: v for k, v in existing.__dict__.items() if k != '_sa_instance_state'} if existing else None
+                            current_db = {c.name: getattr(existing, c.name) for c in existing.__table__.columns} if existing else None
 
                             merged, quarantine, reason = rules_engine.reconcile_investigador(current_db, cmr_input, "RENACYT")
 
@@ -1077,6 +1077,7 @@ async def get_active_job(
                 "sources": job.sources,
                 "started_at": job.started_at,
                 "progress_logs": job.progress_logs,
+                "filters": getattr(job, "filters", {}),
             }
             break
 
@@ -1093,6 +1094,7 @@ async def get_active_job(
                 "sources": db_job.sources,
                 "started_at": db_job.started_at.isoformat() if db_job.started_at else None,
                 "progress_logs": db_job.progress_logs,
+                "filters": getattr(db_job, "filters", {}),
             }
 
     return {
