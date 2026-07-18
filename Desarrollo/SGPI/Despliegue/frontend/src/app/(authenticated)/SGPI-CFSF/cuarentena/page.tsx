@@ -193,7 +193,7 @@ export default function CuarentenaPage() {
                           <div className="flex flex-col gap-2">
                             {isTesis && (
                               <div className="flex flex-col gap-1.5">
-                                {item.datos_conflicto.asesor_texto && (
+                                {!!item.datos_conflicto?.asesor_texto && (
                                   <div className="text-[11px] text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-100">
                                     <span className="font-semibold">Asesor:</span> {String(item.datos_conflicto.asesor_texto)}
                                   </div>
@@ -311,7 +311,7 @@ export default function CuarentenaPage() {
           <div className="bg-white rounded shadow-xl max-w-md w-full p-6 flex flex-col border border-slate-200">
             <h3 className="font-bold text-lg text-slate-800 mb-2">Confirmación de Resolución Masiva</h3>
             <p className="text-[13px] text-slate-600 mb-4 leading-relaxed">
-              Se han encontrado <span className="font-bold text-indigo-600">{confirmMassResolve.count} tesis adicionales</span> en cuarentena asociadas al asesor "<span className="font-semibold">{confirmMassResolve.asesor}</span>".
+              Se han encontrado <span className="font-bold text-indigo-600">{confirmMassResolve.count} tesis adicionales</span> en cuarentena asociadas al asesor &ldquo;<span className="font-semibold">{confirmMassResolve.asesor}</span>&rdquo;.
               <br/><br/>
               Si apruebas este registro con el DNI <span className="font-mono font-semibold bg-slate-100 px-1 py-0.5 rounded">{confirmMassResolve.dni}</span>, las otras tesis también se actualizarán y aprobarán de forma automática. ¿Deseas continuar?
             </p>

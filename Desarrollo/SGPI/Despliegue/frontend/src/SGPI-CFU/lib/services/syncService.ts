@@ -20,6 +20,11 @@ export interface SyncFilters {
   only_reconcile_local?: boolean;
   renacyt_max_update?: number;   // límite de investigadores existentes a actualizar
   renacyt_max_new?: number;      // límite de nuevos investigadores a descubrir
+  vrip_year?: number;
+  vrip_program?: string;
+  vrip_query?: string;
+  renacyt_mode?: string;
+  by_docentes?: boolean;
 }
 
 export interface SyncRequest {

@@ -384,7 +384,7 @@ export default function ExpedienteDigitalPage() {
                       </span>
                       {hist.observacion && (
                         <div className="mt-2 p-3.5 bg-slate-50 border border-slate-100 rounded-lg text-sans text-[12px] text-on-surface-variant font-medium leading-relaxed italic">
-                          "{hist.observacion}"
+                          &ldquo;{hist.observacion}&rdquo;
                         </div>
                       )}
                     </div>
@@ -500,7 +500,7 @@ export default function ExpedienteDigitalPage() {
                   <InfoIcon />
                 </span>
                 <p className="font-medium">
-                  El estado del proyecto no podrá cambiar a "Concluido" hasta que se registren los productos entregables (Regla RQ06).
+                  El estado del proyecto no podrá cambiar a &ldquo;Concluido&rdquo; hasta que se registren los productos entregables (Regla RQ06).
                 </p>
               </div>
 

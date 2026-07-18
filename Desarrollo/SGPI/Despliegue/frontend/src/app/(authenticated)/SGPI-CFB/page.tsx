@@ -719,7 +719,7 @@ function BusquedaGlobalPageContent() {
                     : <>
                         Se encontraron{' '}
                         <span className="font-bold text-gray-900">{pagination.total}</span>{' '}
-                        coincidencias para <span className="font-bold text-gray-900">"{query}"</span>
+                        coincidencias para <span className="font-bold text-gray-900">&ldquo;{query}&rdquo;</span>
                       </>
                 }
               </p>

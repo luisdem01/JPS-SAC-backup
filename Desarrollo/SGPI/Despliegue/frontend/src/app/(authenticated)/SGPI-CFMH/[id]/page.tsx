@@ -727,7 +727,7 @@ export default function DocentePerfilPage() {
               )}
               {!loadingTesis && tesisExternas.length === 0 && (
                 <div className="py-12 text-center font-sans text-[13px] text-on-surface-variant">
-                  No se encontraron tesis para "{modalSearchTerm}". Intente ajustando el término de búsqueda.
+                  No se encontraron tesis para &ldquo;{modalSearchTerm}&rdquo;. Intente ajustando el término de búsqueda.
                 </div>
               )}
               {!loadingTesis && tesisExternas.length > 0 && (
