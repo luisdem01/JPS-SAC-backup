@@ -416,7 +416,9 @@ export default function ConvocatoriaDetailPage() {
 
   let estadoBadge: { bg: string; text: string };
 
-  if (conv.estado === 'Cerrada' || conv.estado === 'Suspendida' || dias < 0) {
+  if (!conv.fechaCierre) {
+    estadoBadge = { bg: 'bg-[#16a34a]', text: 'VER BASES' };
+  } else if (conv.estado === 'Cerrada' || conv.estado === 'Suspendida' || dias < 0) {
     estadoBadge = { bg: 'bg-[#94a3b8]', text: dias < 0 && conv.estado === 'Abierta' ? 'CERRADA' : conv.estado.toUpperCase() };
   } else {
     estadoBadge = nivel === 'rojo'

@@ -40,7 +40,7 @@ export interface Convocatoria {
   programa?:             string;
   estado:                EstadoConvocatoria;
   apertura?:             string;            // ISO date — fecha de apertura
-  fechaCierre:           string;            // ISO date — fecha de cierre actual
+  fechaCierre?:           string | null;            // ISO date — fecha de cierre actual (puede ser nulo)
   cierreOriginal?:       string;            // ISO date — fecha de cierre ANTES de la modificación
   fuente:                string;
   ultimaSync:            string;

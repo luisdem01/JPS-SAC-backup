@@ -210,11 +210,15 @@ class VripConvocatoriasExtractor(BaseExtractor):
                                 # Buscar la fecha de cierre en las actividades
                                 for act in cronograma.actividades:
                                     act_lower = act.actividad.lower()
+                                    if any(w in act_lower for w in ["informe", "técnico", "tecnico", "académico", "academico", "rendición", "rendicion", "monitoreo"]):
+                                        continue
                                     if (
                                         "cierre" in act_lower
                                         or "recepción" in act_lower
                                         or "postulación" in act_lower
                                         or "presentación" in act_lower
+                                        or "registro" in act_lower
+                                        or "inscripción" in act_lower
                                     ):
                                         if act.fecha_fin:
                                             parsed_deadline = to_date_obj(act.fecha_fin)
@@ -378,11 +382,15 @@ class VripConvocatoriasExtractor(BaseExtractor):
 
                                     for act in cronograma.actividades:
                                         act_lower = act.actividad.lower()
+                                        if any(w in act_lower for w in ["informe", "técnico", "tecnico", "académico", "academico", "rendición", "rendicion", "monitoreo"]):
+                                            continue
                                         if (
                                             "cierre" in act_lower
                                             or "recepción" in act_lower
                                             or "postulación" in act_lower
                                             or "presentación" in act_lower
+                                            or "registro" in act_lower
+                                            or "inscripción" in act_lower
                                         ):
                                             if act.fecha_fin:
                                                 parsed_deadline = to_date_obj(act.fecha_fin)

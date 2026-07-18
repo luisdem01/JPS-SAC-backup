@@ -534,10 +534,11 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                     parsed_close_date = date.fromisoformat(conv.plazo_cierre)
                                 except ValueError:
                                     pass
-                            if not parsed_close_date:
-                                parsed_close_date = date.today() + timedelta(days=30)
                             
-                            estado_resuelto = "Abierta" if parsed_close_date >= date.today() else "Cerrada"
+                            if parsed_close_date:
+                                estado_resuelto = "Abierta" if parsed_close_date >= date.today() else "Cerrada"
+                            else:
+                                estado_resuelto = "Abierta"
                             
                             res = await db.execute(sa_select(Convocatoria).where(
                                 (Convocatoria.titulo_convocatoria == conv.titulo) |
@@ -585,7 +586,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                     pk_entidad=str(existing_conv.id_convocatoria) if existing_conv.id_convocatoria else conv.titulo[:100],
                                     valor_nuevo={
                                         "titulo": conv.titulo,
-                                        "fecha_cierre": parsed_close_date.isoformat(),
+                                        "fecha_cierre": parsed_close_date.isoformat() if parsed_close_date else None,
                                         "estado": estado_resuelto,
                                         "accion": "UPDATE"
                                     },
@@ -624,7 +625,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                     pk_entidad=conv.titulo[:100],
                                     valor_nuevo={
                                         "titulo": conv.titulo,
-                                        "fecha_cierre": parsed_close_date.isoformat(),
+                                        "fecha_cierre": parsed_close_date.isoformat() if parsed_close_date else None,
                                         "estado": estado_resuelto,
                                         "accion": "INSERT"
                                     },

@@ -177,6 +177,9 @@ function AlertaCard({ convocatoria: c, onVerDetalles, onGestionarEvidencia }: Al
   if (tieneEvidencias) {
     nivel = 'difundido';
     badgeLabel = SEMAFORO[nivel].label(dias);
+  } else if (!c.fechaCierre) {
+    nivel = 'verde';
+    badgeLabel = 'VER BASES';
   } else if (c.estado === 'Cerrada' || c.estado === 'Suspendida' || dias < 0) {
     nivel = 'gris';
     badgeLabel = dias < 0 && c.estado === 'Abierta' ? 'CERRADA' : c.estado.toUpperCase();
