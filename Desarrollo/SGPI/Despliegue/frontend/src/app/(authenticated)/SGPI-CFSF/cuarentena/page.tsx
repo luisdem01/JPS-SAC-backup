@@ -5,8 +5,8 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/SGPI-CFU/components/layout';
 import { PageHeader } from '@/SGPI-CFU/components/shared';
-import { Button } from '@/SGPI-CFU/components/ui';
-import { syncService, type QuarantineItem, type QuarantineListData } from '@/SGPI-CFU/lib/services/syncService';
+import { Button, Toast } from '@/SGPI-CFU/components/ui';
+import { syncService, type QuarantineItem, type QuarantineListData, type RelatedQuarantineTesis } from '@/SGPI-CFU/lib/services/syncService';
 import { ApiClientError } from '@/SGPI-CFU/lib/api/client';
 
 export default function CuarentenaPage() {
@@ -51,7 +51,25 @@ export default function CuarentenaPage() {
     dni: string;
     asesor: string;
     count: number;
+    relatedItems: RelatedQuarantineTesis[];
   } | null>(null);
+
+  const [toast, setToast] = useState<{
+    title: string;
+    description?: string;
+    variant: 'success' | 'error' | 'warning' | 'info';
+  } | null>(null);
+
+  const showToastMessage = useCallback((title: string, description?: string, variant: 'success' | 'error' | 'warning' | 'info' = 'success') => {
+    setToast({ title, description, variant });
+  }, []);
+
+  // Auto-cierra el Toast después de 4s
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // Cierra el modal con tecla Esc
   useEffect(() => {
@@ -67,7 +85,7 @@ export default function CuarentenaPage() {
   const handleResolve = async (id: number, action: 'aprobar' | 'rechazar', requireDni: boolean, massResolve: boolean = false) => {
     const dni = dniMap[id];
     if (action === 'aprobar' && requireDni && !dni) {
-      alert('Debes ingresar un DNI válido para aprobar esta tesis.');
+      showToastMessage('Error de Validación', 'Debes ingresar un DNI válido para aprobar esta tesis.', 'error');
       return;
     }
 
@@ -78,9 +96,16 @@ export default function CuarentenaPage() {
         dni_corregido: action === 'aprobar' && requireDni ? dni : undefined,
         resolucion_masiva: massResolve,
       });
+      showToastMessage(
+        'Acción completada',
+        action === 'aprobar' 
+          ? 'El registro ha sido aprobado e integrado correctamente.' 
+          : 'El registro ha sido rechazado correctamente.',
+        'success'
+      );
       await fetchList();
     } catch (e) {
-      alert(e instanceof ApiClientError ? e.message : 'Error al procesar la acción.');
+      showToastMessage('Error', e instanceof ApiClientError ? e.message : 'Error al procesar la acción.', 'error');
     } finally {
       setResolvingId(null);
     }
@@ -216,7 +241,7 @@ export default function CuarentenaPage() {
                               >
                                 Aprobar
                               </Button>
-                              {isTesis && (
+                              {isTesis && item.related_count !== undefined && item.related_count > 0 && (
                                 <Button
                                   variant="primary"
                                   size="sm"
@@ -225,23 +250,19 @@ export default function CuarentenaPage() {
                                   onClick={() => {
                                     const dni = dniMap[item.id_pendiente];
                                     if (!dni) {
-                                      alert('Debes ingresar un DNI válido para aprobar esta tesis.');
+                                      showToastMessage('Error de Validación', 'Debes ingresar un DNI válido para aprobar esta tesis.', 'error');
                                       return;
                                     }
-                                    const count = item.related_count || 0;
-                                    if (count > 0) {
-                                      setConfirmMassResolve({
-                                        id: item.id_pendiente,
-                                        dni: dni,
-                                        asesor: String(item.datos_conflicto?.asesor_texto || 'Desconocido'),
-                                        count: count
-                                      });
-                                    } else {
-                                      handleResolve(item.id_pendiente, 'aprobar', isTesis, true);
-                                    }
+                                    setConfirmMassResolve({
+                                      id: item.id_pendiente,
+                                      dni: dni,
+                                      asesor: String(item.datos_conflicto?.asesor_texto || 'Desconocido'),
+                                      count: item.related_count || 0,
+                                      relatedItems: item.related_items || []
+                                    });
                                   }}
                                 >
-                                  Resolución Masiva {item.related_count ? `(+${item.related_count})` : ''}
+                                  Resolución Masiva {`(+${item.related_count})`}
                                 </Button>
                               )}
                               <Button
@@ -306,15 +327,31 @@ export default function CuarentenaPage() {
       )}
 
       {/* Modal de Confirmación de Resolución Masiva */}
-      {confirmMassResolve && (
+      {mounted && confirmMassResolve && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-          <div className="bg-white rounded shadow-xl max-w-md w-full p-6 flex flex-col border border-slate-200">
+          <div className="bg-white rounded shadow-xl max-w-lg w-full p-6 flex flex-col border border-slate-200">
             <h3 className="font-bold text-lg text-slate-800 mb-2">Confirmación de Resolución Masiva</h3>
-            <p className="text-[13px] text-slate-600 mb-4 leading-relaxed">
-              Se han encontrado <span className="font-bold text-indigo-600">{confirmMassResolve.count} tesis adicionales</span> en cuarentena asociadas al asesor &ldquo;<span className="font-semibold">{confirmMassResolve.asesor}</span>&rdquo;.
-              <br/><br/>
-              Si apruebas este registro con el DNI <span className="font-mono font-semibold bg-slate-100 px-1 py-0.5 rounded">{confirmMassResolve.dni}</span>, las otras tesis también se actualizarán y aprobarán de forma automática. ¿Deseas continuar?
-            </p>
+            <div className="text-[13px] text-slate-600 mb-4 leading-relaxed flex flex-col gap-3">
+              <p>
+                Se han encontrado <span className="font-bold text-indigo-600">{confirmMassResolve.count} tesis adicionales</span> en cuarentena asociadas al asesor &ldquo;<span className="font-semibold">{confirmMassResolve.asesor}</span>&rdquo;.
+              </p>
+              
+              <div className="bg-slate-50 border border-slate-200 rounded p-3 max-h-[180px] overflow-y-auto">
+                <span className="font-semibold text-slate-700 block mb-1 text-[12px]">Tesis afectadas que se aprobarán:</span>
+                <ul className="list-disc pl-5 space-y-1 text-[12px] text-slate-600">
+                  {confirmMassResolve.relatedItems.map((tesis, i) => (
+                    <li key={tesis.id_pendiente || i}>
+                      <span className="font-medium text-slate-800">&ldquo;{tesis.titulo_tesis}&rdquo;</span>
+                      <span className="text-slate-400 font-sans text-[11px] block">Estudiante/Autor: {tesis.autor}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <p>
+                Si apruebas este registro con el DNI <span className="font-mono font-semibold bg-slate-100 px-1 py-0.5 rounded">{confirmMassResolve.dni}</span>, las otras tesis también se actualizarán y aprobarán de forma automática. ¿Deseas continuar?
+              </p>
+            </div>
             <div className="flex justify-end gap-3 mt-2">
               <Button variant="secondary" onClick={() => setConfirmMassResolve(null)}>Cancelar</Button>
               <Button 
@@ -329,7 +366,30 @@ export default function CuarentenaPage() {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Toast de éxito/error (centrado en la pantalla con estilos inline para evitar interferencias de layout o compilación) */}
+      {mounted && toast && createPortal(
+        <div
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 9999,
+          }}
+          className="shadow-2xl animate-fade-in"
+        >
+          <Toast
+            variant={toast.variant}
+            title={toast.title}
+            description={toast.description}
+          />
+        </div>,
+        document.body
       )}
     </MainLayout>
   );

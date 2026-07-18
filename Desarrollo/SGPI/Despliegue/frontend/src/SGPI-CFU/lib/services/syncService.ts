@@ -77,7 +77,11 @@ export interface SourcesHealthData {
   CMR: SourceHealth;
 }
 
-// ─── Tipos de Cuarentena ──────────────────────────────────────────────────────
+export interface RelatedQuarantineTesis {
+  id_pendiente: number;
+  titulo_tesis: string;
+  autor: string;
+}
 
 export interface QuarantineItem {
   id_pendiente: number;
@@ -90,6 +94,7 @@ export interface QuarantineItem {
   fecha_registro: string | null;
   fecha_revision: string | null;
   related_count?: number;
+  related_items?: RelatedQuarantineTesis[];
 }
 
 export interface QuarantineListData {

@@ -1277,13 +1277,17 @@ async def list_quarantine(
         for item in items:
             if item.entidad_afectada == 'tesis' and item.estado == 'Pendiente':
                 item_asesor = (item.datos_conflicto or {}).get("asesor_texto", "")
-                count = 0
+                related_items = []
                 for otro in all_pend_tesis:
                     if otro.id_pendiente != item.id_pendiente:
                         otro_asesor = (otro.datos_conflicto or {}).get("asesor_texto", "")
                         if _is_same_advisor(otro_asesor, item_asesor):
-                            count += 1
-                masiva_counts[item.id_pendiente] = count
+                            related_items.append({
+                                "id_pendiente": otro.id_pendiente,
+                                "titulo_tesis": (otro.datos_conflicto or {}).get("titulo_tesis", "Sin Título"),
+                                "autor": (otro.datos_conflicto or {}).get("autor_estudiante_texto", "Desconocido")
+                            })
+                masiva_counts[item.id_pendiente] = related_items
 
     def serialize(item):
         base = {
@@ -1298,7 +1302,8 @@ async def list_quarantine(
             "fecha_revision": item.fecha_revision.isoformat() if item.fecha_revision else None,
         }
         if item.id_pendiente in masiva_counts:
-            base["related_count"] = masiva_counts[item.id_pendiente]
+            base["related_count"] = len(masiva_counts[item.id_pendiente])
+            base["related_items"] = masiva_counts[item.id_pendiente]
         return base
 
     return {
