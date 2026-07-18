@@ -19,13 +19,20 @@ import { Button } from '@/SGPI-CFU/components/ui';
 // Tipos
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface SinDniItem {
+  nombre:   string;
+  contexto: string;
+}
+
 interface ImportResults {
-  entity:       string;
-  fileName:     string;
-  nuevos:       number;
-  actualizados: number;
-  errores:      number;
+  entity:          string;
+  fileName:        string;
+  nuevos:          number;
+  actualizados:    number;
+  errores:         number;
   apiRenacytOffline?: boolean;
+  enCuarentena?:   number;
+  detalleSinDni?:  SinDniItem[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,6 +118,8 @@ export default function ImportResultsPage() {
   const fileName          = results?.fileName          ?? 'importacion';
   const entity            = results?.entity            ?? '';
   const apiRenacytOffline = results?.apiRenacytOffline ?? false;
+  const enCuarentena      = results?.enCuarentena      ?? 0;
+  const detalleSinDni     = results?.detalleSinDni     ?? [];
   const total             = nuevos + actualizados + errores;
 
   // ── Generar log de errores con datos reales ───────────────────────────────
@@ -214,6 +223,52 @@ export default function ImportResultsPage() {
             variant={errores > 0 ? 'error' : 'neutral'}
           />
         </div>
+
+        {/* ── Sección de cuarentena ─────────────────────────────────────────────── */}
+        {enCuarentena > 0 && (
+          <div className="w-full max-w-[680px] mb-8 rounded-lg border border-[#fde68a] overflow-hidden">
+            {/* Cabecera */}
+            <div className="flex items-start gap-3 px-5 py-4 bg-[#fffbeb] border-b border-[#fde68a]">
+              <span className="shrink-0 mt-0.5 text-[#d97706]">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </span>
+              <div>
+                <p className="font-sans font-bold text-[13px] text-[#92400e]">
+                  {enCuarentena} registro{enCuarentena > 1 ? 's fueron enviados' : ' fue enviado'} a revisión manual
+                </p>
+                <p className="font-sans text-[12px] text-[#b45309] mt-0.5">
+                  No se descartaron — están guardados en Cuarentena esperando que un administrador asigne el DNI correspondiente.
+                </p>
+              </div>
+            </div>
+
+            {/* Lista de personas sin resolver */}
+            {detalleSinDni.length > 0 && (
+              <div className="bg-white px-5 py-4">
+                <p className="font-sans text-[12px] font-semibold text-[#374151] mb-3">
+                  Personas cuyo DNI no pudo resolverse automáticamente:
+                </p>
+                <ul className="flex flex-col gap-2">
+                  {detalleSinDni.map((item, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[12px]">
+                      <span className="shrink-0 mt-0.5 text-[#d97706]">•</span>
+                      <div>
+                        <span className="font-semibold text-[#1f2937]">{item.nombre}</span>
+                        <span className="text-[#6b7280] ml-1">— {item.contexto}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <p className="font-sans text-[11px] text-[#9ca3af] mt-4">
+                  Puede revisarlos y completarlos desde el módulo de <span className="font-semibold">Sincronización → Cuarentena</span>.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Botones de acción ──────────────────────────────────────────────────── */}
         <div className="flex items-center gap-3">

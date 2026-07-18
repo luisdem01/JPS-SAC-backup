@@ -3,6 +3,30 @@ from typing import Dict, List, Any
 
 from sgpi_ci.utils.cleaners import clean_prefix_and_title, split_docentes_cell
 
+
+def validate_columns(df: pd.DataFrame, required: List[str], context: str) -> None:
+    """
+    Verifica que todas las columnas requeridas estén presentes en el DataFrame.
+    Si falta alguna, lanza ValueError con detalle de qué falta y qué se encontró,
+    incluyendo sugerencias de columnas con nombre similar.
+    """
+    from difflib import get_close_matches
+
+    found = list(df.columns)
+    missing = [col for col in required if col not in found]
+
+    if not missing:
+        return
+
+    lines = [f"[{context}] Columnas requeridas no encontradas en el Excel:"]
+    for col in missing:
+        suggestions = get_close_matches(col, found, n=1, cutoff=0.6)
+        hint = f"  → ¿Quiso decir: '{suggestions[0]}'?" if suggestions else ""
+        lines.append(f"  ✗ '{col}'{hint}")
+    lines.append(f"Columnas encontradas: {found}")
+    raise ValueError("\n".join(lines))
+
+
 def find_header_row(file_path: str, sheet_name: Any = 0, max_rows: int = 15) -> int:
     """
     Busca heurísticamente la fila de cabecera (flotante) saltando filas basura institucionales.
@@ -23,13 +47,26 @@ def find_header_row(file_path: str, sheet_name: Any = 0, max_rows: int = 15) -> 
 
 class ProyectosParser:
     """Para '6. Proyectos de investigación 2018-2025'"""
+
+    REQUIRED_COLUMNS = [
+        'Código Proyecto',
+        'Resolución Rectoral',
+        'Nombre del Proyecto',
+        'Tipo',
+        'Año',
+        'Responsable(R) / Corresponsable(C) / Miembro(M) / Asesor(A)',
+        'Grupo de Investigación',
+    ]
+
     def parse(self, file_path: str) -> Dict[str, List[dict]]:
         header_row = find_header_row(file_path)
         df = pd.read_excel(file_path, skiprows=header_row)
-        
+
         # Limpiar nombres de columnas (quitar saltos de linea)
         df.columns = [str(c).replace('\n', ' ').strip() for c in df.columns]
-        
+
+        validate_columns(df, self.REQUIRED_COLUMNS, "ProyectosParser")
+
         proyectos = []
         for _, row in df.iterrows():
             codigo = str(row.get('Código Proyecto', '')).strip()
@@ -60,16 +97,30 @@ class ProyectosParser:
 
 class IIFISIParser:
     """Para 'Base de datos del II-FISI 2024.xlsx' (Multishoja)"""
+
+    REQUIRED_PROYECTOS = [
+        'Codigo del Proyecto', 'Título del Proyecto', 'Resolucion Rectoral',
+        'Grupo de Investigación', 'Responsable', 'Co responsable', 'Miembro Docente',
+    ]
+    REQUIRED_PUBLICACIONES = [
+        'Título del artículo', 'Revista de Investigación', 'DOI',
+        'Indexado en, nivel', 'GI', 'Primer autor Filiación',
+    ]
+    REQUIRED_TESIS = [
+        'Título de la Tesis', 'Apellidos y Nombre del Tesista', 'Asesores',
+    ]
+
     def parse(self, file_path: str) -> Dict[str, List[dict]]:
         result = {'proyectos': [], 'publicaciones': [], 'tesis': []}
         xl = pd.ExcelFile(file_path)
-        
+
         # 1. Proyectos
         if 'Proyectos con Financiamiento' in xl.sheet_names:
             h_row = find_header_row(file_path, 'Proyectos con Financiamiento')
             df_p = pd.read_excel(file_path, sheet_name='Proyectos con Financiamiento', skiprows=h_row)
             df_p.columns = [str(c).replace('\n', ' ').strip() for c in df_p.columns]
-            
+            validate_columns(df_p, self.REQUIRED_PROYECTOS, "IIFISIParser / Proyectos con Financiamiento")
+
             for _, row in df_p.iterrows():
                 codigo = str(row.get('Codigo del Proyecto', '')).strip()
                 if not codigo or codigo == 'nan': continue
@@ -108,7 +159,8 @@ class IIFISIParser:
             h_row = find_header_row(file_path, 'Publicación de artículos')
             df_pub = pd.read_excel(file_path, sheet_name='Publicación de artículos', skiprows=h_row)
             df_pub.columns = [str(c).replace('\n', ' ').strip() for c in df_pub.columns]
-            
+            validate_columns(df_pub, self.REQUIRED_PUBLICACIONES, "IIFISIParser / Publicación de artículos")
+
             for _, row in df_pub.iterrows():
                 titulo = str(row.get('Título del artículo', '')).strip()
                 if not titulo or titulo == 'nan': continue
@@ -128,7 +180,8 @@ class IIFISIParser:
             h_row = find_header_row(file_path, 'TESIS')
             df_t = pd.read_excel(file_path, sheet_name='TESIS', skiprows=h_row)
             df_t.columns = [str(c).replace('\n', ' ').strip() for c in df_t.columns]
-            
+            validate_columns(df_t, self.REQUIRED_TESIS, "IIFISIParser / TESIS")
+
             for _, row in df_t.iterrows():
                 titulo = str(row.get('Título de la Tesis', '')).strip()
                 if not titulo or titulo == 'nan': continue
@@ -144,11 +197,19 @@ class IIFISIParser:
 
 class GICoordinadoresParser:
     """Para 'BD coord de GI FISI'"""
+
+    REQUIRED_COLUMNS = [
+        'Nombre del GI',
+        'Nombre del coordinador',
+        'Correo electrónico',
+    ]
+
     def parse(self, file_path: str) -> Dict[str, List[dict]]:
         header_row = find_header_row(file_path)
         df = pd.read_excel(file_path, skiprows=header_row)
         df.columns = [str(c).replace('\n', ' ').strip() for c in df.columns]
-        
+        validate_columns(df, self.REQUIRED_COLUMNS, "GICoordinadoresParser")
+
         grupos = []
         for _, row in df.iterrows():
             nombre = str(row.get('Nombre del GI', '')).strip()
@@ -166,11 +227,21 @@ class GICoordinadoresParser:
 
 class GIDocentesParser:
     """Para 'Docentes en grupo de investigación con LI'"""
+
+    REQUIRED_COLUMNS = [
+        'Nombre de Grupo de Investigación',
+        'Docente',
+        'Condición',
+        'Líneas de Investigación',
+        'Nombre Corto',
+    ]
+
     def parse(self, file_path: str) -> Dict[str, List[dict]]:
         header_row = find_header_row(file_path)
         df = pd.read_excel(file_path, skiprows=header_row)
         df.columns = [str(c).replace('\n', ' ').strip() for c in df.columns]
-        
+        validate_columns(df, self.REQUIRED_COLUMNS, "GIDocentesParser")
+
         miembros_grupo = []
         for _, row in df.iterrows():
             nombre_gi = str(row.get('Nombre de Grupo de Investigación', '')).strip()

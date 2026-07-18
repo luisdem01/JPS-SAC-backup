@@ -352,53 +352,56 @@ class EtlProcessor:
             
         grupos_db = await asyncio.to_thread(self.uploader.fetch_grupos)
         
-        def match_grupo(query_str: str) -> Optional[int]:
-            if not query_str or not grupos_db: return None
-            
-            # 1. Manejar múltiples grupos en una celda (ej: 'yachay / itdata')
-            # Tomamos el primero de forma heurística, ya que la BD solo acepta 1 id_grupo
-            first_q = re.split(r'[/,\n]', str(query_str))[0].strip()
-            q_upper = first_q.upper()
-            
-            # 2. Diccionario de mapeo duro para siglas informales (Hoja de Publicaciones)
-            MAPEO_SIGLAS = {
-                "IOT": "INTERNETDELASCO",
-                "INWE": "INGENIERAWEB",
-                "INTGARTI": "INNOVANDOSISTEM",
-                "BIOMEDIT": "TECNOLOGASDELAI",
-                "YACHAY": "YACHAY",
-                "ITDATA": "ITDATA"
-            }
+        MAPEO_SIGLAS = {
+            "IOT": "INTERNETDELASCO",
+            "INWE": "INGENIERAWEB",
+            "INTGARTI": "INNOVANDOSISTEM",
+            "BIOMEDIT": "TECNOLOGASDELAI",
+            "YACHAY": "YACHAY",
+            "ITDATA": "ITDATA"
+        }
+
+        def _match_single_grupo(token: str) -> Optional[int]:
+            """Resuelve un único token de grupo a su id_grupo."""
+            q_upper = token.upper()
             translated_q = MAPEO_SIGLAS.get(q_upper, q_upper)
-            
-            # 3. Búsqueda exacta por siglas, código o nombre
+
             for g in grupos_db:
-                # Comparamos el valor traducido
                 if translated_q == (g.get('siglas', '') or '').upper(): return g['id_grupo']
                 if translated_q == (g.get('codigo_grupo', '') or '').upper(): return g['id_grupo']
                 if translated_q == (g.get('nombre_grupo', '') or '').upper(): return g['id_grupo']
-                
-                # Comparamos el valor original por si acaso
                 if q_upper == (g.get('siglas', '') or '').upper(): return g['id_grupo']
                 if q_upper == (g.get('codigo_grupo', '') or '').upper(): return g['id_grupo']
                 if q_upper == (g.get('nombre_grupo', '') or '').upper(): return g['id_grupo']
-                
-            # 4. Búsqueda difusa por nombre
+
             if has_rapidfuzz:
                 nombres = {g['id_grupo']: g['nombre_grupo'] for g in grupos_db if g.get('nombre_grupo')}
-                if not nombres: return None
-                choices = list(nombres.values())
-                # Buscamos usando la versión original, ya que el diccionario ya cubrió los slugs raros
-                res = process.extractOne(first_q, choices, scorer=fuzz.partial_ratio)
-                if res and res[1] >= 80:
-                    best_name = res[0]
-                    for g_id, name in nombres.items():
-                        if name == best_name: return g_id
+                if nombres:
+                    res = process.extractOne(token, list(nombres.values()), scorer=fuzz.partial_ratio)
+                    if res and res[1] >= 80:
+                        for g_id, name in nombres.items():
+                            if name == res[0]:
+                                return g_id
             return None
+
+        def match_grupos(query_str: str) -> List[int]:
+            """Resuelve una celda con uno o varios grupos (separados por / , o salto de línea)."""
+            if not query_str or not grupos_db:
+                return []
+            tokens = [t.strip() for t in re.split(r'[/,\n]', str(query_str)) if t.strip()]
+            ids: List[int] = []
+            seen: set = set()
+            for token in tokens:
+                gid = _match_single_grupo(token)
+                if gid is not None and gid not in seen:
+                    ids.append(gid)
+                    seen.add(gid)
+            return ids
 
         # 3. Ensamblaje de Modelos Finales
         update_progress("Validando y relacionando registros de proyectos, publicaciones y tesis...", 83)
         proyectos_validos, publicaciones_validas, tesis_validas, grupos_validos = [], [], [], []
+        sin_dni: List[Dict[str, Any]] = []  # nombres que no pudieron resolverse
 
         # Proyectos
         proyectos_dict = {}
@@ -406,19 +409,19 @@ class EtlProcessor:
             codigo = p['codigo_proyecto']
             docente = p.get('docente_nombre')
             dni = name_to_dni.get(docente)
-            
-            # Resolve group FK
+
             if p.get('codigo_grupo'):
-                p['id_grupo'] = match_grupo(p['codigo_grupo'])
-            
+                p['id_grupos'] = match_grupos(p['codigo_grupo'])
+
             if codigo not in proyectos_dict:
                 proyectos_dict[codigo] = p
                 proyectos_dict[codigo]['docentes'] = []
-            
+
             if dni:
                 proyectos_dict[codigo]['docentes'].append({'dni': dni, 'condicion_rol': p.get('condicion_rol', 'Miembro')})
             elif docente:
-                self.failed_rows.append({"tipo": "PROYECTO_DOCENTE_FALTANTE", "dato": p, "mensaje": f"Docente {docente} sin DNI."})
+                # Registrar nombre no resuelto pero NO descartar el proyecto
+                sin_dni.append({"nombre": docente, "contexto": f"Proyecto {codigo}"})
 
         for p in proyectos_dict.values():
             try:
@@ -428,15 +431,24 @@ class EtlProcessor:
 
         # Publicaciones
         for pub in raw_data.get('publicaciones', []):
-            dni = name_to_dni.get(pub.get('docente_nombre'))
+            docente = pub.get('docente_nombre')
+            dni = name_to_dni.get(docente)
+
+            if pub.get('codigo_grupo'):
+                pub['id_grupos'] = match_grupos(pub['codigo_grupo'])
+
             if not dni:
-                self.failed_rows.append({"tipo": "PUB_DOCENTE_FALTANTE", "dato": pub, "mensaje": "Autor sin DNI resuelto."})
+                # Enviar a cuarentena en vez de descartar
+                sin_dni.append({"nombre": docente or "Desconocido", "contexto": f"Publicación: {pub.get('titulo_articulo', '')[:60]}"})
+                await asyncio.to_thread(
+                    self.uploader.send_to_quarantine,
+                    "publicacion",
+                    pub.get('doi_codigo') or pub.get('titulo_articulo', '')[:100],
+                    pub,
+                    f"Autor '{docente}' no encontrado en RENACYT ni en la base de datos local. Requiere asignación manual de DNI.",
+                )
                 continue
             pub['dni_autor'] = dni
-            
-            if pub.get('codigo_grupo'):
-                pub['id_grupo'] = match_grupo(pub['codigo_grupo'])
-                
             try:
                 publicaciones_validas.append(PublicacionModel(**pub).model_dump())
             except ValidationError as e:
@@ -444,9 +456,19 @@ class EtlProcessor:
 
         # Tesis
         for tes in raw_data.get('tesis', []):
-            dni = name_to_dni.get(tes.get('docente_nombre'))
+            docente = tes.get('docente_nombre')
+            dni = name_to_dni.get(docente)
+
             if not dni:
-                self.failed_rows.append({"tipo": "TESIS_ASESOR_FALTANTE", "dato": tes, "mensaje": "Asesor sin DNI resuelto."})
+                # Enviar a cuarentena en vez de descartar
+                sin_dni.append({"nombre": docente or "Desconocido", "contexto": f"Tesis: {tes.get('titulo_tesis', '')[:60]}"})
+                await asyncio.to_thread(
+                    self.uploader.send_to_quarantine,
+                    "tesis",
+                    tes.get('titulo_tesis', '')[:100],
+                    tes,
+                    f"Asesor '{docente}' no encontrado en RENACYT ni en la base de datos local. Requiere asignación manual de DNI.",
+                )
                 continue
             tes['dni_asesor'] = dni
             try:
@@ -563,5 +585,7 @@ class EtlProcessor:
             },
             "resultados_db": resultados_db,
             "conflictos_inconsistencias": len(self.failed_rows),
-            "detalle_conflictos": self.failed_rows
+            "detalle_conflictos": self.failed_rows,
+            "en_cuarentena": len(sin_dni),
+            "detalle_sin_dni": sin_dni,
         }

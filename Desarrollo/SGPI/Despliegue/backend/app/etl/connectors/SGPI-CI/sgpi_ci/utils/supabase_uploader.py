@@ -128,6 +128,36 @@ class SupabaseUploader:
 
 
 
+    def send_to_quarantine(
+        self,
+        entidad: str,
+        llave_sugerida: str,
+        datos_conflicto: dict,
+        motivo: str,
+    ) -> None:
+        """Inserta un registro en reconciliacion_pendientes (cuarentena) via REST."""
+        settings.validate()
+        headers = {
+            "apikey": settings.SUPABASE_SERVICE_KEY,
+            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/reconciliacion_pendientes"
+        payload = {
+            "entidad_afectada": entidad,
+            "llave_primaria_sugerida": llave_sugerida,
+            "fuentes_involucradas": ["IMPORT_CI"],
+            "datos_conflicto": datos_conflicto,
+            "motivo_cuarentena": motivo,
+            "estado": "Pendiente",
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+        except Exception as e:
+            print(f"[cuarentena] Error al enviar a cuarentena ({entidad} {llave_sugerida}): {e}")
+
     def upload(
         self,
         rpc_name: str,
