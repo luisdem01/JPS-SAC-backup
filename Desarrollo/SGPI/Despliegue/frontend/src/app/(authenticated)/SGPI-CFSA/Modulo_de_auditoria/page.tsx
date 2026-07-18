@@ -408,7 +408,7 @@ function LogDetailModal({ log, userEmail, onClose }: LogDetailModalProps) {
         <div className="p-5 overflow-y-auto flex-1 space-y-4">
           
           {/* Grid de Metadatos */}
-          <div className="grid grid-cols-2 gap-4 bg-slate-50 border border-slate-200 rounded p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 border border-slate-200 rounded p-4">
             <div>
               <span className="block font-sans text-[10px] text-slate-500 uppercase tracking-wider font-bold">Fecha / Hora</span>
               <span className="font-sans text-[13px] text-slate-800 font-medium">{formatFechaHora(log.fechaHora)}</span>
@@ -938,9 +938,9 @@ export default function AuditoriaDeLogsPage() {
           </div>
 
           {/* ── Tabla de logs (Tema Claro) ───────────────────────────────── */}
-          <div className="bg-white rounded overflow-hidden border border-slate-200 shadow-sm">
+          <div className="bg-white rounded overflow-x-auto border border-slate-200 shadow-sm">
             {/* Cabecera */}
-            <div className="grid grid-cols-[1.5fr_1.5fr_1.8fr_2fr_1fr] px-5 py-3 border-b border-slate-200 bg-slate-50/50">
+            <div className="grid grid-cols-[1.5fr_1.5fr_1.8fr_2fr_1fr] px-5 py-3 border-b border-slate-200 bg-slate-50/50 min-w-[750px]">
               {['FECHA/HORA', 'EVENTO', 'ENTIDAD', 'USUARIO / ACTOR', 'ESTADO'].map((col) => (
                 <span key={col} className="font-sans font-bold text-[10px] text-slate-500 uppercase tracking-widest">
                   {col}
@@ -972,7 +972,7 @@ export default function AuditoriaDeLogsPage() {
                       title="Ver detalle de auditoría"
                       className="
                         w-full text-left
-                        grid grid-cols-[1.5fr_1.5fr_1.8fr_2fr_1fr] items-center
+                        grid grid-cols-[1.5fr_1.5fr_1.8fr_2fr_1fr] items-center min-w-[750px]
                         px-5 py-3.5 bg-white hover:bg-slate-50/80
                         transition-all duration-100 cursor-pointer
                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#cbd5e1]

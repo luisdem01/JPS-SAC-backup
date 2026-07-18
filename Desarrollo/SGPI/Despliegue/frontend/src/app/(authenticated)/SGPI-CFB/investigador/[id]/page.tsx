@@ -223,7 +223,7 @@ export default function InvestigadorDetailPage() {
             {/* ── Derecha ───────────────────────────────────────────────────────── */}
             <div className="flex flex-col gap-4">
               {/* Estadísticas */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-4 rounded bg-[#dbeafe] border border-[#93c5fd] text-center">
                   <div className="flex items-center justify-center gap-1 mb-1">
                     <FolderIcon />

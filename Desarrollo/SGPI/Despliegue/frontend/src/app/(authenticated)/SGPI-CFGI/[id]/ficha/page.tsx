@@ -179,7 +179,7 @@ export default function FichaGrupoPage() {
       <MainLayout title="" subtitle="">
         <div className="flex flex-col gap-6 animate-pulse">
           <div className="h-8 bg-slate-100 rounded w-1/4"/>
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="col-span-2 h-96 bg-slate-100 rounded"/>
             <div className="col-span-1 h-96 bg-slate-100 rounded"/>
           </div>
@@ -253,7 +253,7 @@ export default function FichaGrupoPage() {
                 Identificación Institucional
               </p>
 
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mb-4">
                 <div>
                   <p className="font-sans text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">Código Oficial</p>
                   <p className="font-sans font-bold text-[13px] text-on-surface mt-0.5">{grupo.code}</p>
@@ -287,7 +287,7 @@ export default function FichaGrupoPage() {
               <p className="font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-4">
                 Productividad Científica
               </p>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="border border-outline-variant rounded p-4 text-center bg-surface-container-low">
                   <p className="font-heading font-bold text-[32px] text-on-surface">{proyectosActivos}</p>
                   <p className="font-sans text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold mt-1">Proyectos Activos</p>

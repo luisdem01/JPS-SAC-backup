@@ -218,7 +218,7 @@ export default function ProyectoDetailPage() {
               </div>
 
               {/* Responsable + Grupo */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <p className="font-sans font-bold text-[10px] text-on-surface-variant uppercase tracking-widest mb-2">
                     Responsable Principal

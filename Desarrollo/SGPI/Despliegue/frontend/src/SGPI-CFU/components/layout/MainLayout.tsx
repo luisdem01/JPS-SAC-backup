@@ -44,6 +44,7 @@ export function MainLayout({ children, title: initialTitle = '', subtitle: initi
   // States for title and subtitle at this layout level
   const [title, setTitle] = useState(initialTitle);
   const [subtitle, setSubtitle] = useState(initialSubtitle);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Notify parent layout of our title/subtitle when nested
   useEffect(() => {
@@ -104,15 +105,15 @@ export function MainLayout({ children, title: initialTitle = '', subtitle: initi
       <AuthGuard>
         <div className="min-h-screen bg-background font-sans text-on-surface">
           {/* Sidebar fijo */}
-          <Sidebar />
+          <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
           {/* TopBar fija sobre el área de contenido */}
-          <TopBar title={title} subtitle={subtitle} />
+          <TopBar title={title} subtitle={subtitle} onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
           {/* Área de contenido principal */}
           <main
-            className="flex flex-col min-h-screen"
-            style={{ paddingLeft: '220px', paddingTop: '56px' }}
+            className="flex flex-col min-h-screen pl-0 lg:pl-[220px]"
+            style={{ paddingTop: '56px' }}
             id="main-content"
           >
             {/* Container con padding del sistema */}

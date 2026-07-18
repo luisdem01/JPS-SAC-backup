@@ -248,7 +248,7 @@ const NAV_ITEMS: NavItem[] = [
 // Componente
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function Sidebar() {
+export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
@@ -279,17 +279,28 @@ export function Sidebar() {
   };
 
   return (
-    <aside
-      className="
-        fixed left-0 top-0 z-40
-        flex flex-col
-        h-screen w-[220px]
-        bg-white
-        border-r border-[#e2e8f0]
-        select-none
-      "
-      aria-label="Navegación principal del SGPI"
-    >
+    <>
+      {isOpen && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`
+          fixed left-0 top-0 z-40
+          flex flex-col
+          h-screen w-[220px]
+          bg-white
+          border-r border-[#e2e8f0]
+          select-none
+          transition-transform duration-300 ease-in-out
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+          lg:translate-x-0
+        `}
+        aria-label="Navegación principal del SGPI"
+      >
       {/* ── BRAND ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-4 pt-5 pb-4 border-b border-[#e2e8f0]">
         {/* Logo institucional */}
@@ -376,7 +387,8 @@ export function Sidebar() {
           <span>Cerrar Sesión</span>
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 

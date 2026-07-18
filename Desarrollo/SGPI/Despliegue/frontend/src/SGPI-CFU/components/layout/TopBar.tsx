@@ -34,6 +34,15 @@ const ChevronRightIcon = () => (
   </svg>
 );
 
+const MenuIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="4" y1="12" x2="20" y2="12" />
+    <line x1="4" y1="6" x2="20" y2="6" />
+    <line x1="4" y1="18" x2="20" y2="18" />
+  </svg>
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,7 +136,7 @@ export interface TopBarProps {
   subtitle?: string;
 }
 
-export function TopBar({ title, subtitle }: TopBarProps) {
+export function TopBar({ title, subtitle, onToggleSidebar }: TopBarProps & { onToggleSidebar?: () => void }) {
   const pathname = usePathname();
   const { user, showExpiryWarning, minutesRemaining, dismissWarning } = useAuth();
   const breadcrumbs = parseBreadcrumbs(pathname);
@@ -136,18 +145,27 @@ export function TopBar({ title, subtitle }: TopBarProps) {
   return (
     <header
       className="
-        fixed top-0 right-0 z-30
+        fixed top-0 right-0 left-0 lg:left-[220px] z-30
         flex items-center justify-between
         h-[64px]
         bg-white
         border-b border-[#e2e8f0]
         px-6
       "
-      style={{ left: '220px' }}   /* Sidebar width */
       aria-label="Barra superior"
     >
-      {/* ── Izquierda: Título ────────────────────────────────────────────── */}
-      <div className="flex-1 min-w-0">
+      {/* ── Izquierda: Hamburguesa + Título ────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        {onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="p-1.5 -ml-1.5 rounded-md text-[#475569] hover:bg-slate-100 hover:text-[#0f172a] lg:hidden transition-colors cursor-pointer"
+            aria-label="Abrir menú de navegación"
+          >
+            <MenuIcon />
+          </button>
+        )}
         <h1 className="font-sans font-bold text-[15px] text-[#001631] truncate">
           {title || currentLabel || 'Sistema de Gestión de Proyectos de Investigación'}
         </h1>

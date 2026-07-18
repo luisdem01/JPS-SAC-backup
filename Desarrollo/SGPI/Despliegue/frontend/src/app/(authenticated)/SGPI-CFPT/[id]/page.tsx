@@ -498,7 +498,7 @@ function TabVinculacion({
 }) {
   return (
     <div className="p-5">
-      <div className="border border-outline-variant rounded overflow-hidden">
+      <div className="border border-outline-variant rounded overflow-x-auto">
         {/* Header tabla */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-outline-variant">
           <p className="font-sans font-bold text-[11px] text-on-surface uppercase tracking-widest">
@@ -512,7 +512,7 @@ function TabVinculacion({
         </div>
 
         {/* Cabecera */}
-        <div className="grid grid-cols-[1fr_1fr_1fr_40px] gap-0 border-b border-outline-variant bg-surface-container-low px-5 py-2">
+        <div className="grid grid-cols-[1fr_1fr_1fr_40px] gap-0 border-b border-outline-variant bg-surface-container-low px-5 py-2 min-w-[650px]">
           {['Investigador FISI', 'Grupo de Inv. Afectado', 'Rol en Publicación', 'Acción'].map((h) => (
             <span key={h} className="font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest">{h}</span>
           ))}
@@ -521,7 +521,7 @@ function TabVinculacion({
         {/* Filas */}
         {vinculados.map((v, idx) => (
           <div key={v.investigador.id}
-            className="grid grid-cols-[1fr_1fr_1fr_40px] gap-0 items-center px-5 py-3 border-b border-outline-variant last:border-0 hover:bg-surface-container-low transition-colors">
+            className="grid grid-cols-[1fr_1fr_1fr_40px] gap-0 items-center px-5 py-3 border-b border-outline-variant last:border-0 hover:bg-surface-container-low transition-colors min-w-[650px]">
             {/* Investigador */}
             <div className="flex items-center gap-2">
               <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#dcfce7] flex items-center justify-center" aria-label="Investigador validado">

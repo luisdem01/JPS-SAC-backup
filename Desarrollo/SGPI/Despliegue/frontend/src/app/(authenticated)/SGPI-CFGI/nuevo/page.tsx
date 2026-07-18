@@ -380,7 +380,7 @@ export default function NuevoGrupoPage() {
             <div className="max-w-[620px] flex flex-col gap-5">
 
               {/* Código + Fuente */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="code" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
                     Código Único (ID) <span className="text-red-500">*</span>
@@ -444,7 +444,7 @@ export default function NuevoGrupoPage() {
               </div>
 
               {/* Acrónimo + Fecha Registro */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="acronym" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
                     Acrónimo / Siglas
@@ -473,7 +473,7 @@ export default function NuevoGrupoPage() {
               </div>
 
               {/* Línea de Investigación + Estado */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="linea" className="block font-sans font-bold text-[10px] text-on-surface uppercase tracking-widest mb-1.5">
                     Línea de Investigación Principal

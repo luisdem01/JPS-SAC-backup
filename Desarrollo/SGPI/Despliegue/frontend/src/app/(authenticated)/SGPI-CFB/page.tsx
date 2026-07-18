@@ -663,10 +663,10 @@ function BusquedaGlobalPageContent() {
       </div>
 
       {/* ── Cuerpo: filtros + resultados ─────────────────────────────────────── */}
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col md:flex-row gap-6 items-start">
 
         {/* ── Panel de filtros lateral (Simplificado) ───────────────────────── */}
-        <aside className="w-[220px] flex-shrink-0">
+        <aside className="w-full md:w-[220px] flex-shrink-0">
           <div className="bg-white border border-[#e2e8f0] rounded p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="flex items-center gap-1.5 font-sans font-bold text-[12px] text-on-surface uppercase tracking-wider">
