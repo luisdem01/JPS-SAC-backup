@@ -1,8 +1,11 @@
+import difflib
+import logging
+import unicodedata
+
 import pandas as pd
 from typing import Dict, List, Any
 
 from sgpi_ci.utils.cleaners import clean_prefix_and_title, split_docentes_cell
-
 
 def validate_columns(df: pd.DataFrame, required: List[str], context: str) -> None:
     """
@@ -26,6 +29,7 @@ def validate_columns(df: pd.DataFrame, required: List[str], context: str) -> Non
     lines.append(f"Columnas encontradas: {found}")
     raise ValueError("\n".join(lines))
 
+logger = logging.getLogger(__name__)
 
 def find_header_row(file_path: str, sheet_name: Any = 0, max_rows: int = 15) -> int:
     """
@@ -44,6 +48,68 @@ def find_header_row(file_path: str, sheet_name: Any = 0, max_rows: int = 15) -> 
             max_non_null = non_null_count
             header_idx = i
     return header_idx
+
+
+def normalize_str(s: str) -> str:
+    """
+    Normaliza un string a minúsculas, sin acentos y sin espacios múltiples.
+    Usado para comparaciones tolerantes de nombres de hojas Excel.
+    """
+    s = s.strip().lower()
+    s = unicodedata.normalize('NFKD', s)
+    s = ''.join(c for c in s if not unicodedata.combining(c))
+    s = ' '.join(s.split())  # colapsa múltiples espacios
+    return s
+
+
+def find_sheet_name(
+    available_sheets: list,
+    target: str,
+    cutoff: float = 0.85
+) -> 'str | None':
+    """
+    Busca el nombre de hoja más cercano a ``target`` dentro de ``available_sheets``.
+
+    Estrategia en tres capas:
+        1. Coincidencia exacta tras normalización (minúsculas + sin acentos + sin espacios extra).
+        2. Si falla, busca la hoja con mayor similitud difusa usando difflib (umbral ``cutoff``).
+        3. Si ninguna supera el umbral, loguea un WARNING con las hojas disponibles y retorna None.
+
+    Returns:
+        El nombre REAL de la hoja encontrada (sin normalizar), o None si no se encontró.
+    """
+    norm_target = normalize_str(target)
+
+    # Capa 1: coincidencia exacta normalizada
+    for sheet in available_sheets:
+        if normalize_str(sheet) == norm_target:
+            if sheet != target:
+                logger.warning(
+                    "Hoja '%s' encontrada como variante de '%s'. "
+                    "Considera corregir el nombre en el archivo fuente.",
+                    sheet, target
+                )
+            return sheet
+
+    # Capa 2: similitud difusa
+    norm_map = {normalize_str(s): s for s in available_sheets}
+    matches = difflib.get_close_matches(norm_target, norm_map.keys(), n=1, cutoff=cutoff)
+    if matches:
+        real_name = norm_map[matches[0]]
+        logger.warning(
+            "Hoja '%s' no encontrada exactamente. Usando '%s' como alternativa (fuzzy match).",
+            target, real_name
+        )
+        return real_name
+
+    # Capa 3: no encontrada → warning explícito
+    logger.warning(
+        "Hoja '%s' no encontrada en el archivo. "
+        "Hojas disponibles: %s. Esta sección será omitida.",
+        target, available_sheets
+    )
+    return None
+
 
 class ProyectosParser:
     """Para '6. Proyectos de investigación 2018-2025'"""
@@ -64,9 +130,12 @@ class ProyectosParser:
 
         # Limpiar nombres de columnas (quitar saltos de linea)
         df.columns = [str(c).replace('\n', ' ').strip() for c in df.columns]
-
         validate_columns(df, self.REQUIRED_COLUMNS, "ProyectosParser")
 
+        # Llenar celdas combinadas (merged cells)
+        for col in ['Código Proyecto', 'Resolución Rectoral', 'Nombre del Proyecto', 'Tipo', 'Año', 'Grupo de Investigación']:
+            if col in df.columns:
+                df[col] = df[col].ffill()
         proyectos = []
         for _, row in df.iterrows():
             codigo = str(row.get('Código Proyecto', '')).strip()
@@ -115,12 +184,17 @@ class IIFISIParser:
         xl = pd.ExcelFile(file_path)
 
         # 1. Proyectos
-        if 'Proyectos con Financiamiento' in xl.sheet_names:
-            h_row = find_header_row(file_path, 'Proyectos con Financiamiento')
-            df_p = pd.read_excel(file_path, sheet_name='Proyectos con Financiamiento', skiprows=h_row)
+        sheet_proy = find_sheet_name(xl.sheet_names, 'Proyectos con Financiamiento')
+        if sheet_proy:
+            h_row = find_header_row(file_path, sheet_proy)
+            df_p = pd.read_excel(file_path, sheet_name=sheet_proy, skiprows=h_row)
             df_p.columns = [str(c).replace('\n', ' ').strip() for c in df_p.columns]
             validate_columns(df_p, self.REQUIRED_PROYECTOS, "IIFISIParser / Proyectos con Financiamiento")
 
+            # Llenar celdas combinadas (merged cells)
+            for col in ['Codigo del Proyecto', 'Título del Proyecto', 'Resolucion Rectoral', 'Grupo de Investigación']:
+                if col in df_p.columns:
+                    df_p[col] = df_p[col].ffill()
             for _, row in df_p.iterrows():
                 codigo = str(row.get('Codigo del Proyecto', '')).strip()
                 if not codigo or codigo == 'nan': continue
@@ -155,9 +229,10 @@ class IIFISIParser:
                     })
                     
         # 2. Publicaciones
-        if 'Publicación de artículos' in xl.sheet_names:
-            h_row = find_header_row(file_path, 'Publicación de artículos')
-            df_pub = pd.read_excel(file_path, sheet_name='Publicación de artículos', skiprows=h_row)
+        sheet_pub = find_sheet_name(xl.sheet_names, 'Publicación de artículos')
+        if sheet_pub:
+            h_row = find_header_row(file_path, sheet_pub)
+            df_pub = pd.read_excel(file_path, sheet_name=sheet_pub, skiprows=h_row)
             df_pub.columns = [str(c).replace('\n', ' ').strip() for c in df_pub.columns]
             validate_columns(df_pub, self.REQUIRED_PUBLICACIONES, "IIFISIParser / Publicación de artículos")
 
@@ -176,12 +251,15 @@ class IIFISIParser:
                 })
 
         # 3. Tesis
-        if 'TESIS' in xl.sheet_names:
-            h_row = find_header_row(file_path, 'TESIS')
-            df_t = pd.read_excel(file_path, sheet_name='TESIS', skiprows=h_row)
+        sheet_tesis = find_sheet_name(xl.sheet_names, 'TESIS')
+        if sheet_tesis:
+            h_row = find_header_row(file_path, sheet_tesis)
+            df_t = pd.read_excel(file_path, sheet_name=sheet_tesis, skiprows=h_row)
             df_t.columns = [str(c).replace('\n', ' ').strip() for c in df_t.columns]
             validate_columns(df_t, self.REQUIRED_TESIS, "IIFISIParser / TESIS")
 
+            if 'Título de la Tesis' in df_t.columns:
+                df_t['Título de la Tesis'] = df_t['Título de la Tesis'].ffill()
             for _, row in df_t.iterrows():
                 titulo = str(row.get('Título de la Tesis', '')).strip()
                 if not titulo or titulo == 'nan': continue
@@ -242,6 +320,11 @@ class GIDocentesParser:
         df.columns = [str(c).replace('\n', ' ').strip() for c in df.columns]
         validate_columns(df, self.REQUIRED_COLUMNS, "GIDocentesParser")
 
+        # Llenar celdas combinadas (merged cells) hacia abajo
+        if 'Nombre de Grupo de Investigación' in df.columns:
+            df['Nombre de Grupo de Investigación'] = df['Nombre de Grupo de Investigación'].ffill()
+        if 'Nombre Corto' in df.columns:
+            df['Nombre Corto'] = df['Nombre Corto'].ffill()
         miembros_grupo = []
         for _, row in df.iterrows():
             nombre_gi = str(row.get('Nombre de Grupo de Investigación', '')).strip()
@@ -266,7 +349,7 @@ class ParserFactory:
     @staticmethod
     def get_parser(filename: str):
         filename_lower = filename.lower()
-        if 'proyectos' in filename_lower and '2018-2025' in filename_lower:
+        if 'proyectos' in filename_lower:
             return ProyectosParser()
         elif 'ii-fisi' in filename_lower:
             return IIFISIParser()

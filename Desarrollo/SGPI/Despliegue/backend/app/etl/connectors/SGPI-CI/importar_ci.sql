@@ -2,6 +2,15 @@
 -- SISTEMA DE GESTIÓN DE PROYECTOS DE INVESTIGACIÓN (SGPI)
 -- Script SQL: Funciones RPC de Importación Masiva CI (Antes RAIS)
 -- Componente: Capa Transaccional ETL (CU02 / CU03 / CU04)
+--
+-- NOTA TÉCNICA — Distinción INSERT vs UPDATE:
+--   PostgreSQL expone `xmax` en cada fila tras un INSERT...ON CONFLICT DO UPDATE.
+--   - xmax = 0  → la fila fue INSERTADA por primera vez (registro nuevo)
+--   - xmax <> 0 → la fila existía y fue ACTUALIZADA (registro ya conocido)
+--   Usamos esta propiedad del sistema para contar insertados y actualizados de
+--   forma precisa sin necesidad de una consulta previa a la tabla.
+--
+--   Retorno unificado: { "insertados": N, "actualizados": N, "fallidos": N }
 -- ====================================================================================
 
 -- ── RPC 1: SINCRONIZACIÓN DE INVESTIGADORES ──────────────────────────────────────────
@@ -13,8 +22,9 @@ AS $$
 DECLARE
     elem            JSONB;
     v_dni           VARCHAR(15);
-    cnt_inserted    INT := 0;
-    cnt_updated     INT := 0;
+    v_xmax          BIGINT;
+    cnt_insertados  INT := 0;
+    cnt_actualizados INT := 0;
     cnt_fallidos    INT := 0;
 BEGIN
     FOR elem IN SELECT * FROM jsonb_array_elements(payload) LOOP
@@ -54,19 +64,27 @@ BEGIN
                 institucion_principal = COALESCE(EXCLUDED.institucion_principal, investigador.institucion_principal),
                 estado_renacyt        = COALESCE(EXCLUDED.estado_renacyt, investigador.estado_renacyt),
                 url_cti_vitae         = COALESCE(EXCLUDED.url_cti_vitae, investigador.url_cti_vitae),
-                updated_at            = timezone('utc'::text, now());
-                
-            -- Nota: No usamos RETURNING xmax para distinguir insert/update por simplicidad de Supabase
-            cnt_updated := cnt_updated + 1; 
+                updated_at            = timezone('utc'::text, now())
+            RETURNING xmax INTO v_xmax;
+
+            -- xmax = 0 → INSERT nuevo; xmax <> 0 → UPDATE sobre fila existente
+            IF v_xmax = 0 THEN
+                cnt_insertados := cnt_insertados + 1;
+            ELSE
+                cnt_actualizados := cnt_actualizados + 1;
+            END IF;
+
         EXCEPTION WHEN OTHERS THEN
             cnt_fallidos := cnt_fallidos + 1;
         END;
     END LOOP;
 
     INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
-    VALUES ('IMPORT_EXCEL_CI', 'investigador', jsonb_build_object('procesados', cnt_updated, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
+    VALUES ('IMPORT_EXCEL_CI', 'investigador',
+            jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos),
+            'Exito', id_usuario);
 
-    RETURN jsonb_build_object('procesados', cnt_updated, 'fallidos', cnt_fallidos);
+    RETURN jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos);
 END;
 $$;
 
@@ -78,17 +96,38 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-    elem JSONB;
-    v_codigo VARCHAR(50);
-    v_id_grupo INT;
-    cnt_procesados INT := 0;
-    cnt_fallidos INT := 0;
+    elem             JSONB;
+    v_codigo         VARCHAR(50);
+    v_id_grupo       INT;
+    v_xmax           BIGINT;
+    cnt_insertados   INT := 0;
+    cnt_actualizados INT := 0;
+    cnt_fallidos     INT := 0;
 BEGIN
     FOR elem IN SELECT * FROM jsonb_array_elements(payload) LOOP
-        -- Si no hay código de grupo, usaremos las siglas o un slug del nombre
-        v_codigo := COALESCE(NULLIF(trim((elem->>'codigo_grupo')::VARCHAR), ''), 
-                             NULLIF(trim((elem->>'siglas')::VARCHAR), ''), 
-                             substring(regexp_replace((elem->>'nombre_grupo')::VARCHAR, '[^a-zA-Z0-9]', '', 'g'), 1, 15));
+        v_codigo := NULLIF(trim((elem->>'codigo_grupo')::VARCHAR), '');
+
+        -- Si no vino código explícito en el Excel, intentamos buscar por nombre exacto primero
+        IF v_codigo IS NULL THEN
+            SELECT codigo_grupo INTO v_codigo
+            FROM public.grupo_investigacion
+            WHERE lower(trim(nombre_grupo)) = lower(trim((elem->>'nombre_grupo')::VARCHAR))
+            LIMIT 1;
+            
+            -- Si tampoco se encontró por nombre, generamos un código fallback nuevo
+            IF v_codigo IS NULL THEN
+                v_codigo := COALESCE(
+                    NULLIF(trim((elem->>'siglas')::VARCHAR), ''), 
+                    upper(substring(regexp_replace((elem->>'nombre_grupo')::VARCHAR, '[^a-zA-Z0-9]', '', 'g'), 1, 15))
+                );
+                
+                -- Para evitar que el código generado colisione con el código de otro grupo DISTINTO,
+                -- le agregamos un sufijo aleatorio en caso de que ya exista en la base de datos
+                WHILE EXISTS (SELECT 1 FROM public.grupo_investigacion WHERE codigo_grupo = v_codigo) LOOP
+                    v_codigo := v_codigo || floor(random() * 9 + 1)::int::text;
+                END LOOP;
+            END IF;
+        END IF;
         
         IF v_codigo IS NULL OR (elem->>'nombre_grupo') IS NULL THEN
             cnt_fallidos := cnt_fallidos + 1;
@@ -108,11 +147,18 @@ BEGIN
             )
             ON CONFLICT (codigo_grupo) DO UPDATE
             SET
-                nombre_grupo = EXCLUDED.nombre_grupo,
-                correo_coordinador = COALESCE(EXCLUDED.correo_coordinador, grupo_investigacion.correo_coordinador),
-                dni_coordinador = COALESCE(EXCLUDED.dni_coordinador, grupo_investigacion.dni_coordinador),
+                nombre_grupo         = EXCLUDED.nombre_grupo,
+                correo_coordinador   = COALESCE(EXCLUDED.correo_coordinador, grupo_investigacion.correo_coordinador),
+                dni_coordinador      = COALESCE(EXCLUDED.dni_coordinador, grupo_investigacion.dni_coordinador),
                 lineas_investigacion = COALESCE(EXCLUDED.lineas_investigacion, grupo_investigacion.lineas_investigacion)
-            RETURNING id_grupo INTO v_id_grupo;
+            RETURNING id_grupo, xmax INTO v_id_grupo, v_xmax;
+
+            -- xmax = 0 → INSERT nuevo; xmax <> 0 → UPDATE sobre fila existente
+            IF v_xmax = 0 THEN
+                cnt_insertados := cnt_insertados + 1;
+            ELSE
+                cnt_actualizados := cnt_actualizados + 1;
+            END IF;
             
             -- Procesar miembros
             IF jsonb_array_length(elem->'miembros') > 0 THEN
@@ -128,16 +174,17 @@ BEGIN
                 END;
             END IF;
 
-            cnt_procesados := cnt_procesados + 1;
         EXCEPTION WHEN OTHERS THEN
             cnt_fallidos := cnt_fallidos + 1;
         END;
     END LOOP;
 
     INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
-    VALUES ('IMPORT_EXCEL_CI', 'grupo_investigacion', jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
+    VALUES ('IMPORT_EXCEL_CI', 'grupo_investigacion',
+            jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos),
+            'Exito', id_usuario);
 
-    RETURN jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos);
+    RETURN jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos);
 END;
 $$;
 
@@ -149,9 +196,11 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-    elem JSONB;
-    cnt_procesados INT := 0;
-    cnt_fallidos INT := 0;
+    elem             JSONB;
+    v_xmax           BIGINT;
+    cnt_insertados   INT := 0;
+    cnt_actualizados INT := 0;
+    cnt_fallidos     INT := 0;
 BEGIN
     FOR elem IN SELECT * FROM jsonb_array_elements(payload) LOOP
         IF (elem->>'codigo_proyecto') IS NULL THEN
@@ -174,9 +223,17 @@ BEGIN
             ON CONFLICT (codigo_proyecto) DO UPDATE
             SET
                 titulo_proyecto = EXCLUDED.titulo_proyecto,
-                tipo_programa = COALESCE(EXCLUDED.tipo_programa, proyecto.tipo_programa),
-                id_grupo = COALESCE(EXCLUDED.id_grupo, proyecto.id_grupo),
-                updated_at = timezone('utc'::text, now());
+                tipo_programa   = COALESCE(EXCLUDED.tipo_programa, proyecto.tipo_programa),
+                id_grupo        = COALESCE(EXCLUDED.id_grupo, proyecto.id_grupo),
+                updated_at      = timezone('utc'::text, now())
+            RETURNING xmax INTO v_xmax;
+
+            -- xmax = 0 → INSERT nuevo; xmax <> 0 → UPDATE sobre fila existente
+            IF v_xmax = 0 THEN
+                cnt_insertados := cnt_insertados + 1;
+            ELSE
+                cnt_actualizados := cnt_actualizados + 1;
+            END IF;
             
             -- Procesar docentes asociados al proyecto
             IF jsonb_array_length(elem->'docentes') > 0 THEN
@@ -192,56 +249,124 @@ BEGIN
                 END;
             END IF;
 
-            cnt_procesados := cnt_procesados + 1;
         EXCEPTION WHEN OTHERS THEN
             cnt_fallidos := cnt_fallidos + 1;
         END;
     END LOOP;
 
     INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
-    VALUES ('IMPORT_EXCEL_CI', 'proyecto', jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
+    VALUES ('IMPORT_EXCEL_CI', 'proyecto',
+            jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos),
+            'Exito', id_usuario);
 
-    RETURN jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos);
+    RETURN jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos);
 END;
 $$;
 
 
 -- ── RPC 4: SINCRONIZACIÓN DE PUBLICACIONES ───────────────────────────────────────────
+-- Estrategia de deduplicación (dos capas):
+--   1. Si doi_codigo no es nulo → conflicto por idx_publicacion_doi_notnull (índice parcial único)
+--   2. Si doi_codigo es nulo    → conflicto por (titulo_articulo, nombre_revista) vía índice único parcial
+-- Se requiere crear primero el índice parcial para títulos sin DOI (ver abajo).
 CREATE OR REPLACE FUNCTION public.importar_ci_publicaciones(payload JSONB, id_usuario UUID DEFAULT NULL)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-    elem JSONB;
-    cnt_procesados INT := 0;
-    cnt_fallidos INT := 0;
+    elem              JSONB;
+    v_doi             VARCHAR(100);
+    v_titulo          TEXT;
+    v_revista         VARCHAR(255);
+    v_id_existente    INT;
+    v_xmax            BIGINT;
+    cnt_insertados    INT := 0;
+    cnt_actualizados  INT := 0;
+    cnt_fallidos      INT := 0;
 BEGIN
     FOR elem IN SELECT * FROM jsonb_array_elements(payload) LOOP
-        BEGIN
-            INSERT INTO public.publicacion (
-                titulo_articulo, nombre_revista, doi_codigo, indexacion, 
-                tipo_publicacion, nombre_evento, id_grupo
-            ) VALUES (
-                (elem->>'titulo_articulo')::VARCHAR,
-                (elem->>'nombre_revista')::VARCHAR,
-                (elem->>'doi_codigo')::VARCHAR,
-                (elem->>'indexacion')::VARCHAR,
-                (elem->>'tipo_publicacion')::VARCHAR,
-                (elem->>'nombre_evento')::VARCHAR,
-                (elem->>'id_grupo')::INT
-            );
+        v_doi    := NULLIF(trim((elem->>'doi_codigo')::VARCHAR), '');
+        v_titulo := trim((elem->>'titulo_articulo')::TEXT);
+        v_revista:= trim((elem->>'nombre_revista')::VARCHAR);
 
-            cnt_procesados := cnt_procesados + 1;
+        BEGIN
+            IF v_doi IS NOT NULL THEN
+                -- ── Caso A: tiene DOI → upsert por DOI (índice parcial único) ──────
+                INSERT INTO public.publicacion (
+                    titulo_articulo, nombre_revista, doi_codigo, indexacion,
+                    tipo_publicacion, nombre_evento, id_grupo
+                ) VALUES (
+                    v_titulo,
+                    v_revista,
+                    v_doi,
+                    (elem->>'indexacion')::VARCHAR,
+                    (elem->>'tipo_publicacion')::VARCHAR,
+                    (elem->>'nombre_evento')::VARCHAR,
+                    (elem->>'id_grupo')::INT
+                )
+                ON CONFLICT (doi_codigo) WHERE doi_codigo IS NOT NULL DO UPDATE
+                SET
+                    titulo_articulo  = EXCLUDED.titulo_articulo,
+                    nombre_revista   = COALESCE(EXCLUDED.nombre_revista, publicacion.nombre_revista),
+                    indexacion       = COALESCE(EXCLUDED.indexacion, publicacion.indexacion),
+                    tipo_publicacion = COALESCE(EXCLUDED.tipo_publicacion, publicacion.tipo_publicacion),
+                    id_grupo         = COALESCE(EXCLUDED.id_grupo, publicacion.id_grupo)
+                RETURNING xmax INTO v_xmax;
+
+                IF v_xmax = 0 THEN
+                    cnt_insertados := cnt_insertados + 1;
+                ELSE
+                    cnt_actualizados := cnt_actualizados + 1;
+                END IF;
+
+            ELSE
+                -- ── Caso B: sin DOI → buscar duplicado por (titulo, revista) ───────
+                SELECT id_publicacion INTO v_id_existente
+                FROM public.publicacion
+                WHERE doi_codigo IS NULL
+                  AND lower(trim(titulo_articulo)) = lower(v_titulo)
+                  AND lower(trim(nombre_revista))  = lower(COALESCE(v_revista, ''))
+                LIMIT 1;
+
+                IF v_id_existente IS NOT NULL THEN
+                    -- Ya existe → actualizar
+                    UPDATE public.publicacion
+                    SET
+                        indexacion       = COALESCE((elem->>'indexacion')::VARCHAR, indexacion),
+                        tipo_publicacion = COALESCE((elem->>'tipo_publicacion')::VARCHAR, tipo_publicacion),
+                        id_grupo         = COALESCE((elem->>'id_grupo')::INT, id_grupo)
+                    WHERE id_publicacion = v_id_existente;
+                    cnt_actualizados := cnt_actualizados + 1;
+                ELSE
+                    -- No existe → insertar
+                    INSERT INTO public.publicacion (
+                        titulo_articulo, nombre_revista, doi_codigo, indexacion,
+                        tipo_publicacion, nombre_evento, id_grupo
+                    ) VALUES (
+                        v_titulo,
+                        v_revista,
+                        NULL,
+                        (elem->>'indexacion')::VARCHAR,
+                        (elem->>'tipo_publicacion')::VARCHAR,
+                        (elem->>'nombre_evento')::VARCHAR,
+                        (elem->>'id_grupo')::INT
+                    );
+                    cnt_insertados := cnt_insertados + 1;
+                END IF;
+            END IF;
+
         EXCEPTION WHEN OTHERS THEN
             cnt_fallidos := cnt_fallidos + 1;
         END;
     END LOOP;
 
     INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
-    VALUES ('IMPORT_EXCEL_CI', 'publicacion', jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
+    VALUES ('IMPORT_EXCEL_CI', 'publicacion',
+            jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos),
+            'Exito', id_usuario);
 
-    RETURN jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos);
+    RETURN jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos);
 END;
 $$;
 
@@ -253,10 +378,12 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-    elem JSONB;
-    v_url VARCHAR(255);
-    cnt_procesados INT := 0;
-    cnt_fallidos INT := 0;
+    elem             JSONB;
+    v_url            VARCHAR(255);
+    v_xmax           BIGINT;
+    cnt_insertados   INT := 0;
+    cnt_actualizados INT := 0;
+    cnt_fallidos     INT := 0;
 BEGIN
     FOR elem IN SELECT * FROM jsonb_array_elements(payload) LOOP
         -- Generar un slug temporal para la URL si no viene (ya que es PK)
@@ -275,17 +402,28 @@ BEGIN
             )
             ON CONFLICT (url_cybertesis) DO UPDATE
             SET
-                dni_asesor = COALESCE(EXCLUDED.dni_asesor, tesis.dni_asesor);
+                dni_asesor           = COALESCE(EXCLUDED.dni_asesor, tesis.dni_asesor),
+                autor_estudiante_texto = COALESCE(EXCLUDED.autor_estudiante_texto, tesis.autor_estudiante_texto),
+                asesor_texto         = COALESCE(EXCLUDED.asesor_texto, tesis.asesor_texto)
+            RETURNING xmax INTO v_xmax;
 
-            cnt_procesados := cnt_procesados + 1;
+            -- xmax = 0 → INSERT nuevo; xmax <> 0 → UPDATE sobre fila existente
+            IF v_xmax = 0 THEN
+                cnt_insertados := cnt_insertados + 1;
+            ELSE
+                cnt_actualizados := cnt_actualizados + 1;
+            END IF;
+
         EXCEPTION WHEN OTHERS THEN
             cnt_fallidos := cnt_fallidos + 1;
         END;
     END LOOP;
 
     INSERT INTO public.log_auditoria (tipo_evento, entidad_afectada, valor_nuevo, resultado, id_usuario)
-    VALUES ('IMPORT_EXCEL_CI', 'tesis', jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos), 'Exito', id_usuario);
+    VALUES ('IMPORT_EXCEL_CI', 'tesis',
+            jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos),
+            'Exito', id_usuario);
 
-    RETURN jsonb_build_object('procesados', cnt_procesados, 'fallidos', cnt_fallidos);
+    RETURN jsonb_build_object('insertados', cnt_insertados, 'actualizados', cnt_actualizados, 'fallidos', cnt_fallidos);
 END;
 $$;

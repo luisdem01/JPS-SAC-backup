@@ -34,7 +34,7 @@ class RenacytConnector:
         'Accept': 'application/json'
     }
     
-    def __init__(self, base_urls=None, verify_ssl=False, rate_limit_delay=1.0, timeout=5, max_retries=2):
+    def __init__(self, base_urls=None, verify_ssl=False, rate_limit_delay=1.0, timeout=5, max_retries=2, cancel_check=None):
         """
         Initializes the RENACYT connector.
         
@@ -43,6 +43,7 @@ class RenacytConnector:
         :param rate_limit_delay: Sleep time in seconds after any successful request to prevent server bans.
         :param timeout: Connection timeout in seconds.
         :param max_retries: Max retries for transient network or server errors.
+        :param cancel_check: Optional callable; if it returns True, pending requests are aborted immediately.
         """
         self.base_urls = base_urls or self.DEFAULT_BASE_URLS
         if isinstance(self.base_urls, str):
@@ -53,6 +54,7 @@ class RenacytConnector:
         self.timeout = timeout
         self.max_retries = max_retries
         self.is_offline = False
+        self.cancel_check = cancel_check  # Callable que retorna True si se solicitó cancelación
         
         # Configure SSL Context
         if not self.verify_ssl:
@@ -65,7 +67,12 @@ class RenacytConnector:
         self._last_request_time = 0.0
 
     async def _apply_rate_limit(self):
-        """Applies a polite sleep if the last query happened too recently."""
+        """Applies a polite sleep if the last query happened too recently.
+        Also checks for cancellation before each request."""
+        # Verificar cancelación antes de cada petición HTTP
+        if self.cancel_check and self.cancel_check():
+            raise asyncio.CancelledError("Importación cancelada por el usuario.")
+
         if self.rate_limit_delay <= 0:
             return
             
@@ -124,6 +131,9 @@ class RenacytConnector:
                         logger.warning(err_msg)
                         all_errors.append(err_msg)
                         
+                    except asyncio.CancelledError:
+                        raise  # Propagar cancelación inmediatamente
+
                     except httpx.RequestError as ce:
                         err_msg = f"Connection Error on {url}: {ce}"
                         logger.warning(err_msg)
@@ -165,7 +175,9 @@ class RenacytConnector:
         if not isinstance(criteria, list):
             raise RenacytError("Criteria must be a list of filter dictionaries.")
             
-        reglamentos = [21, 22, 23, 24, 25, 26, 27]
+        # Optimización: El backend de CONCYTEC ignora el ID del reglamento cuando se envían filtros por POST.
+        # En vez de consultar los 7 reglamentos (21-27) en paralelo, consultamos uno solo genérico para reducir el tráfico un 700%.
+        reglamentos = [1]
         
         async def fetch_reglamento(reg):
             endpoint = f"actoRegistral/obtenerActosRegistralesActivos/reglamento/{reg}/pagina/{page}/numeroRegistros/{page_size}"
@@ -173,6 +185,8 @@ class RenacytConnector:
                 try:
                     res = await self._request(endpoint, method="POST", payload=criteria)
                     return reg, res, None
+                except asyncio.CancelledError:
+                    raise  # Propagar cancelación sin suprimirla
                 except Exception as e:
                     logger.warning(f"Error querying reglamento {reg}: {e}")
                     return reg, None, e
@@ -484,6 +498,8 @@ class RenacytConnector:
             try:
                 res = await self.search(crit, page=1, page_size=page_size, normalize=normalize)
                 return res.get("data", [])
+            except asyncio.CancelledError:
+                raise  # Propagar cancelación sin suprimirla
             except Exception as e:
                 logger.warning(f"Renacyt search error for criteria {crit}: {e}")
                 return []

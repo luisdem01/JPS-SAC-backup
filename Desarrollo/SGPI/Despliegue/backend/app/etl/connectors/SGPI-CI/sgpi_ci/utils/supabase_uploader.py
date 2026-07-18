@@ -101,7 +101,7 @@ class SupabaseUploader:
             "Content-Type": "application/json",
             "Prefer": "resolution=ignore-duplicates"
         }
-        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/linea_investigacion"
+        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/linea_investigacion?on_conflict=nombre"
         try:
             payload = {"nombre": nombre, "estado": estado}
             response = requests.post(url, headers=headers, json=payload)
@@ -118,7 +118,7 @@ class SupabaseUploader:
             "Content-Type": "application/json",
             "Prefer": "resolution=ignore-duplicates"
         }
-        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/departamento_academico"
+        url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/departamento_academico?on_conflict=nombre"
         try:
             payload = {"nombre": nombre, "estado": estado}
             response = requests.post(url, headers=headers, json=payload)
@@ -184,7 +184,7 @@ class SupabaseUploader:
             """
         settings.validate()
 
-        totals: Dict[str, int] = {"procesados": 0, "fallidos": 0}
+        totals: Dict[str, int] = {"insertados": 0, "actualizados": 0, "fallidos": 0}
 
         chunks = [
             records[i : i + chunk_size]
@@ -224,8 +224,9 @@ class SupabaseUploader:
                 data = response.json()
 
                 if data and isinstance(data, dict):
-                    totals["procesados"]  += data.get("procesados", 0)
-                    totals["fallidos"]    += data.get("fallidos", 0)
+                    totals["insertados"]   += data.get("insertados",   0)
+                    totals["actualizados"] += data.get("actualizados", 0)
+                    totals["fallidos"]     += data.get("fallidos",     0)
 
             except Exception as e:
                 # [EX4]: Cada chunk es una llamada RPC independiente.

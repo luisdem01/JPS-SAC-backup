@@ -84,7 +84,7 @@ async def cache_get(key: str) -> Optional[Any]:
         if val is not None:
             return json.loads(val)
     except Exception as e:
-        logger.error(f"Error reading from Redis cache: {e}", exc_info=True)
+        logger.debug(f"Redis cache no disponible (lectura omitida): {e}")
     return None
 
 
@@ -99,5 +99,5 @@ async def cache_set(key: str, value: Any, expire_seconds: int) -> bool:
         await client.set(key, serialized, ex=expire_seconds)
         return True
     except Exception as e:
-        logger.error(f"Error writing to Redis cache: {e}", exc_info=True)
+        logger.debug(f"Redis cache no disponible (escritura omitida): {e}")
         return False

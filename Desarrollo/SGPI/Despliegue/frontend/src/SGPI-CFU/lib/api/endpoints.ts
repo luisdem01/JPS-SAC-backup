@@ -326,7 +326,15 @@ export const importEndpoints = {
    * GET /api/v1/import/{job_id}/status
    */
   getStatus(jobId: string): Promise<ImportJobStatus> {
-    return apiClient.get<ImportJobStatus>(`/import/${jobId}/status`);
+    return apiClient.get<ImportJobStatus>(`/import/${jobId}/status`, { skipCache: true });
+  },
+
+  /**
+   * Detiene una importación en curso.
+   * POST /api/v1/import/{job_id}/stop
+   */
+  stopJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    return apiClient.post<{ success: boolean; message: string }>(`/import/${jobId}/stop`);
   },
 };
 
@@ -352,7 +360,7 @@ export const syncEndpoints = {
    * GET /api/v1/sync/{job_id}/status
    */
   getStatus(jobId: string): Promise<SyncJobStatus> {
-    return apiClient.get<SyncJobStatus>(`/sync/${jobId}/status`);
+    return apiClient.get<SyncJobStatus>(`/sync/${jobId}/status`, { skipCache: true });
   },
 };
 
@@ -386,7 +394,7 @@ export const reportsEndpoints = {
    * GET /api/v1/reports/{job_id}/status
    */
   getStatus(jobId: string): Promise<ReportJobStatus> {
-    return apiClient.get<ReportJobStatus>(`/reports/${jobId}/status`);
+    return apiClient.get<ReportJobStatus>(`/reports/${jobId}/status`, { skipCache: true });
   },
 
   /**
