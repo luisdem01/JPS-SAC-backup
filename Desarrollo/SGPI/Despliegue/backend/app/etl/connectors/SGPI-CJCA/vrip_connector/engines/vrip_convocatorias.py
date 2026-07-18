@@ -160,6 +160,7 @@ class VripConvocatoriasExtractor(BaseExtractor):
                 deadline_original = "Ver cronograma" if cronograma_link else "Ver bases"
                 parsed_deadline = None
                 parsed_start_date = None
+                parsed_cronograma_detallado = None
 
                 # If there's an explicit date in the Elementor container text, let's extract it!
                 container_text = c.get_text(" ", strip=True)
@@ -188,6 +189,11 @@ class VripConvocatoriasExtractor(BaseExtractor):
                                 parser = HeuristicCronogramaParser(default_year=target_year)
                                 cronograma = parser.parse(tmp_pdf_path)
 
+                                parsed_cronograma_detallado = [
+                                    {"actividad": act.actividad, "fecha_detalle": act.fecha_detalle}
+                                    for act in cronograma.actividades
+                                ]
+
                                 # Buscar la fecha de inicio en las actividades (registro, postulación, inscripción, recepción)
                                 for act in cronograma.actividades:
                                     act_lower = act.actividad.lower()
@@ -204,11 +210,15 @@ class VripConvocatoriasExtractor(BaseExtractor):
                                 # Buscar la fecha de cierre en las actividades
                                 for act in cronograma.actividades:
                                     act_lower = act.actividad.lower()
+                                    if any(w in act_lower for w in ["informe", "técnico", "tecnico", "académico", "academico", "rendición", "rendicion", "monitoreo"]):
+                                        continue
                                     if (
                                         "cierre" in act_lower
                                         or "recepción" in act_lower
                                         or "postulación" in act_lower
                                         or "presentación" in act_lower
+                                        or "registro" in act_lower
+                                        or "inscripción" in act_lower
                                     ):
                                         if act.fecha_fin:
                                             parsed_deadline = to_date_obj(act.fecha_fin)
@@ -238,6 +248,7 @@ class VripConvocatoriasExtractor(BaseExtractor):
                         enlace=enlace_publico,
                         dias_restantes=calculate_days_remaining(parsed_deadline) if parsed_deadline else None,
                         fecha_inicio=parsed_start_date.isoformat() if parsed_start_date else None,
+                        cronograma_detallado=parsed_cronograma_detallado,
                     )
                 )
 
@@ -371,11 +382,15 @@ class VripConvocatoriasExtractor(BaseExtractor):
 
                                     for act in cronograma.actividades:
                                         act_lower = act.actividad.lower()
+                                        if any(w in act_lower for w in ["informe", "técnico", "tecnico", "académico", "academico", "rendición", "rendicion", "monitoreo"]):
+                                            continue
                                         if (
                                             "cierre" in act_lower
                                             or "recepción" in act_lower
                                             or "postulación" in act_lower
                                             or "presentación" in act_lower
+                                            or "registro" in act_lower
+                                            or "inscripción" in act_lower
                                         ):
                                             if act.fecha_fin:
                                                 parsed_deadline = to_date_obj(act.fecha_fin)

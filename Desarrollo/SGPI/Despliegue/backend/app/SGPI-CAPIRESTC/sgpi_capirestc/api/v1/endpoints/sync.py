@@ -23,6 +23,9 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
+import unicodedata
+import re
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +39,19 @@ from app.core.faculty_config import FISI_KEYWORDS, CYBERTESIS_QUERIES
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+def _normalize_name(name: str) -> str:
+    if not name: return ""
+    n = unicodedata.normalize('NFKD', name).encode('ASCII', 'ignore').decode('utf-8')
+    n = n.lower().replace('.', '').replace(',', '')
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+def _is_same_advisor(name1: str, name2: str) -> bool:
+    if not name1 or not name2: return False
+    n1 = _normalize_name(name1)
+    n2 = _normalize_name(name2)
+    return n1 in n2 or n2 in n1
 
 # ---------------------------------------------------------------------------
 # Inyección de paths para los conectores externos (carpetas con guiones)
@@ -518,10 +534,11 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                     parsed_close_date = date.fromisoformat(conv.plazo_cierre)
                                 except ValueError:
                                     pass
-                            if not parsed_close_date:
-                                parsed_close_date = date.today() + timedelta(days=30)
                             
-                            estado_resuelto = "Abierta" if parsed_close_date >= date.today() else "Cerrada"
+                            if parsed_close_date:
+                                estado_resuelto = "Abierta" if parsed_close_date >= date.today() else "Cerrada"
+                            else:
+                                estado_resuelto = "Abierta"
                             
                             res = await db.execute(sa_select(Convocatoria).where(
                                 (Convocatoria.titulo_convocatoria == conv.titulo) |
@@ -550,6 +567,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                         pass
                                 existing_conv.url_bases_vrip = conv.enlace
                                 existing_conv.estado_convocatoria = estado_resuelto
+                                existing_conv.cronograma_detallado = conv.cronograma_detallado
                                 report["VRIP"]["resueltos"] += 1
                                 report["VRIP"]["registros"].append({
                                     "tipo": "Convocatoria",
@@ -568,7 +586,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                     pk_entidad=str(existing_conv.id_convocatoria) if existing_conv.id_convocatoria else conv.titulo[:100],
                                     valor_nuevo={
                                         "titulo": conv.titulo,
-                                        "fecha_cierre": parsed_close_date.isoformat(),
+                                        "fecha_cierre": parsed_close_date.isoformat() if parsed_close_date else None,
                                         "estado": estado_resuelto,
                                         "accion": "UPDATE"
                                     },
@@ -585,6 +603,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                     fecha_cierre=parsed_close_date,
                                     url_bases_vrip=conv.enlace,
                                     cambios_cronograma=[],
+                                    cronograma_detallado=conv.cronograma_detallado,
                                     estado_convocatoria=estado_resuelto
                                 )
                                 db.add(new_conv)
@@ -606,7 +625,7 @@ async def _run_sync_job(job_id: str, request: SyncRequest):
                                     pk_entidad=conv.titulo[:100],
                                     valor_nuevo={
                                         "titulo": conv.titulo,
-                                        "fecha_cierre": parsed_close_date.isoformat(),
+                                        "fecha_cierre": parsed_close_date.isoformat() if parsed_close_date else None,
                                         "estado": estado_resuelto,
                                         "accion": "INSERT"
                                     },
@@ -1210,6 +1229,7 @@ class QuarantineResolveRequest(BaseModel):
     action: str                          # "aprobar" | "rechazar"
     dni_corregido: Optional[str] = None  # DNI del asesor corregido manualmente
     motivo_rechazo: Optional[str] = None
+    resolucion_masiva: Optional[bool] = False
 
 
 @router.get(
@@ -1243,8 +1263,30 @@ async def list_quarantine(
     result = await db.execute(stmt)
     items = result.scalars().all()
 
+    # Calculate masiva counts for tesis
+    masiva_counts = {}
+    if any(i.entidad_afectada == 'tesis' and i.estado == 'Pendiente' for i in items):
+        # Fetch all pending tesis to calculate counts
+        stmt_all_tesis = select(ReconciliacionPendiente).where(
+            ReconciliacionPendiente.estado == 'Pendiente',
+            ReconciliacionPendiente.entidad_afectada == 'tesis'
+        )
+        res_all = await db.execute(stmt_all_tesis)
+        all_pend_tesis = res_all.scalars().all()
+
+        for item in items:
+            if item.entidad_afectada == 'tesis' and item.estado == 'Pendiente':
+                item_asesor = (item.datos_conflicto or {}).get("asesor_texto", "")
+                count = 0
+                for otro in all_pend_tesis:
+                    if otro.id_pendiente != item.id_pendiente:
+                        otro_asesor = (otro.datos_conflicto or {}).get("asesor_texto", "")
+                        if _is_same_advisor(otro_asesor, item_asesor):
+                            count += 1
+                masiva_counts[item.id_pendiente] = count
+
     def serialize(item):
-        return {
+        base = {
             "id_pendiente": item.id_pendiente,
             "entidad_afectada": item.entidad_afectada,
             "llave_primaria_sugerida": item.llave_primaria_sugerida,
@@ -1255,6 +1297,9 @@ async def list_quarantine(
             "fecha_registro": item.fecha_registro.isoformat() if item.fecha_registro else None,
             "fecha_revision": item.fecha_revision.isoformat() if item.fecha_revision else None,
         }
+        if item.id_pendiente in masiva_counts:
+            base["related_count"] = masiva_counts[item.id_pendiente]
+        return base
 
     return {
         "success": True,
@@ -1336,9 +1381,13 @@ async def resolve_quarantine(
     if item.estado != "Pendiente":
         raise HTTPException(status_code=409, detail=f"El registro ya fue procesado: '{item.estado}'.")
 
+    registros_resueltos = 0
     try:
         if payload.action == "aprobar":
+            registros_resueltos = 1
             merged_data = dict(item.datos_conflicto)
+            asesor_texto_original = merged_data.get("asesor_texto")
+            
             if payload.dni_corregido:
                 merged_data["dni_asesor"] = payload.dni_corregido
                 merged_data.pop("dni_asesor_reconciliado", None)
@@ -1349,8 +1398,62 @@ async def resolve_quarantine(
                 llave_pk=item.llave_primaria_sugerida,
                 merged_data=merged_data,
                 fuente_ganadora="Resolución Manual Admin",
+                auto_commit=False
             )
             item.estado = "Aprobado"
+            
+            # --- RESOLUCIÓN MASIVA PARA TESIS CON EL MISMO ASESOR ---
+            if payload.resolucion_masiva and payload.dni_corregido and item.entidad_afectada == "tesis" and asesor_texto_original:
+                stmt = select(ReconciliacionPendiente).where(
+                    ReconciliacionPendiente.estado == "Pendiente",
+                    ReconciliacionPendiente.entidad_afectada == "tesis",
+                    ReconciliacionPendiente.id_pendiente != id_pendiente
+                )
+                res = await db.execute(stmt)
+                otros_pendientes = res.scalars().all()
+                
+                from datetime import datetime as _dt, timezone as _tz
+                for otro in otros_pendientes:
+                    otro_datos = dict(otro.datos_conflicto) if otro.datos_conflicto else {}
+                    otro_asesor = otro_datos.get("asesor_texto", "")
+                    
+                    if _is_same_advisor(otro_asesor, asesor_texto_original):
+                        otro_datos["dni_asesor"] = payload.dni_corregido
+                        otro_datos.pop("dni_asesor_reconciliado", None)
+                        
+                        await persister.persist_resolved(
+                            db,
+                            entidad=otro.entidad_afectada,
+                            llave_pk=otro.llave_primaria_sugerida,
+                            merged_data=otro_datos,
+                            fuente_ganadora="Resolución Manual Admin (Masiva)",
+                            auto_commit=False
+                        )
+                        otro.estado = "Aprobado"
+                        otro.fecha_revision = _dt.now(_tz.utc)
+                        db.add(otro)
+                        
+                        # Log auditoría para la resolución masiva en reconciliacion_pendientes
+                        from app.models.domain import LogAuditoria
+                        import uuid as _uuid
+                        user_uuid = _uuid.UUID(current_user.get("id_usuario")) if isinstance(current_user, dict) and current_user.get("id_usuario") else None
+                        
+                        audit_log_masivo = LogAuditoria(
+                            tipo_evento="UPDATE",
+                            entidad_afectada="reconciliacion_pendientes",
+                            pk_entidad=str(otro.id_pendiente),
+                            valor_nuevo={
+                                "accion": "aprobar (masivo)",
+                                "nuevo_estado": "Aprobado",
+                                "dni_corregido": payload.dni_corregido,
+                            },
+                            id_usuario=user_uuid,
+                            resultado="Exito",
+                            detalle_error=f"Cuarentena resuelta automáticamente por resolución masiva del administrador."
+                        )
+                        db.add(audit_log_masivo)
+                        
+                        registros_resueltos += 1
         else:
             item.estado = "Rechazado"
             if payload.motivo_rechazo:
@@ -1393,7 +1496,7 @@ async def resolve_quarantine(
             "id_pendiente": id_pendiente,
             "estado": item.estado,
             "message": (
-                "Registro aprobado e integrado a la base de datos."
+                f"Registro aprobado e integrado a la base de datos. (Se resolvieron {registros_resueltos} tesis automáticamente)"
                 if payload.action == "aprobar"
                 else "Registro rechazado correctamente."
             ),

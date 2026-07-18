@@ -84,6 +84,7 @@ export interface QuarantineItem {
   estado: 'Pendiente' | 'Aprobado' | 'Rechazado';
   fecha_registro: string | null;
   fecha_revision: string | null;
+  related_count?: number;
 }
 
 export interface QuarantineListData {
@@ -98,6 +99,7 @@ export interface QuarantineResolvePayload {
   action: 'aprobar' | 'rechazar';
   dni_corregido?: string;
   motivo_rechazo?: string;
+  resolucion_masiva?: boolean;
 }
 
 export interface QuarantineResolveResult {

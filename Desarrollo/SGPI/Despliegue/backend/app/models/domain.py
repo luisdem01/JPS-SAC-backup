@@ -145,6 +145,7 @@ class Convocatoria(Base):
     fecha_cierre = Column(Date)
     url_bases_vrip = Column(String(255))
     cambios_cronograma = Column(JSON)
+    cronograma_detallado = Column(JSON)
     estado_convocatoria = Column(String(50), default='Abierta')
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

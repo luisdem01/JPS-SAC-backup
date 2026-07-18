@@ -45,6 +45,13 @@ export default function CuarentenaPage() {
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [dniMap, setDniMap] = useState<Record<number, string>>({});
   const [modalItem, setModalItem] = useState<QuarantineItem | null>(null);
+  
+  const [confirmMassResolve, setConfirmMassResolve] = useState<{
+    id: number;
+    dni: string;
+    asesor: string;
+    count: number;
+  } | null>(null);
 
   // Cierra el modal con tecla Esc
   useEffect(() => {
@@ -57,7 +64,7 @@ export default function CuarentenaPage() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [modalItem]);
 
-  const handleResolve = async (id: number, action: 'aprobar' | 'rechazar', requireDni: boolean) => {
+  const handleResolve = async (id: number, action: 'aprobar' | 'rechazar', requireDni: boolean, massResolve: boolean = false) => {
     const dni = dniMap[id];
     if (action === 'aprobar' && requireDni && !dni) {
       alert('Debes ingresar un DNI válido para aprobar esta tesis.');
@@ -69,6 +76,7 @@ export default function CuarentenaPage() {
       await syncService.resolveQuarantine(id, {
         action,
         dni_corregido: action === 'aprobar' && requireDni ? dni : undefined,
+        resolucion_masiva: massResolve,
       });
       await fetchList();
     } catch (e) {
@@ -199,20 +207,48 @@ export default function CuarentenaPage() {
                                 />
                               </div>
                             )}
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <Button
                                 variant="primary"
                                 size="sm"
                                 loading={resolvingId === item.id_pendiente}
-                                onClick={() => handleResolve(item.id_pendiente, 'aprobar', isTesis)}
+                                onClick={() => handleResolve(item.id_pendiente, 'aprobar', isTesis, false)}
                               >
                                 Aprobar
                               </Button>
+                              {isTesis && (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                                  loading={resolvingId === item.id_pendiente}
+                                  onClick={() => {
+                                    const dni = dniMap[item.id_pendiente];
+                                    if (!dni) {
+                                      alert('Debes ingresar un DNI válido para aprobar esta tesis.');
+                                      return;
+                                    }
+                                    const count = item.related_count || 0;
+                                    if (count > 0) {
+                                      setConfirmMassResolve({
+                                        id: item.id_pendiente,
+                                        dni: dni,
+                                        asesor: String(item.datos_conflicto?.asesor_texto || 'Desconocido'),
+                                        count: count
+                                      });
+                                    } else {
+                                      handleResolve(item.id_pendiente, 'aprobar', isTesis, true);
+                                    }
+                                  }}
+                                >
+                                  Resolución Masiva {item.related_count ? `(+${item.related_count})` : ''}
+                                </Button>
+                              )}
                               <Button
                                 variant="secondary"
                                 size="sm"
                                 disabled={resolvingId === item.id_pendiente}
-                                onClick={() => handleResolve(item.id_pendiente, 'rechazar', false)}
+                                onClick={() => handleResolve(item.id_pendiente, 'rechazar', false, false)}
                               >
                                 Rechazar
                               </Button>
@@ -267,6 +303,33 @@ export default function CuarentenaPage() {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Modal de Confirmación de Resolución Masiva */}
+      {confirmMassResolve && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="bg-white rounded shadow-xl max-w-md w-full p-6 flex flex-col border border-slate-200">
+            <h3 className="font-bold text-lg text-slate-800 mb-2">Confirmación de Resolución Masiva</h3>
+            <p className="text-[13px] text-slate-600 mb-4 leading-relaxed">
+              Se han encontrado <span className="font-bold text-indigo-600">{confirmMassResolve.count} tesis adicionales</span> en cuarentena asociadas al asesor "<span className="font-semibold">{confirmMassResolve.asesor}</span>".
+              <br/><br/>
+              Si apruebas este registro con el DNI <span className="font-mono font-semibold bg-slate-100 px-1 py-0.5 rounded">{confirmMassResolve.dni}</span>, las otras tesis también se actualizarán y aprobarán de forma automática. ¿Deseas continuar?
+            </p>
+            <div className="flex justify-end gap-3 mt-2">
+              <Button variant="secondary" onClick={() => setConfirmMassResolve(null)}>Cancelar</Button>
+              <Button 
+                variant="primary" 
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                onClick={() => {
+                  handleResolve(confirmMassResolve.id, 'aprobar', true, true);
+                  setConfirmMassResolve(null);
+                }}
+              >
+                Confirmar y Aprobar
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </MainLayout>
   );

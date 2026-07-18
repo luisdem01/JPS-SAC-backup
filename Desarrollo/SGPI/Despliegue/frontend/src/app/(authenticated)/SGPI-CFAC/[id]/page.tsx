@@ -414,11 +414,19 @@ export default function ConvocatoriaDetailPage() {
   const nivel            = nivelAlerta(dias);
   const tieneEvidencias  = evidencias.length > 0;
 
-  const estadoBadge = nivel === 'rojo'
-    ? { bg: 'bg-[#dc2626]', text: 'CIERRE INMINENTE' }
-    : nivel === 'amarillo'
-      ? { bg: 'bg-[#d97706]', text: `VENCE EN ${dias} DÍAS` }
-      : { bg: 'bg-[#16a34a]', text: conv.estado.toUpperCase() };
+  let estadoBadge: { bg: string; text: string };
+
+  if (!conv.fechaCierre) {
+    estadoBadge = { bg: 'bg-[#16a34a]', text: 'VER BASES' };
+  } else if (conv.estado === 'Cerrada' || conv.estado === 'Suspendida' || dias < 0) {
+    estadoBadge = { bg: 'bg-[#94a3b8]', text: dias < 0 && conv.estado === 'Abierta' ? 'CERRADA' : conv.estado.toUpperCase() };
+  } else {
+    estadoBadge = nivel === 'rojo'
+      ? { bg: 'bg-[#dc2626]', text: dias === 0 ? 'VENCE HOY' : `VENCE EN ${dias} ${dias === 1 ? 'DÍA' : 'DÍAS'}` }
+      : nivel === 'amarillo'
+        ? { bg: 'bg-[#d97706]', text: `VENCE EN ${dias} ${dias === 1 ? 'DÍA' : 'DÍAS'}` }
+        : { bg: 'bg-[#16a34a]', text: conv.estado === 'Abierta' ? `VENCE EN ${dias} ${dias === 1 ? 'DÍA' : 'DÍAS'}` : conv.estado.toUpperCase() };
+  }
 
   const nombre = conv.programa ?? conv.nombre;
 
@@ -541,6 +549,27 @@ export default function ConvocatoriaDetailPage() {
                 </span>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Cronograma Detallado ─────────────────────────────────────────────── */}
+      {conv.cronogramaDetallado && conv.cronogramaDetallado.length > 0 && (
+        <div className="bg-surface-container-lowest border border-outline-variant rounded shadow-level-1 overflow-hidden mt-6">
+          <div className="px-5 pt-4 pb-2 border-b border-outline-variant">
+            <h2 className="font-sans font-bold text-[13px] text-on-surface">Cronograma Detallado</h2>
+          </div>
+          <div className="divide-y divide-outline-variant">
+            {conv.cronogramaDetallado.map((hito, idx) => (
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-3 hover:bg-surface-container-low transition-colors gap-2">
+                <span className="font-sans text-[13px] text-on-surface-variant flex-1 leading-tight">
+                  {hito.actividad}
+                </span>
+                <span className="font-sans text-[13px] text-on-surface font-medium whitespace-nowrap text-right">
+                  {hito.fecha_detalle}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}

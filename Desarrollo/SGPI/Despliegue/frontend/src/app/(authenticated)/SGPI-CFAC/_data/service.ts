@@ -22,7 +22,8 @@ import { removeAccents } from '@/SGPI-CFU/lib/utils/formatters';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Calcula los días restantes hasta la fecha de cierre desde hoy */
-export function diasRestantes(fechaCierre: string): number {
+export function diasRestantes(fechaCierre?: string | null): number {
+  if (!fechaCierre) return 999;
   const hoy    = new Date();
   hoy.setHours(0, 0, 0, 0);
   const cierre = new Date(fechaCierre + 'T00:00:00');
@@ -40,7 +41,8 @@ export function nivelAlerta(dias: number): NivelAlerta {
 }
 
 /** Formatea una fecha ISO "YYYY-MM-DD" a "DD Mmm YYYY" en español */
-export function formatFechaCierre(iso: string): string {
+export function formatFechaCierre(iso?: string | null): string {
+  if (!iso) return 'No especificada';
   const [y, m, d] = iso.split('-');
   const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   return `${parseInt(d)} ${meses[parseInt(m) - 1]} ${y}`;
@@ -59,9 +61,10 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
     entidad: c.entidad_emisora || 'VRIP-UNMSM',
     estado: c.estado_convocatoria as any,
     apertura: c.fecha_inicio_inscripcion,
-    fechaCierre: c.fecha_cierre || new Date().toISOString().split('T')[0],
+    fechaCierre: c.fecha_cierre || null,
     fuente: 'VRIP',
     ultimaSync: c.created_at,
+    cronogramaDetallado: c.cronograma_detallado,
     evidencias: (c.evidencias || []).map((e: any) => ({
       id: String(e.id_evidencia),
       fileName: e.nombre_archivo,
@@ -74,7 +77,11 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
 
   // Filtro: estado
   if (filtros.estado !== 'Todos') {
-    list = list.filter((c) => c.estado === filtros.estado);
+    if (filtros.estado === 'Por Vencer') {
+      list = list.filter((c) => c.estado === 'Abierta' && diasRestantes(c.fechaCierre) <= 7 && diasRestantes(c.fechaCierre) >= 0);
+    } else {
+      list = list.filter((c) => c.estado === filtros.estado);
+    }
   }
 
   // Filtro: búsqueda de texto
@@ -90,7 +97,14 @@ export async function getConvocatorias(filtros: AlertaFiltros): Promise<Convocat
 
   // Ordenar
   if (filtros.orden === 'fechaCierre') {
-    list = list.sort((a, b) => a.fechaCierre.localeCompare(b.fechaCierre));
+    list = list.sort((a, b) => {
+      const fa = a.fechaCierre || '';
+      const fb = b.fechaCierre || '';
+      if (!fa && !fb) return 0;
+      if (!fa) return 1;
+      if (!fb) return -1;
+      return fa.localeCompare(fb);
+    });
   } else if (filtros.orden === 'nombre') {
     list = list.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
   } else if (filtros.orden === 'alerta') {
@@ -109,9 +123,10 @@ export async function getConvocatoriaById(id: string): Promise<Convocatoria | nu
       entidad: res.entidad_emisora || 'VRIP-UNMSM',
       estado: res.estado_convocatoria as any,
       apertura: res.fecha_inicio_inscripcion,
-      fechaCierre: res.fecha_cierre || new Date().toISOString().split('T')[0],
+      fechaCierre: res.fecha_cierre || null,
       fuente: 'VRIP',
       ultimaSync: res.created_at,
+      cronogramaDetallado: res.cronograma_detallado,
       evidencias: (res.evidencias || []).map((e: any) => ({
         id: String(e.id_evidencia),
         fileName: e.nombre_archivo,

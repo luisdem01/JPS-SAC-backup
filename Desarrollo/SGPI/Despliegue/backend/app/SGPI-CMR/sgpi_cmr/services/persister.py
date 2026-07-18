@@ -52,8 +52,15 @@ class ReconciliationPersister:
         await db.commit()
 
 
-    async def persist_resolved(self, db: AsyncSession, entidad: str, llave_pk: str, 
-                             merged_data: Dict[str, Any], fuente_ganadora: str) -> None:
+    async def persist_resolved(
+        self,
+        db: AsyncSession,
+        entidad: str,
+        llave_pk: str,
+        merged_data: Dict[str, Any],
+        fuente_ganadora: str,
+        auto_commit: bool = True
+    ) -> None:
         """
         Guarda o actualiza el registro en la base de datos principal y genera auditoría de forma atómica.
         """
@@ -189,7 +196,10 @@ class ReconciliationPersister:
             )
             db.add(log)
             
-            await db.commit()
+            if auto_commit:
+                await db.commit()
+            else:
+                await db.flush()
             
         except Exception as e:
             await db.rollback()
